@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { DocumentReader } from "@/components/document-reader";
@@ -43,14 +43,15 @@ export function MemoryReaderPane({
   const { announce } = useAnnouncer();
   const [mode, setMode] = useState<"rendered" | "raw">("rendered");
   const [copied, setCopied] = useState(false);
-  // Edit mode swaps the reader body for the MemoryMdEditor (WYSIWYG/raw
-  // markdown editing with mtime-guarded saves). `refreshToken` re-fetches the
-  // read view after an edit session so it shows what was saved.
-  const [editing, setEditing] = useState(false);
+  // Dirty editors stay mounted while reading or selecting another file.
+  // Each path owns its draft and its visual editor lifecycle queue.
+  const [editingPath, setEditingPath] = useState<string | null>(null);
+  const [dirtyRows, setDirtyRows] = useState<Record<string, FileMemoryRow>>({});
   const [refreshToken, setRefreshToken] = useState(0);
-  const visualLifecycleQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const visualLifecycleQueuesRef = useRef(new Map<string, MutableRefObject<Promise<void>>>());
   // File rows always carry the absolute allow-listed content path.
   const fetchPath = row?.contentPath ?? null;
+  const editing = fetchPath !== null && editingPath === fetchPath;
   const { text, error, loading } = useMemoryFile(fetchPath, { refreshToken });
   const content = text ?? "";
   const readerDocument = useMemo(
@@ -60,22 +61,11 @@ export function MemoryReaderPane({
 
   // Leaving a row ends its edit session — a new selection opens in read mode.
   useEffect(() => {
-    setEditing(false);
+    setEditingPath(null);
   }, [fetchPath]);
 
-  if (!row) {
-    return (
-      <div className="fm-reader-empty">
-        <EmptyState
-          icon="ph:book-open"
-          headline="Choose a memory"
-          subtitle="Select an entry to read its contents, provenance, and freshness."
-        />
-      </div>
-    );
-  }
-
   const copyPath = async () => {
+    if (!row) return;
     const ok = await copyText(row.path);
     setCopied(ok);
     announce(ok ? "Memory path copied." : "Memory path could not be copied.", ok ? "polite" : "assertive");
@@ -85,170 +75,202 @@ export function MemoryReaderPane({
   const isFileLoading = loading || text === null;
   const fileError = error;
 
+  const editorRows = { ...dirtyRows, ...(editing && row ? { [row.contentPath]: row } : {}) };
+
   return (
     <div className="fm-reader-shell flex h-full min-h-0 flex-col">
-      <div className="fm-reader-header shrink-0">
-        <div className="flex items-start justify-between gap-2">
-          {onBack ? (
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Back to list"
-              className="focus-ring mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] @min-[1024px]/memview:hidden"
-            >
-              <Icon name="ph:arrow-left" width={13} aria-hidden />
-            </button>
-          ) : null}
-          <h3
-            className="min-w-0 flex-1 truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
-            title={row.title}
-          >
-            {row.title}
-          </h3>
-          <div className="fm-reader-actions flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setEditing((previous) => {
-                  if (previous) setRefreshToken((current) => current + 1);
-                  return !previous;
-                });
-              }}
-              aria-pressed={editing}
-              aria-label={editing ? "Stop editing" : "Edit memory file"}
-              title={editing ? "Stop editing" : "Edit"}
-              className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
-                editing
-                  ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:pencil-simple" width={11} aria-hidden />
-              {editing ? "Done" : "Edit"}
-            </button>
-            {!editing ? (
-              <>
-                <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[length:var(--text-2xs)]">
-                  {(["rendered", "raw"] as const).map((nextMode) => (
-                    <button
-                      key={nextMode}
-                      type="button"
-                      aria-pressed={mode === nextMode}
-                      onClick={() => setMode(nextMode)}
-                      className={`focus-ring-inset px-2 py-1 transition-colors ${
-                        mode === nextMode
-                          ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-                      }`}
-                    >
-                      {nextMode === "rendered" ? "Rendered" : "Raw"}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onExpand(row)}
-                  aria-label="Expand to fullscreen reader"
-                  title="Fullscreen"
-                  className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                >
-                  <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
-                </button>
-                <OverflowMenu ariaLabel="More memory actions" size="xs">
-                  <PopoverItem onSelect={() => void copyPath()}>
-                    {copied ? "Path copied" : "Copy path"}
-                  </PopoverItem>
-                  <PopoverItem onSelect={() => onOpenFile(row.path)}>
-                    Open file
-                  </PopoverItem>
-                  <PopoverItem onSelect={() => openGrimoireDoc("memory", row.contentPath)}>
-                    Open in Memories
-                  </PopoverItem>
-                </OverflowMenu>
-              </>
-            ) : null}
-          </div>
-        </div>
-        <div className="fm-reader-meta">
-          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
-            File
-          </span>
-          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{row.sourceLabel}</span>
-          {sizeLabel ? (
-            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{sizeLabel}</span>
-          ) : null}
-          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age}</span>
-          {row.stale ? (
-            <span className="rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[var(--color-warning)]">
-              Stale
-            </span>
-          ) : null}
-        </div>
-        <div className="fm-reader-path">
-          <code
-            className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]"
-            title={row.path}
-          >
-            {compactPath(row.path)}
-          </code>
-        </div>
-      </div>
-      {editing ? (
-        <div className="fm-reader-body min-h-0 flex-1">
-          <MemoryMdEditor
-            path={row.contentPath}
-            sourceLabel={row.sourceLabel}
-            visualLifecycleQueueRef={visualLifecycleQueueRef}
-            onCancel={() => {
-              setEditing(false);
-              setRefreshToken((current) => current + 1);
-            }}
+      {!row ? (
+        <div className="fm-reader-empty">
+          <EmptyState
+            icon="ph:book-open"
+            headline="Choose a memory"
+            subtitle="Select an entry to read its contents, provenance, and freshness."
           />
         </div>
       ) : (
-        <div className="fm-reader-body min-h-0 flex-1">
-          {fileError ? (
-            <div className="p-4">
-              <ErrorState
-                compact
-                headline="Couldn't load this memory"
-                subtitle={fileError}
-              />
+        <>
+          <div className="fm-reader-header shrink-0">
+            <div className="flex items-start justify-between gap-2">
+              {onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  aria-label="Back to list"
+                  className="focus-ring mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] @min-[1024px]/memview:hidden"
+                >
+                  <Icon name="ph:arrow-left" width={13} aria-hidden />
+                </button>
+              ) : null}
+              <h3
+                className="min-w-0 flex-1 truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
+                title={row.title}
+              >
+                {row.title}
+              </h3>
+              <div className="fm-reader-actions flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editing) setRefreshToken((current) => current + 1);
+                    setEditingPath(editing ? null : row.contentPath);
+                  }}
+                  aria-pressed={editing}
+                  aria-label={editing ? "Stop editing" : "Edit memory file"}
+                  title={editing ? "Stop editing" : "Edit"}
+                  className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
+                    editing
+                      ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  <Icon name="ph:pencil-simple" width={11} aria-hidden />
+                  {editing ? "Done" : "Edit"}
+                </button>
+                {!editing ? (
+                  <>
+                    <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[length:var(--text-2xs)]">
+                      {(["rendered", "raw"] as const).map((nextMode) => (
+                        <button
+                          key={nextMode}
+                          type="button"
+                          aria-pressed={mode === nextMode}
+                          onClick={() => setMode(nextMode)}
+                          className={`focus-ring-inset px-2 py-1 transition-colors ${
+                            mode === nextMode
+                              ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                              : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                          }`}
+                        >
+                          {nextMode === "rendered" ? "Rendered" : "Raw"}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onExpand(row)}
+                      aria-label="Expand to fullscreen reader"
+                      title="Fullscreen"
+                      className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                    >
+                      <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
+                    </button>
+                    <OverflowMenu ariaLabel="More memory actions" size="xs">
+                      <PopoverItem onSelect={() => void copyPath()}>
+                        {copied ? "Path copied" : "Copy path"}
+                      </PopoverItem>
+                      <PopoverItem onSelect={() => onOpenFile(row.path)}>
+                        Open file
+                      </PopoverItem>
+                      <PopoverItem onSelect={() => openGrimoireDoc("memory", row.contentPath)}>
+                        Open in Memories
+                      </PopoverItem>
+                    </OverflowMenu>
+                  </>
+                ) : null}
+              </div>
             </div>
-          ) : isFileLoading ? (
-            <div
-              className="space-y-2.5 p-4"
-              aria-label="Loading memory"
-              aria-busy="true"
-            >
-              {["92%", "85%", "97%", "78%", "90%", "70%"].map(
-                (width, index) => (
-                  <Skeleton key={index} variant="text" width={width} />
-                ),
+            <div className="fm-reader-meta">
+              <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
+                File
+              </span>
+              <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{row.sourceLabel}</span>
+              {sizeLabel ? (
+                <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{sizeLabel}</span>
+              ) : null}
+              <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age}</span>
+              {row.stale ? (
+                <span className="rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[var(--color-warning)]">
+                  Stale
+                </span>
+              ) : null}
+            </div>
+            <div className="fm-reader-path">
+              <code
+                className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]"
+                title={row.path}
+              >
+                {compactPath(row.path)}
+              </code>
+            </div>
+          </div>
+          {!editing ? (
+            <div className="fm-reader-body min-h-0 flex-1">
+              {fileError ? (
+                <div className="p-4">
+                  <ErrorState
+                    compact
+                    headline="Couldn't load this memory"
+                    subtitle={fileError}
+                  />
+                </div>
+              ) : isFileLoading ? (
+                <div
+                  className="space-y-2.5 p-4"
+                  aria-label="Loading memory"
+                  aria-busy="true"
+                >
+                  {["92%", "85%", "97%", "78%", "90%", "70%"].map(
+                    (width, index) => (
+                      <Skeleton key={index} variant="text" width={width} />
+                    ),
+                  )}
+                </div>
+              ) : content.trim() === "" ? (
+                <p className="p-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                  Empty file.
+                </p>
+              ) : mode === "rendered" ? (
+                <DocumentReader
+                  document={readerDocument}
+                  navigation="compact"
+                  renderLede={(block) => (
+                    <MarkdownReaderBlock block={block} blockKey="memory-lede" />
+                  )}
+                  renderBlock={(block, key) => (
+                    <MarkdownReaderBlock block={block} blockKey={key} />
+                  )}
+                />
+              ) : (
+                <pre className="h-full overflow-y-auto whitespace-pre-wrap break-words p-4 font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
+                  {content}
+                </pre>
               )}
             </div>
-          ) : content.trim() === "" ? (
-            <p className="p-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              Empty file.
-            </p>
-          ) : mode === "rendered" ? (
-            <DocumentReader
-              document={readerDocument}
-              navigation="compact"
-              renderLede={(block) => (
-                <MarkdownReaderBlock block={block} blockKey="memory-lede" />
-              )}
-              renderBlock={(block, key) => (
-                <MarkdownReaderBlock block={block} blockKey={key} />
-              )}
-            />
-          ) : (
-            <pre className="h-full overflow-y-auto whitespace-pre-wrap break-words p-4 font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
-              {content}
-            </pre>
-          )}
-        </div>
+          ) : null}
+        </>
       )}
+      {Object.values(editorRows).map((editorRow) => {
+        const path = editorRow.contentPath;
+        const active = editing && path === fetchPath;
+        let visualLifecycleQueueRef = visualLifecycleQueuesRef.current.get(path);
+        if (!visualLifecycleQueueRef) {
+          visualLifecycleQueueRef = { current: Promise.resolve() };
+          visualLifecycleQueuesRef.current.set(path, visualLifecycleQueueRef);
+        }
+        return (
+          <div key={path} hidden={!active} className={active ? "fm-reader-body min-h-0 flex-1" : "hidden"}>
+            <MemoryMdEditor
+              path={path}
+              sourceLabel={editorRow.sourceLabel}
+              visualLifecycleQueueRef={visualLifecycleQueueRef}
+              onCancel={() => {
+                setEditingPath(null);
+                setRefreshToken((current) => current + 1);
+              }}
+              onSaved={() => setRefreshToken((current) => current + 1)}
+              onDirtyChange={(dirty) => {
+                setDirtyRows((previous) => {
+                  if (dirty) return previous[path] ? previous : { ...previous, [path]: editorRow };
+                  if (!previous[path]) return previous;
+                  const next = { ...previous };
+                  delete next[path];
+                  return next;
+                });
+              }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 A staged rollout is only safe if it can be *un*-done — and "un-done" means two
 different things for two different populations, because **the updater never
-downgrades anyone**. The desktop app runs `tauri-plugin-updater` (2.10.1, per
+downgrades anyone**. The desktop app runs `tauri-plugin-updater` (2.14.1, per
 `src-tauri/Cargo.lock`) with no version comparator of its own — the only
 builder call in `src-tauri/src/tauri_setup.rs` is Windows MSI `installer_args`,
 and the JS side calls a bare `check()` — so the plugin's default applies:
@@ -31,9 +31,9 @@ population, but not the only one:
 
 | Still happens when the gate fails | Blocked when the gate fails |
 | --- | --- |
-| `build` creates the GitHub Release and uploads every installer | `updater-manifest` publishes `latest.json` |
-| `checksums` publishes `SHA256SUMS` | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
-| `homebrew` bumps the tap, so `brew install --cask` serves the new version | |
+| `release-object` creates the GitHub Release, and successful `build` legs upload their installers | `updater-manifest` publishes `latest.json` |
+| `checksums` publishes `SHA256SUMS` when every required desktop build succeeds | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
+| `homebrew` bumps the tap after `checksums` succeeds | |
 | `release-ios-build` archives and uploads to App Store Connect, so the build reaches TestFlight | |
 
 That is deliberate: the shortfall a red gate reports is in the **previous**
@@ -43,9 +43,9 @@ on its own — if the new release must not reach anyone, delete its assets or
 unpublish it by hand as well, and note that the iOS build has already left for
 App Store Connect and is withdrawn there, not here.
 
-⚠️ **It also means auto-update is DOWN, not held.** `build` creates the release
-published and not a prerelease, so GitHub makes it `latest` the moment it
-exists — and the updater endpoint is the alias
+⚠️ **It also means auto-update is DOWN, not held.** `release-object` creates
+the release published but not latest, and the first `build` leg to upload makes
+it `latest` (#6248) — and the updater endpoint is the alias
 `releases/latest/download/latest.json` (`src-tauri/tauri.conf.json`). With
 `updater-manifest` withheld there is no `latest.json` on that release, so every
 install's update check 404s rather than quietly staying where it is. That is
@@ -59,22 +59,53 @@ current", and `src/components/update-available.tsx` renders that as a "Native
 updater unavailable" banner offering a manual download. Support will hear about
 it, which is the right outcome but not a substitute for acting.
 
-Treat a red gate as time-critical, and pick one of two exits. Repair the
-baseline release, then re-run the cut so `updater-manifest` gets to publish —
-`workflow_dispatch` with the same `tag` is the reliable way, since `build`
-reuses the existing release and re-uploads with `--clobber`. Or, if the new
-release should not ship at all, demote it with the step-1 command under
-[Rolling back](#rolling-back), which restores the alias to the baseline's
-manifest and ends the outage in one call.
+Treat a red gate as time-critical. If no older complete rollback target exists,
+repair one and re-run the cut with `workflow_dispatch` and the same `tag`.
+If the new release should not ship, demote it with the step-1 command under
+[Rolling back](#rolling-back), which restores the alias to an earlier release's
+manifest. Incomplete intermediate releases are skipped when an older complete
+rollback target exists; they do not require tag-by-tag repair.
+
+### When the Windows MSI build fails
+
+An MSI build failure is different from a red rollback gate: `build` is
+partial, so `checksums` and the Homebrew bump do not run. The GitHub Release
+can still contain macOS and Linux installers, but has no MSI or `SHA256SUMS`.
+The `partial-release-notes` job writes install links from the assets actually
+attached to that tag. It must say that Windows is unavailable on that release;
+never link to a guessed MSI name. The release marked latest and the README
+install table must also point Windows users to a verified earlier MSI. During
+the v0.5.8–v0.5.12 incident (#5851, closed 2026-10-14), that was
+[v0.5.7](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.7).
+
+After a new release publishes, check its public page in the same shape
+as v0.5.7: direct links for each published DMG, AppImage, and MSI;
+`SHA256SUMS` with a verification command; and the compare link. Compare those
+links with `gh api repos/OpenCoven/coven-cave/releases/tags/<tag> --jq
+'.assets[].name'`. An asset listed in prose but absent from the API is a
+release-page defect, even if the build job was green.
+
+[#5851](https://github.com/OpenCoven/coven-cave/issues/5851) closed on
+2026-10-14. v0.5.13 and v0.5.14 publish the MSI, `SHA256SUMS` and
+`latest.json`, and v0.5.14 is marked latest; the incomplete v0.5.8 through
+v0.5.12 tags were not replayed. A new version still follows the
+[release and candidate sequence](branching.md#release-and-testflight) from clean
+`main`, and its Windows MSI path uses the v0.5.7 build, budget, upload, updater
+signature, and attestation sequence. Every MSI through v0.5.18 is **not
+Authenticode-signed**; do not describe it as code-signed. Once the
+[Windows signing gate](windows-msi-signing.md) is on `main`, a Windows leg
+without all five signing inputs fails before its build and publishes no MSI.
+Check the new MSI's checksum entry, `latest.json`, updater signature, and
+public release page before directing downloads to it. The rollback gate selects the newest older release with the
+required assets and verifies its manifest.
 
 ## What it checks
 
 It resolves the **rollback baseline** — the newest published release strictly
-below the one being shipped, skipping drafts, prereleases, anything without a
-publish timestamp, and anything whose tag is not a plain `vMAJOR.MINOR.PATCH`
-(so a release cut from an `-rc` tag is never a rollback target even if it was
-published as a normal release) — and refuses unless that release is a complete
-rollback target:
+below the one being shipped that has the required installers, `SHA256SUMS`, and
+`latest.json`. It skips drafts, prereleases, unpublished rows, partial releases,
+and tags other than plain `vMAJOR.MINOR.PATCH`. It then validates the selected
+release's manifest; malformed or unavailable metadata remains fatal:
 
 | Requirement | Why a rollout depends on it |
 | --- | --- |
@@ -87,8 +118,9 @@ rollback target:
 
 The job publishes the resulting record as step outputs (`ready`,
 `baseline-tag`, `baseline-version`, `baseline-url`, `baseline-waived`,
-`rollback-platforms`, `rollback-platforms-missing`) and as a run summary, so
-the rollout decision has an artifact rather than an assumption.
+`rollback-platforms`, `rollback-platforms-missing`, `baseline-floor-clear`,
+`baseline-floor-problems`) and as a run summary, so the rollout decision has an
+artifact rather than an assumption.
 
 ### Partial platform coverage is reported, not refused
 
@@ -135,17 +167,53 @@ Keys outside that set are recorded but never counted as a shortfall: a new
 target ships before this list learns its name, and reporting it as unexpected
 would be noise on every run until someone edited a constant.
 
+### A baseline below the bundled-dependency floor is recorded, not refused
+
+The gate also reads the baseline tag's `package.json` and checks three pins
+against `BUNDLED_DEPENDENCY_FLOORS` in `scripts/bundled-dependency-floor.mjs`:
+`dependencies.next`, `dependencies.sharp` and `pnpm.overrides.sharp`. Those are
+the patched minimums recorded on
+[#5339](https://github.com/OpenCoven/coven-cave/issues/5339) and raised since,
+currently Next 16.4.1 ([#6264](https://github.com/OpenCoven/coven-cave/issues/6264))
+and sharp 0.35.4. Patched releases pin all three exactly, and every
+published tag's pins match its lockfile, so the pin names what the release
+bundles. A range, a prerelease or a missing pin is not clear, and neither is a
+tag with no `package.json`.
+
+A baseline that is not clear is **not a rollback target**. Restoring it would
+reinstall a dependency the incident replaced. It still doesn't fail the job,
+for the deadlock reason above. After any floor raise, the first release at the
+new floor has only an unpatched baseline, and failing this job would withhold
+`latest.json` from the release that carries the fix. So the gate records the
+problem in four places:
+
+- the `baseline-floor-clear=false` and `baseline-floor-problems` outputs
+- a ⛔ "Do not roll back" line in the summary
+- an annotation:
+
+  ```text
+  ::warning::Rollback baseline v0.5.17 is below the bundled-dependency floor (dependencies.next 16.3.8 is below the patched minimum 16.4.1 (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r, #6264)); do not roll back to it — patch forward instead.
+  ```
+
+- the verdict's `baselineFloor`, which `scripts/release-rollout.mjs` reads.
+  Its `gate` reports `rollback target: none — … patch forward`, and
+  `restore-plan` refuses to rehearse the restore. A verdict written before
+  this check existed has no `baselineFloor`: `gate` holds and `restore-plan`
+  refuses until the readiness gate is re-run.
+
+Read a not-clear baseline as: the only remedy for this release is a
+patch-forward version. Don't run [Rolling back](#rolling-back) against it.
+
 ## Reading a failure
 
 Each refusal names the shortfall and the release it found:
 
 ```text
-release-rollback-readiness: v0.3.7 is not a usable rollback target: no SHA256SUMS, so a
-rollback artifact cannot be checked before it runs
+release-rollback-readiness: no complete rollback target below v0.3.8; newest v0.3.7 is not usable: no SHA256SUMS, so a rollback artifact cannot be checked before it runs
 ```
 
-That is a fail-closed result, not a flake — do not rerun it. Either repair the
-baseline release (re-upload the missing asset, regenerate `latest.json`) or
+That is a fail-closed result, not a flake — do not rerun it. Repair a
+rollback baseline (re-upload the missing asset, regenerate `latest.json`) or
 choose a different rollout plan. The one shortfall the gate cannot repair for
 you is a manifest whose signatures were produced by a key the shipped clients
 do not pin; that is verified separately by `scripts/verify-release-updater.mjs`.
@@ -162,9 +230,10 @@ answer, which is not evidence the rollback target is broken — retry before tre
 release as unshippable
 ```
 
-Only the API listing is authenticated. The baseline's `latest.json` is fetched
-from its public download url with no `Authorization` header, because that url
-redirects to a third-party object host.
+Only API requests are authenticated: the release listing and the baseline
+tag's `package.json`. The baseline's `latest.json` is fetched from its public
+download url with no `Authorization` header, because that url redirects to a
+third-party object host.
 
 ## The first release
 
@@ -185,6 +254,10 @@ prior release exists — never that the prior release's artifacts are missing.
 
 The baseline this gate verifies is what a rollback consumes — one half per
 population, in this order.
+
+First check that the run recorded `baseline-floor-clear=true`. If it says
+`false`, stop here: the baseline bundles a dependency below the #5339 floor,
+so neither step below is a remedy. Ship a patch-forward version instead.
 
 1. **Stop the rollout.** Make the baseline the latest release again, so the
    updater alias resolves to the baseline's manifest instead of the bad
@@ -209,4 +282,5 @@ population, in this order.
    rather than waiting for an auto-update that is not coming.
 
 3. **Leave the bad release published**, just no longer latest, so its assets
-   stay available for post-mortem.
+   stay available for post-mortem. Rerunning its build legs does not make it
+   latest again: a leg promotes the release only while it has no assets.

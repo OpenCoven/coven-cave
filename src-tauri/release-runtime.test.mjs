@@ -4,6 +4,16 @@ import test from "node:test";
 
 const WINDOWS_NATIVE_RUST_STEPS = [
   {
+    name: "Test Windows fatal-dialog helper lifecycle",
+    filter: "startup_failure_dialog::native_tests::helper_survives_failed_host_and_does_not_retain_port_claim",
+    exact: true,
+  },
+  {
+    name: "Test Windows per-port relaunch window discovery",
+    filter: "windows_instance_activation::native::tests::native_window_discovery_requires_port_marker_and_owner",
+    exact: true,
+  },
+  {
     name: "Test Windows native Browser lifecycle reducer",
     filter: "browser::lifecycle_tests",
     exact: false,
@@ -145,7 +155,7 @@ async function readNativeHost(...modules) {
 }
 
 test("release bundle includes and prefers bundled Node and Whisper runtimes", async () => {
-  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher] = await Promise.all([
+  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher, folderAuthentication] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
@@ -153,6 +163,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     readFile(new URL("../scripts/whisper-runtime-dev-env.sh", import.meta.url), "utf8"),
     readFile(new URL("../scripts/dev-server-with-whisper.sh", import.meta.url), "utf8"),
     readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
+    readFile(new URL("../src/lib/server/native-folder-authentication.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(
@@ -161,6 +172,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     "Tauri resources must include the bundled Node runtime",
   );
   assert.match(tauriConfig, /"resources\/whisper\/\*\*\/\*"/, "Tauri resources must include Whisper runtime files");
+  assert.match(tauriConfig, /"resources\/server\/\*\*\/\*"/, "Tauri resources must include the expanded sidecar server");
   assert.match(windowsConfig, /"resources\/whisper\/\*\*\/\*"/, "Windows bundles must include Whisper runtime files");
   assert.match(
     windowsConfig,
@@ -199,6 +211,16 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     bundleScript,
     /COVEN_CAVE_REFRESH_WHISPER=1 bash "\$ROOT\/scripts\/whisper-runtime-bundle\.sh"/,
     "release packaging must refresh Whisper instead of trusting a local development cache",
+  );
+  assert.match(
+    bundleScript,
+    /CONFIRMATION_HELPER="\$ROOT\/native\/confirm-project-folder"[\s\S]*?cp "\$CONFIRMATION_HELPER" "\$DEST\/native\/confirm-project-folder"/,
+    "macOS sidecars must package the confirmation helper at the server's runtime-relative path",
+  );
+  assert.match(
+    folderAuthentication,
+    /path\.join\(process\.cwd\(\), "native", "confirm-project-folder"\)/,
+    "the sidecar must resolve the helper from its bundled server directory",
   );
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");
@@ -405,6 +427,23 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
     launcher,
     /updater_builder\.installer_args\(msi_verbose_log_installer_args\(&log_path\)\)/,
     "updater-driven MSI installs must use the verbose per-run diagnostic log helper",
+  );
+});
+
+// `tauri dev` runs the bare target/debug/app. Accepting an update there made
+// the macOS installer replace target/debug wholesale (binary and cargo cache
+// gone, "failed to restart app"). Debug builds must not register the updater.
+test("debug builds never register the native updater", async () => {
+  const setup = await readNativeHost("tauri_setup.rs");
+  assert.match(
+    setup,
+    /if cfg!\(debug_assertions\) \{\s*log::info!\("\[cave\] updater disabled: debug builds never install releases"\);\s*\} else \{\s*app\.handle\(\)\.plugin\(updater_builder\.build\(\)\)\?;\s*\}/,
+    "the updater plugin is registered only in release builds",
+  );
+  assert.equal(
+    (setup.match(/updater_builder\.build\(\)/g) ?? []).length,
+    1,
+    "no other path registers the updater",
   );
 });
 
@@ -698,13 +737,14 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   }
   assert.match(
     workflow,
-    /if ! gh release create "\$RELEASE_TAG"[\s\S]*for attempt in 1 2 3; do[\s\S]*if gh release view "\$RELEASE_TAG"/,
-    "macOS release creation must tolerate the other matrix leg winning the race",
+    /- name: Claim the release for the macOS upload[\s\S]*- name: Upload macOS DMG to GitHub Release/,
+    "the macOS legs upload to the release release-object made instead of racing to create one (#6248)",
   );
   assert.match(workflow, /windows_diagnostics_only:/);
   assert.match(workflow, /Validate Windows diagnostics mode/);
   const publishStart = workflow.indexOf("- name: Publish verified signed Windows MSI");
   const signStart = workflow.indexOf("- name: Sign Linux/Windows updater artifact");
+  assert.ok(publishStart >= 0 && signStart > publishStart);
   const publishBlock = workflow.slice(publishStart, signStart);
   assert.match(
     publishBlock,
@@ -740,6 +780,13 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     /tagName:|releaseName:|releaseId:/,
     "the pre-budget Windows build must not give tauri-action release upload inputs",
   );
+  const linuxBuildStart = workflow.indexOf("- name: Build Linux AppImage without publishing");
+  assert.ok(linuxBuildStart >= 0 && linuxBuildStart < buildOnlyStart);
+  assert.doesNotMatch(
+    workflow.slice(linuxBuildStart, buildOnlyStart),
+    /tagName:|releaseName:|releaseId:/,
+    "the Linux build must not give tauri-action inputs that create a release (#6248)",
+  );
 });
 
 test("release builds require the configured OpenCoven X app before platform builds", async () => {
@@ -755,7 +802,7 @@ test("release builds require the configured OpenCoven X app before platform buil
   assert.match(xAppConfiguration, /^\s+run: node scripts\/check-x-app-release\.mjs$/m);
   const guardIndex = buildJob.indexOf("- name: Require OpenCoven X app configuration");
   for (const platformBuildStep of [
-    "Build with tauri-action",
+    "Build Linux AppImage without publishing",
     "Build Windows MSI without publishing",
     "Build macOS DMG with custom release script",
   ]) {
@@ -995,7 +1042,7 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*CHAT_WINDOW_LABEL/,
     "sidecar recovery must rotate auth for already-open auxiliary windows",
   );
   assert.match(
@@ -1032,6 +1079,64 @@ test("Windows first launch paints progress and supports recovery while the sidec
     startupPage,
     /Startup diagnostics[\s\S]*retry_sidecar_startup/,
     "startup failures must surface diagnostics and an in-window retry",
+  );
+});
+
+test("Windows startup page keeps the status line short and follows the system theme (#5970)", async () => {
+  const startupPage = await readFile(
+    new URL("./frontend-stub/startup.html", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    startupPage,
+    /color-scheme: dark light/,
+    "the page must follow the system color scheme like the native title bar above it",
+  );
+  assert.match(
+    startupPage,
+    /@media \(prefers-color-scheme: light\)/,
+    "the page needs a light palette, not a forced dark one",
+  );
+  assert.match(
+    startupPage,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition: none/,
+    "progress motion must honour reduced-motion",
+  );
+  assert.match(
+    startupPage,
+    /function summarize\(message\)[\s\S]*split\(\/\\n\\s\*\\n\/, 1\)/,
+    "a failure's first paragraph is the status line; the bounded output tail belongs in diagnostics",
+  );
+  assert.match(
+    startupPage,
+    /phase\.textContent = failed \? summarize\(message\) : message/,
+    "the live status line must never carry the raw sidecar output",
+  );
+  assert.match(
+    startupPage,
+    /-webkit-line-clamp: 3/,
+    "the status line is clamped so Retry stays in reach",
+  );
+  assert.match(
+    startupPage,
+    /id="copy"[^>]*>Copy details<\/button>/,
+    "failure diagnostics offer a copy action for bug reports",
+  );
+  assert.match(
+    startupPage,
+    /Closing this window quits CovenCave/,
+    "the failure state must say that closing the window quits, since Windows has no close-to-tray",
+  );
+  assert.equal(
+    (startupPage.match(/Preparing CovenCave…/g) ?? []).length,
+    2,
+    "the initial and fallback status strings are one string, in markup and script",
+  );
+  assert.doesNotMatch(
+    startupPage,
+    /Preparing startup…|>Preparing CovenCave</,
+    "no second spelling of the first phase remains",
   );
 });
 
@@ -1109,4 +1214,67 @@ test("macOS updater tarball ships no AppleDouble entries (v0.0.167 'app is damag
     /codesign --verify --deep --strict "\$probe_dir\/CovenCave\.app"/,
     "the release script must round-trip the tarball and re-verify the extracted app's code seal",
   );
+});
+
+
+test("Windows setup errors are handled inside Tauri's callback before returning", async () => {
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(setup, /let setup_result = \(\|\| -> Result<\(\), Box<dyn std::error::Error>>/);
+  assert.match(setup, /if let Err\(error\) = &setup_result[\s\S]*?shutdown_owned_processes\(app.handle\(\)\)[\s\S]*?fatal_exit\(&message\)/);
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /MessageBoxW/);
+});
+
+
+test("Windows relaunch uses a per-port main-window marker before refusal", async () => {
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  const mainWindow = await readFile(new URL("./src/main_window.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /focus_existing_port_owner\(port, pid\)/);
+  assert.match(mainWindow, /mark_main_window_port/);
+});
+
+
+test("Windows fatal dialogs run outside the exiting host", async () => {
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /spawn_fatal_dialog_helper\(msg\)/);
+  assert.ok(setup.indexOf("run_fatal_dialog_helper_if_requested") < setup.indexOf("tauri::generate_context!"));
+});
+
+test("Windows startup PRs compile native code without release authority", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/windows-startup.yml", import.meta.url), "utf8");
+  assert.match(workflow, /pull_request:\n    branches: \[main\]/);
+  assert.match(workflow, /'src-tauri\/\*\*'/);
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /runs-on: windows-latest/);
+  assert.match(workflow, /timeout-minutes: 20/);
+  assert.match(workflow, /cargo build --manifest-path src-tauri\/Cargo.toml --locked --bin app/);
+  assert.match(workflow, /COVEN_STARTUP_DIALOG_TEST_EXE/);
+  for (const { filter } of WINDOWS_NATIVE_RUST_STEPS.slice(0, 2)) {
+    assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' 1 -Exact`), filter);
+  }
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_diagnostics::tests' 9/);
+  // Runtime generation retention (#5981) must run on Windows for every PR.
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
+  // Declined or failed msiexec recovery (#5981) must compile and run on Windows for every PR.
+  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 7/);
+  assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
+  assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
+  assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);
+});
+
+test("Windows window placement covers packaged and development startup with native regression gates", async () => {
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  const policy = await readFile(new URL("./src/window_placement.rs", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/windows-startup.yml", import.meta.url), "utf8");
+  assert.equal(setup.match(/windows_window_state::initialize\(&window\)\?/g)?.length, 2);
+  assert.match(setup, /windows_window_state::on_event\(window, event\)/);
+  assert.match(policy, /pixels\(1320\.0\), pixels\(820\.0\)/);
+  assert.match(policy, /pixels\(960\.0\)\.min\(available\.0\)/);
+  assert.match(policy, /pixels\(600\.0\)\.min\(available\.1\)/);
+  for (const [filter, count] of [["window_placement::tests", 14], ["windows_window_state::tests", 5], ["windows_tray::tests", 2]]) {
+    assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' ${count}`), filter);
+  }
 });

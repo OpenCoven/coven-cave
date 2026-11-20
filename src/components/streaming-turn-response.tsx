@@ -34,6 +34,13 @@ export type StreamingTurnResponseProps = {
   onContinue?: () => void;
   onRetry?: () => void;
   onCopyCompleted?: () => void | boolean | Promise<void | boolean>;
+  /** Main Chat (#5954): the status row is the turn's one author line. `name`
+   *  replaces the bold familiar name; `meta` (time, hover extras) follows the
+   *  status. Quick Chat passes neither and keeps its own row. */
+  author?: { name: ReactNode; meta?: ReactNode };
+  /** "hover" keeps Copy out of the resting line until the turn is hovered or
+   *  focused. Stop, Continue and Retry always stay visible. */
+  copyReveal?: "always" | "hover";
 };
 
 function isLive(model: StreamingTurnViewModel): boolean {
@@ -146,6 +153,8 @@ export function StreamingTurnResponse({
   onContinue,
   onRetry,
   onCopyCompleted,
+  author,
+  copyReveal = "always",
 }: StreamingTurnResponseProps) {
   const live = isLive(model);
   const hasToolActivity = model.activity.some((event) => event.source === "tool");
@@ -230,9 +239,10 @@ export function StreamingTurnResponse({
       data-density={density}
       data-streaming-turn-response={true}
       data-streaming-turn-id={turnId}
+      data-copy-reveal={copyReveal === "hover" ? "hover" : undefined}
     >
       <div className="streaming-turn-current">
-        <div className="streaming-turn-current__row">
+        <div className={`streaming-turn-current__row${author ? " streaming-turn-current__row--author" : ""}`}>
           <Icon
             name={
               live
@@ -251,13 +261,14 @@ export function StreamingTurnResponse({
             className="streaming-turn-current__phase"
             role={announceLifecycle && (live || model.status === "interrupted") ? "status" : undefined}
           >
-            <strong>{familiarName}</strong>
+            {author ? author.name : <strong>{familiarName}</strong>}
             <span aria-hidden> · </span>
             {statusLabel}
           </div>
           {live && elapsedLabel ? (
             <time className="streaming-turn-current__time" aria-hidden={true}>{elapsedLabel}</time>
           ) : null}
+          {author?.meta ? <div className="streaming-turn-current__author-meta">{author.meta}</div> : null}
           <div className="streaming-turn-current__actions">
             {live && onStop ? (
               <Button
@@ -274,7 +285,7 @@ export function StreamingTurnResponse({
               <Button
                 size="xs"
                 variant="ghost"
-                className="focus-ring"
+                className="focus-ring streaming-turn-current__copy"
                 aria-label={copyLabel}
                 onClick={() => {
                   void Promise.resolve(onCopyCompleted()).then((succeeded) => {

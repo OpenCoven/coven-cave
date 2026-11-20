@@ -221,6 +221,8 @@ export type ResearchSourcePatch = Partial<
 >;
 
 export type ResearchAutomationLink = {
+  /** Canonical Coven revision shown with this snapshot. */
+  revision?: number;
   id: string;
   rrule: string;
   status: "ACTIVE" | "PAUSED";
@@ -234,6 +236,36 @@ export type ResearchAutomationLink = {
   lastRunAt?: string;
   stopReason?: string;
 };
+
+type ResearchAutomationScheduleAttempt = {
+  generation: number;
+  state: "pending" | "rejected";
+  request: string;
+  input: {
+    name: string; rrule: string; prompt: string; cwds: string[]; tags: string[]; familiars: string[];
+    model: string; reasoningEffort: string; executionEnvironment: string; skillPath: string | null; timezone: string;
+  };
+  checkpointFingerprint: string;
+  checkpointToken?: string;
+};
+
+function parseAutomationScheduleAttempt(value: unknown): ResearchAutomationScheduleAttempt | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !Number.isSafeInteger(value.generation) || (value.generation as number) < 1
+    || (value.state !== "pending" && value.state !== "rejected") || typeof value.request !== "string"
+    || typeof value.checkpointFingerprint !== "string" || !isRecord(value.input)) return null;
+  const input = value.input;
+  for (const key of ["name", "rrule", "prompt", "model", "reasoningEffort", "executionEnvironment", "timezone"]) {
+    if (typeof input[key] !== "string") return null;
+  }
+  if (!(input.timezone as string).length || (input.skillPath !== null && typeof input.skillPath !== "string")) return null;
+  for (const key of ["cwds", "tags", "familiars"]) {
+    if (!Array.isArray(input[key]) || !input[key].every((entry: unknown) => typeof entry === "string")) return null;
+  }
+  if (value.checkpointToken !== undefined && typeof value.checkpointToken !== "string") return null;
+  // Clone the durable snapshot so caller mutation cannot change a later retry.
+  return structuredClone(value) as ResearchAutomationScheduleAttempt;
+}
 
 export type ResearchMission = {
   version: 1;
@@ -267,6 +299,8 @@ export type ResearchMission = {
   startedAt?: string;
   finishedAt?: string;
   automation?: ResearchAutomationLink;
+  /** Written before dispatch; retained on uncertainty, advanced only after rejection. */
+  automationScheduleAttempt?: ResearchAutomationScheduleAttempt;
   /** @deprecated Read automation.id instead. */
   automationId?: string;
   iterations: ResearchIteration[];
@@ -749,6 +783,7 @@ function parseResearchAutomation(value: unknown): ResearchAutomationLink | null 
     || typeof value.checkpointFingerprint !== "string") {
     return null;
   }
+  if (value.revision !== undefined && (typeof value.revision !== "number" || !Number.isSafeInteger(value.revision) || value.revision < 1)) return null;
   const checkpointToken = optionalString(value, "checkpointToken");
   const lastRunId = optionalString(value, "lastRunId");
   const lastRunAt = optionalTimestamp(value, "lastRunAt");
@@ -768,6 +803,7 @@ function parseResearchAutomation(value: unknown): ResearchAutomationLink | null 
     rrule: value.rrule,
     status: value.status as ResearchAutomationLink["status"],
     checkpointFingerprint: value.checkpointFingerprint,
+    ...(typeof value.revision === "number" ? { revision: value.revision } : {}),
     ...(checkpointToken !== undefined ? { checkpointToken } : {}),
     ...(lastRunId !== undefined ? { lastRunId } : {}),
     ...(value.lastRunStatus !== undefined
@@ -818,6 +854,8 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   const startedAt = optionalTimestamp(value, "startedAt");
   const finishedAt = optionalTimestamp(value, "finishedAt");
   const automationId = optionalString(value, "automationId");
+  const automationScheduleAttempt = parseAutomationScheduleAttempt(value.automationScheduleAttempt);
+  if (automationScheduleAttempt === null) return null;
   const lastError = optionalString(value, "lastError");
   const archivedFrom = optionalString(value, "archivedFrom");
   // The mission's runtime must survive a read/write round trip. This parser
@@ -907,6 +945,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(finishedAt !== undefined ? { finishedAt } : {}),
     ...(automation !== undefined ? { automation } : {}),
     ...(automationId !== undefined ? { automationId } : {}),
+    ...(automationScheduleAttempt !== undefined ? { automationScheduleAttempt } : {}),
     iterations: iterations as ResearchIteration[],
     artifacts: artifacts as ResearchArtifactRef[],
     sources,

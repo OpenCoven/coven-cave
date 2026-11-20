@@ -4,8 +4,10 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
+import { readProjectsRetryRoute, discardProjectsRetry } from "@/components/chat-view";
+import type { ProjectsRetryRoute } from "@/lib/chat-projects-retry";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
@@ -82,6 +84,7 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   browseScope?: ChatBrowseScope;
+  browseFilter?: ReactNode;
   composeProjectRoot?: string | null;
   activeFamiliar: Familiar | null;
   activeFamiliarId: string | null;
@@ -91,8 +94,6 @@ type Props = {
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
   sessionsError?: boolean;
-  /** Last load succeeded with local rows only; the daemon was unreachable (#5563). */
-  sessionsDegraded?: boolean;
   /** The list is complete for its scope; gates anything that prunes by it (#5563). */
   sessionsAuthoritative?: boolean;
   familiarsLoaded?: boolean;
@@ -140,6 +141,7 @@ export function ChatSurface({
   familiars,
   sessions,
   browseScope,
+  browseFilter,
   composeProjectRoot,
   activeFamiliar,
   activeFamiliarId,
@@ -148,7 +150,6 @@ export function ChatSurface({
   routerRef,
   sessionsLoaded,
   sessionsError,
-  sessionsDegraded,
   sessionsAuthoritative,
   familiarsLoaded,
   familiarsError,
@@ -177,7 +178,7 @@ export function ChatSurface({
   // reaching into the router for state it is handed anyway.
   const [railActiveSessionId, setRailActiveSessionId] = useState<string | null>(null);
   const { projects, loading: projectsLoading, loadedSuccessfully: projectsLoaded, error: projectsError } =
-    useProjects({ familiarId: activeFamiliarId });
+    useProjects({ familiarId: browseScope?.familiarIds !== undefined ? null : activeFamiliarId });
   const projectOverrides = useProjectOverrides();
   const effectiveBrowseScope = useMemo(
     () => effectiveChatBrowseScope(browseScope, { loaded: projectsLoaded, loading: projectsLoading, error: projectsError }),
@@ -292,6 +293,15 @@ export function ChatSurface({
   // That ordering is right on the Sessions tab, where the session is what the
   // user sees, and wrong everywhere else: from Projects or Familiar the Back
   // press would walk an invisible session trail and leave the strip alone.
+  const [projectsRetryRoute, setProjectsRetryRoute] = useState<ProjectsRetryRoute | null>(null);
+  const previousRetryFamiliarRef = useRef(activeFamiliarId);
+  useEffect(() => {
+    if (previousRetryFamiliarRef.current !== activeFamiliarId) {
+      setProjectsRetryRoute(null);
+      discardProjectsRetry();
+    }
+    previousRetryFamiliarRef.current = activeFamiliarId;
+  }, [activeFamiliarId]);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   useEffect(
@@ -457,6 +467,7 @@ export function ChatSurface({
           pendingChatAction.origin,
           pendingChatAction.initialControls ?? undefined,
           pendingChatAction.initialAttachments ?? undefined,
+          pendingChatAction.initialDraft ?? undefined,
         ),
         0,
       );
@@ -506,8 +517,12 @@ export function ChatSurface({
     // listener isn't mounted yet — consume the retained latch on mount so the
     // Projects tab opens even when the event loses the race (cave-c2zf; same
     // shape as the coven-tab latch below).
-    if (consumeProjectsTabPending()) setScope("projects");
-    const open = () => setScope("projects");
+    const open = () => {
+      consumeProjectsTabPending();
+      setProjectsRetryRoute(readProjectsRetryRoute());
+      setScope("projects");
+    };
+    if (consumeProjectsTabPending()) open();
     window.addEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);
@@ -589,10 +604,9 @@ export function ChatSurface({
             sessions={browseSessions}
             reflectionSourceSessions={sessions}
             sessionsError={sessionsError}
-            sessionsDegraded={sessionsDegraded}
             browseScope={effectiveBrowseScope}
             outOfScopeActiveSession={outOfScopeActiveSession}
-            activeFamiliarId={activeFamiliarId}
+            activeFamiliarId={browseScope?.familiarIds !== undefined ? null : activeFamiliarId}
             activeSessionId={railActiveSessionId}
             onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
             onOpenSessionInSplit={(session: SessionRow) => routerRef.current?.openSessionInSplit(session.id)}
@@ -606,9 +620,9 @@ export function ChatSurface({
       <div ref={contentRef} className="chat-surface__content flex min-h-0 min-w-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Chat keeps Projects discoverable as a first-class tab. The familiar
-            is chosen only at the top of the page, beside the project selector
-            (workspace context switcher / top bar), never inside Chat (#5565). */}
+            Chat keeps Projects discoverable as a first-class tab. The optional
+            browse filter lives here; acting-familiar and project choices for
+            a new chat remain in the launch/composer flow. */}
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           {/* Mobile route to the thread list. Rendered on every viewport and
               hidden by CSS above 1024px, where the docked rail and its spine
@@ -634,13 +648,16 @@ export function ChatSurface({
             value={scope}
             onChange={(s) => {
               selectScope(s);
-              if (s === "conversation") {
+              if (s === "conversation" && !(scope === "projects" && projectsRetryRoute && readProjectsRetryRoute() === projectsRetryRoute)) {
                 window.setTimeout(() => routerRef.current?.goToList(), 0);
               }
             }}
             items={CHAT_SECTION_ITEMS}
           />
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* At 1024px and up the title bar carries these selectors, as on
+                every other page; this copy is for narrower windows (#6478). */}
+            <div className="chat-browse-filter__inline">{browseFilter}</div>
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
                 surface reads as a conversation (Sessions / Projects), and Group
                 — broadcast one prompt to a coven — is a quiet icon here instead.
@@ -684,9 +701,10 @@ export function ChatSurface({
         ) : scope === "familiar" ? (
           // The active familiar's identity + capability surface (hero, role,
           // skills, tools) — a purpose-built first-class chat tab, since it
-          // describes who you're chatting with.
-          <div className="flex min-h-0 min-w-0 flex-1 justify-center">
-            <div className="h-full w-full max-w-7xl">
+          // describes who you're chatting with. It spans the full pane like
+          // the Chats and Projects tabs rather than a centered column.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <div className="h-full w-full min-w-0">
               <ChatFamiliarView
                 familiar={activeFamiliar}
                 familiars={familiars}
@@ -735,12 +753,12 @@ export function ChatSurface({
                   activeFamiliarId={activeFamiliarId}
                   sessionsLoaded={sessionsLoaded}
                   sessionsError={sessionsError}
-                  sessionsDegraded={sessionsDegraded}
                   sessionsAuthoritative={sessionsAuthoritative}
                   familiarsLoaded={familiarsLoaded}
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
                   onRequestNewChat={onRequestNewChat}
+                  initialProjectsRetryRoute={readProjectsRetryRoute() === projectsRetryRoute ? projectsRetryRoute : null}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionsChanged={onSessionsChanged}
                   onSessionsDeleted={onSessionsDeleted}
@@ -815,16 +833,16 @@ export function ChatSurface({
         sessions={browseSessions}
         reflectionSourceSessions={sessions}
         sessionsError={sessionsError}
-        sessionsDegraded={sessionsDegraded}
         browseScope={effectiveBrowseScope}
         outOfScopeActiveSession={outOfScopeActiveSession}
-        activeFamiliarId={activeFamiliarId}
+        activeFamiliarId={browseScope?.familiarIds !== undefined ? null : activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
         onDeleteSession={deleteThreadFromRail}
         onSessionsChanged={onSessionsChanged}
         onOpenUrl={onOpenUrl}
         sections={
+          <>
           <div className="chat-threads-sheet__sections">
             <Tabs<FamiliarsScope>
               bordered={false}
@@ -834,7 +852,9 @@ export function ChatSurface({
               onChange={(s) => {
                 setThreadsSheetOpen(false);
                 selectScope(s);
-                window.setTimeout(() => routerRef.current?.goToList(), 0);
+                if (s === "conversation" && !(scope === "projects" && projectsRetryRoute && readProjectsRetryRoute() === projectsRetryRoute)) {
+                  window.setTimeout(() => routerRef.current?.goToList(), 0);
+                }
               }}
               items={CHAT_SECTION_ITEMS}
             />
@@ -852,6 +872,8 @@ export function ChatSurface({
               <Icon name="ph:users-three" width={16} aria-hidden />
             </button>
           </div>
+          <div className="chat-browse-filter__sheet">{browseFilter}</div>
+          </>
         }
       />
     </section>

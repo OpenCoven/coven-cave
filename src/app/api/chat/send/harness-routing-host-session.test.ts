@@ -201,8 +201,8 @@ assert.match(
 // route asks the same routing helpers through direct-transport-reasoning-gates.
 assert.match(
   chatRoute,
-  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
-  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability",
+  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && !isLocalCodexHarness\(binding\.harness\) &&\s*\n\s*codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
+  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability, and never reaches a local model (#6049)",
 );
 assert.match(
   chatRoute,
@@ -382,7 +382,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
+  /const spawnChild = async \(mode: "gateway" \| "local"\) => \{[\s\S]*?await args\.assertLaunchFoldersUnchanged\(\);[\s\S]*?openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey\)[\s\S]*?spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*?env: openclawEnv,[\s\S]*?shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts, carrying the handoff session key into the CLI fallback",
 );
 
@@ -706,8 +706,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
+  /import \{[^}]*\bchatProjectAccessId,[^}]*\bresumeRootIsRegisteredProject,[^}]*\btaskWorktreeProjectAccessId,?[^}]*\} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots, and the workspace exemption's registry check, through the shared chat-project-access helpers",
 );
 
 assert.match(

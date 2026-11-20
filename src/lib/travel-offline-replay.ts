@@ -2,6 +2,7 @@ import {
   bindingFor,
   completeOfflineTravelItem,
   failOfflineTravelItem,
+  loadConfig,
   markOfflineTravelItemSyncing,
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
@@ -34,6 +35,7 @@ import { runRoutine } from "@/lib/server/coven-automations-client";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
+import { prepareLocalCodexLaunch } from "@/lib/server/local-codex-launch";
 import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
@@ -164,6 +166,15 @@ async function spawnHubSession(args: {
   }
   const projectRoot = normalizeProjectRoot(args.projectRoot ?? process.cwd());
   if (!projectRoot) throw new Error("invalid project root");
+  // Codex local mode (#6049): replay runs the familiar's model on a live
+  // local server, or stops with the reason, like the turn it replays.
+  const localLaunch = await prepareLocalCodexLaunch(
+    harness,
+    args.model ?? (args.familiarId ? bindingFor(await loadConfig(), args.familiarId).model : null),
+    "daemon",
+  );
+  if (localLaunch.local && !localLaunch.ok) throw new Error(localLaunch.message);
+  const launchModel = localLaunch.local ? localLaunch.nativeModel : args.model;
 
   const res = await callDaemon<DaemonSessionResponse>({
     method: "POST",
@@ -172,7 +183,7 @@ async function spawnHubSession(args: {
       projectRoot,
       harness,
       prompt: args.prompt,
-      ...(args.model ? { model: args.model } : {}),
+      ...(launchModel ? { model: launchModel } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
       ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),

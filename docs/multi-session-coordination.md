@@ -191,10 +191,12 @@ guard in `.claude/settings.json`) and — unlike the claim guard — it **blocks
   open offline.
 
 Deliberate destruction: prefix the command with `WT_GUARD_BYPASS=1 ` — the
-guard only ensures it can't happen *by accident*. The corollary discipline for
-sessions: **push your branch to origin after every commit.** The remote is the
-only store a local actor can't destroy, and an unpushed commit is both bait
-for premature merges and the only recoverable artifact afterward.
+guard only ensures it can't happen *by accident*. The remote is the only store
+a local actor can't destroy, so unpushed commits are the work most at risk.
+`scripts/worktree-retention-push.mjs` (§6) now pushes them automatically, as
+the branch itself or as a `retention/<slug>-<sha>` tag. That hook doesn't grant
+push authority: whether a session may push otherwise is set by `AGENTS.md` and
+the current request.
 
 Known hole: the guard only covers actors that run through Claude Code hooks.
 The 2026-07-03 actor left no session transcript (likely a familiar/automation
@@ -223,6 +225,17 @@ not counts) in its notes or issue. Three lines of porcelain is the difference
 between "recovery impossible" and a targeted `lost-found` search — and for
 UNSTAGED edits (which never enter the object store) it is the only record that
 the work existed at all.
+
+### 6. At-risk work hooks — `worktree-autolock.mjs` and `worktree-retention-push.mjs` ✅ IMPLEMENTED
+
+`.claude/settings.json` wires two more advisory hooks next to the surface-claim
+and destructive-op guards. `scripts/worktree-autolock.mjs` (PreToolUse) locks
+worktrees that hold work a removal would destroy, so an actor outside Claude
+Code, such as GitHub Desktop, can't remove them with a single `--force`.
+`scripts/worktree-retention-push.mjs` (PostToolUse) pushes commits that exist on
+no remote: as the branch itself, or as a `retention/<slug>-<sha>` tag when the
+branch's upstream was deleted. Both exit 0. Neither merges, opens a PR, deletes
+a branch, or grants ownership.
 
 ## The PR layer: duplicate publication of the same work
 
@@ -281,7 +294,7 @@ habits above have so far been sufficient.
 
 ## Practical recommendations for sessions
 
-Until any of the above is built, sessions should:
+Signals 1, 5 and 6 are built. Alongside them, sessions should:
 
 1. **Check live sessions before non-trivial work.** `ps -ef | grep ' claude --'`
    plus `lsof -p <pid> | awk '$4=="cwd"'` shows who's where. Five sessions in
@@ -317,8 +330,8 @@ Until any of the above is built, sessions should:
 
 ## Open questions
 
-- Is `.claude/claims.json` worth prototyping, or does worktree-as-default
-  cover enough of the gap?
+- Does the advisory claim hook (§1) catch enough, or is the unbuilt
+  branch-claim mechanism still needed?
 - Does any of this generalise beyond Claude Code? The same failure mode
   could exist for human pair-programming sessions sharing one checkout, but
   humans usually have a Slack channel.

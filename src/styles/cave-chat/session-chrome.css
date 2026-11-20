@@ -79,7 +79,8 @@
   gap: var(--space-2);
   flex: none;
   min-height: var(--space-8);
-  padding: 0 var(--space-4);
+  padding-block: 0;
+  padding-inline: max(var(--space-4), calc((100% - var(--cave-chat-measure)) / 2));
   border-top: 1px solid var(--border-hairline);
   border-bottom: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--foreground) 2%, transparent);
@@ -104,13 +105,12 @@
   margin-left: auto;
 }
 
-/* One tint per element, set by the element’s `is-*` class and read by the dot,
-   the value and the meter fill — so a new tint teaches one place. */
+/* One tint per element, set by the element’s `is-*` class and read by the dot
+   and the value — so a new tint teaches one place. */
 .cave-chat-context-stat,
 .cave-chat-context-breakdown :where(
   .cave-chat-context-breakdown__heading,
-  .cave-chat-context-breakdown__row,
-  .cave-chat-context-breakdown__segment
+  .cave-chat-context-breakdown__row
 ) {
   --ctx-tint: var(--text-muted);
 }
@@ -165,13 +165,8 @@
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
-.cave-chat-context-stat__dot,
-.cave-chat-context-stat__fill,
-.cave-chat-context-breakdown__segment {
-  background: var(--ctx-tint);
-}
-
 .cave-chat-context-stat__dot {
+  background: var(--ctx-tint);
   width: 4px;
   height: 4px;
   flex: none;
@@ -185,22 +180,6 @@
 .cave-chat-context-stat__value {
   color: var(--ctx-tint);
   font-variant-numeric: tabular-nums;
-}
-
-.cave-chat-context-stat__meter {
-  display: inline-flex;
-  width: var(--space-10);
-  height: 4px;
-  flex: none;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--foreground) 12%, transparent);
-}
-
-.cave-chat-context-stat__fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
 }
 
 .cave-chat-context-popover {
@@ -246,22 +225,6 @@
   text-transform: none;
 }
 
-.cave-chat-context-breakdown__bar {
-  display: flex;
-  width: 100%;
-  height: var(--space-3);
-  margin-top: var(--space-3);
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--foreground) 12%, transparent);
-}
-
-.cave-chat-context-breakdown__segment {
-  display: block;
-  min-width: 2px;
-  height: 100%;
-}
-
 .cave-chat-context-breakdown__rows {
   display: grid;
   gap: var(--space-2);
@@ -281,15 +244,6 @@
 .cave-chat-context-breakdown__value {
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
-}
-
-.cave-chat-context-breakdown__note {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-hairline);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  text-align: right;
 }
 
 /* ── ⑤ Suggestions spread the full width ───────────────────────────────────
@@ -322,8 +276,10 @@
   /* The message column is items-end (its action row is right-aligned), so the
      card claims the left edge explicitly rather than floating right. */
   align-self: flex-start;
-  width: 100%;
-  max-width: min(100%, 800px);
+  /* Sized to the message, up to ~80% of the column (#5954): a one-line ask
+     reads as a short card, not a full-width bar. */
+  width: fit-content;
+  max-width: min(80%, 800px);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--bg-raised) 70%, transparent);

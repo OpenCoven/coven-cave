@@ -202,7 +202,7 @@ export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuth
     };
   }
 
-  const tokenPath = path.join(homedir(), ".omnigent", "auth_tokens.json");
+  const tokenPath = path.join(/* turbopackIgnore: true */ homedir(), ".omnigent", "auth_tokens.json");
   try {
     const raw = await readFile(tokenPath, "utf8");
     const data = JSON.parse(raw) as Record<string, unknown>;

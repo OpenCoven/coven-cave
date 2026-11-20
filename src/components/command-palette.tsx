@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
@@ -10,7 +11,6 @@ import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-sc
 import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
-import { MarkdownBlock } from "@/components/message-bubble";
 import { type WorkspaceNavMode } from "@/lib/workspace-navigation";
 import { paletteDestinations } from "@/lib/workspace-destination-policy";
 import { useProjects } from "@/lib/use-projects";
@@ -33,7 +33,6 @@ import {
   type SettingsIndexEntry,
 } from "@/components/settings-sections";
 import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
-import { buildSalemSearchContext, isSalemContextRow } from "@/lib/command-palette-salem-context";
 import {
   broadenToGlobal,
   parseSearchQuery,
@@ -135,7 +134,6 @@ type Row =
   | { id: string; kind: "create-task"; title: string }
   | { id: string; kind: "conversation-hit"; hit: ConversationHit }
   | { id: string; kind: "setting"; entry: SettingsIndexEntry }
-  | { id: string; kind: "salem-answer"; query: string }
   | { id: string; kind: "search-result"; result: GlobalSearchHit };
 
 /** A coordinator result row rendered by the global-search mode (cave-ychtl.6). */
@@ -226,9 +224,6 @@ export function CommandPalette({
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
   const [fsMemory, setFsMemory] = useState<FsMemoryEntry[]>([]);
-  const [salemLoading, setSalemLoading] = useState(false);
-  const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
-  const [salemError, setSalemError] = useState<string | null>(null);
   const [contentHits, setContentHits] = useState<ConversationHit[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [contentError, setContentError] = useState<string | null>(null);
@@ -255,8 +250,6 @@ export function CommandPalette({
   const updateQuery = (next: string) => {
     setQuery(next);
     onQueryChange?.(next);
-    setSalemAnswer(null);
-    setSalemError(null);
   };
 
   const retrySearch = () => {
@@ -493,7 +486,7 @@ export function CommandPalette({
         if (typeof window !== "undefined" && window.location && window.history) {
           const url = new URL(window.location.href);
           url.search = searchQueryToUrlString(state);
-          window.history.replaceState(null, "", url.toString());
+          replaceHistoryUrl(url.toString());
         }
       }
     }
@@ -510,8 +503,6 @@ export function CommandPalette({
     setCategory("all");
     setRecentSearches(readRecentSearches(window.localStorage));
     setActiveIdx(0);
-    setSalemAnswer(null);
-    setSalemError(null);
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
     let cancelled = false;
@@ -586,8 +577,6 @@ export function CommandPalette({
     setQuery(restorable ? restored.text : initialQuery);
     setCategory("all");
     setActiveIdx(0);
-    setSalemAnswer(null);
-    setSalemError(null);
   }, [initialQuery, open]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
@@ -893,16 +882,7 @@ export function CommandPalette({
           ...conversationRows,
         ];
 
-    const salemRows: Row[] = query.trim() && !slashCanonical && !noFamiliarMatch
-      ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
-      : [];
-
-    // Ask-Salem is the FALLBACK row, not the default (cave-42r5): Enter on a
-    // typed query must open the best local match (sessions, familiars, cards,
-    // surfaces), not fire a network AI call. With zero local matches the
-    // Salem row is still rows[0], so unmatched queries keep their one-Enter
-    // AI path.
-    return [...localRows, ...salemRows];
+    return localRows;
   }, [familiars, familiarById, sessions, cards, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
 
   const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
@@ -951,56 +931,7 @@ export function CommandPalette({
     return rest.trim() === "" && resolveFamiliarIds(familiars, token) === null;
   }, [query, familiars]);
 
-  const askSalem = async () => {
-    const message = query.trim();
-    if (!message || salemLoading) return;
-    setSalemLoading(true);
-    setSalemAnswer(null);
-    setSalemError(null);
-    try {
-      // Use the local familiar (the one you're scoped to, falling back to the
-      // Salem persona's familiar if one exists, then ANY available familiar)
-      // so the answer is synthesized through it and the AI credits attribute
-      // to its connected model. No invented ids: when the coven is empty the
-      // request goes familiar-less and the route uses its hosted fallback.
-      const localFamiliarId =
-        activeFamiliarId ??
-        familiars.find((f) => f.id === "salem")?.id ??
-        familiars[0]?.id;
-      const localModel =
-        familiars.find((f) => f.id === localFamiliarId)?.model ??
-        undefined;
-      const res = await fetch("/api/salem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: query.trim(),
-          context: buildSalemSearchContext(
-            rows.filter(isSalemContextRow),
-            query.trim(),
-          ),
-          familiarId: localFamiliarId,
-          model: localModel,
-        }),
-      });
-      const data = (await res.json()) as { reply?: string; error?: string };
-      // If the user kept typing while the request was in flight, ignore the stale result.
-      if ((inputRef.current?.value ?? "").trim() !== message) return;
-      if (!res.ok || data.error) throw new Error(data.error ?? "Salem could not answer.");
-      setSalemAnswer(data.reply ?? "Salem did not return an answer.");
-    } catch (err) {
-      if ((inputRef.current?.value ?? "").trim() !== message) return;
-      setSalemError(err instanceof Error ? err.message : "Salem could not answer.");
-    } finally {
-      setSalemLoading(false);
-    }
-  };
-
   const fire = (row: Row) => {
-    if (row.kind === "salem-answer") {
-      void askSalem();
-      return;
-    }
     const search = query.trim();
     if (search.length >= 2 && row.kind !== "create-task") {
       setRecentSearches(recordRecentSearch(window.localStorage, search));
@@ -1201,25 +1132,6 @@ export function CommandPalette({
             >
               Clear
             </button>
-          </div>
-        ) : null}
-        {salemLoading || salemAnswer || salemError ? (
-          <div
-            role={salemLoading ? "status" : salemError ? "alert" : "region"}
-            aria-label="Salem AI response"
-            // Long answers scroll inside the palette instead of growing it past
-            // the viewport (issue #2988) — mirrors the listbox's own cap below.
-            className="max-h-[45vh] overflow-y-auto border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
-          >
-            {salemLoading ? (
-              <span>Asking Salem through salem.opencoven.ai…</span>
-            ) : salemError ? (
-              <span className="text-[var(--color-danger)]">{salemError}</span>
-            ) : (
-              <div className="salem-msg__md">
-                <MarkdownBlock text={salemAnswer ?? ""} />
-              </div>
-            )}
           </div>
         ) : null}
         {globalModeActive ? (
@@ -1553,18 +1465,7 @@ export function CommandPalette({
                       </span>
                     </>
                   ) : null}
-                  {row.kind === "salem-answer" ? (
-                    <>
-                      <Icon name="ph:sparkle-bold" className="text-[var(--accent-presence)]" width="1.1rem" height="1.1rem" />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[var(--text-primary)]">Ask Salem: {row.query}</span>
-                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                          Salem is the docs familiar — answers from the OpenCoven docs
-                        </span>
-                      </span>
-                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">ask</span> : null}
-                    </>
-                  ) : null}
+
                   {row.kind === "search-result" ? (
                     <>
                       <Icon name={resultIcon(row.result.entityType)} className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" aria-hidden />

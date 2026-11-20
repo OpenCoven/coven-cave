@@ -8,7 +8,7 @@ import { isCovenWikiRelativePath, isCovenWikiSlug, type CovenWikiManifest, type 
 
 // Same root layout as the CLIs. COVENWIKI_WIKIS_DIR corresponds to --wikis-dir.
 export function covenWikiRoot(): string {
-  return process.env.COVENWIKI_WIKIS_DIR || path.join(covenHomePath(), "wikis");
+  return process.env.COVENWIKI_WIKIS_DIR || path.join(/* turbopackIgnore: true */ covenHomePath(), "wikis");
 }
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;

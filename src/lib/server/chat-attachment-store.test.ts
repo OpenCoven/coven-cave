@@ -163,7 +163,7 @@ test("a generic source file round-trips through the durable store", async () => 
   assert.ok(storedId, "saving an allowlisted source file returns an id");
   assert.match(storedId, /\.html$/, "the stored id preserves a safe source extension");
   assert.equal(chatAttachmentMimeType(storedId), "text/html");
-  assert.equal(chatAttachmentMaxBytes(storedId), 20 * 1024 * 1024);
+  assert.equal(chatAttachmentMaxBytes(storedId), 50 * 1024 * 1024);
 
   const read = await readChatImageAttachment(storedId);
   assert.equal(read.mimeType, "text/html");

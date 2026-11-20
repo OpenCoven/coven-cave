@@ -55,11 +55,15 @@ test("the toolbar carries picker, search, tally, and reset", () => {
 });
 
 test("rows cycle a direct grant against /api/project-grants", () => {
-  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, deleteProject \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
+  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, confirmRoot, deleteProject \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
   assert.match(view, /fetch\("\/api\/project-grants", \{ cache: "no-store" \}\)/, "grants snapshot comes from the console API");
   assert.match(view, /method: op\.op === "grant" \? "POST" : "DELETE"/, "grant/revoke map to POST/DELETE");
   assert.match(view, /targetFamiliarId: familiarId/, "mutations target the picked familiar");
-  assert.match(view, /nextAccessState\(row\.state\)/, "click advances the none → read → full cycle");
+  assert.match(
+    view,
+/const blocked = writeBlocked\.has\(row\.project\.id\);[\s\S]{0,200}?nextAccessState\(row\.state, blocked\)/,
+    "click advances the none → read → full cycle, skipping Full on Cave's private state (#6451)",
+  );
   assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
   assert.match(view, /setOptimistic\(/, "mutations render optimistically");
   assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
@@ -104,11 +108,15 @@ test("stale project permissions are visible and repaired only after an explicit 
   assert.match(view, /Stale project permissions repaired\./, "repair completion is announced to assistive technology");
 });
 
-test("the supreme familiar renders locked at Full", () => {
-  assert.match(view, /isSupreme\(familiar\.id, grantsData\?\.supremeFamiliarId \?\? null\)/, "supreme comes from the console API");
-  assert.match(view, /state: "write", direct: "write", groupNames: \[\] \}/, "supreme rows pin to Full");
-  assert.match(view, /supreme familiar — full access to everything, always\./, "explains the lock");
-  assert.match(view, /disabled=\{pending \|\| supreme\}/, "supreme rows don't cycle");
+test("the supreme familiar shows and edits its real grants (#6473)", () => {
+  // The server gives the supreme familiar no access beyond its grants, so
+  // Projects must not paint a synthetic Full or lock its controls.
+  assert.doesNotMatch(view, /isSupreme\(/, "no supreme special case in the access map");
+  assert.doesNotMatch(view, /state: "write", direct: "write", groupNames: \[\] \}/, "no synthetic Full rows");
+  assert.doesNotMatch(view, /full access to everything/, "no all-access note");
+  assert.match(view, /disabled=\{pending\}/, "every row's pill cycles its real grant");
+  assert.match(view, /disabled=\{pendingIds\.has\(row\.id\)\}/, "and so does every tree chip");
+  assert.match(view, /const controlsDisabled = !familiar \|\| busyAll;/, "bulk controls stay available");
 });
 
 test("command-palette focus scrolls and flashes the row", () => {
@@ -155,7 +163,11 @@ test("cards disclose what a level actually permits", () => {
 test("bulk select sets several projects at once", () => {
   assert.match(view, /const \[bulk, setBulk\] = useState\(false\)/, "selection mode is off until asked for");
   assert.match(view, /setSelectedAccess\(target\)/, "the band applies one level to the checked set");
-  assert.match(view, /setAllOps\(ids, directByProject, target\)/, "bulk writes compute the minimal op set");
+  assert.match(
+    view,
+    /setAllOps\(ids, directByProject, target, writeBlocked\)/,
+    "bulk writes compute the minimal op set, giving Cave's private state Read at most (#6451)",
+  );
   assert.match(view, /selectionLabel\(selected\.size\)/, "the band counts the selection");
   assert.match(view, /disabled=\{selected\.size === 0 \|\| controlsDisabled\}/, "an empty selection can't fire a write");
   assert.match(
@@ -218,13 +230,18 @@ test("access controls retain semantic headings and visible keyboard focus", () =
   );
   assert.match(
     view,
-    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\} focus-ring`\}/,
+    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\}\$\{risky \? " is-private-state" : ""\} focus-ring`\}/,
     "row access pills use the shared visible focus ring",
   );
   assert.match(
     view,
-    /className=\{`projects-access-chip\$\{flashId === row\.id \? " is-flash" : ""\} focus-ring`\}/,
+    /className=\{`projects-access-chip\$\{risky \? " is-private-state" : ""\}\$\{flashId === row\.id \? " is-flash" : ""\} focus-ring`\}/,
     "tree access pills use the shared visible focus ring",
+  );
+  assert.match(
+    view,
+    /aria-label=\{risky \? label : undefined\}[\s\S]{0,200}?<Icon name="ph:warning-fill" width=\{12\} className="projects-access-warning" aria-hidden \/>/,
+    "a tree chip with Write on Cave's private state shows a warning and says why (#6451)",
   );
 });
 
@@ -239,16 +256,16 @@ test("pills and states are token-driven for both themes", () => {
   assert.match(css, /\.projects-access-rule \{[^}]*background: var\(--border-hairline\)/, "section rules are hairlines");
 });
 
-test("empty projects offer New project and Ask Salem", () => {
+test("empty projects offer New project without the retired Salem launcher", () => {
   assert.match(view, /Create one here, or register a folder from the chat composer\./, "empty state points at both creation paths");
-  assert.match(view, /Ask Salem/, "projects empty state offers Ask Salem");
-  assert.match(view, /cave:salem-open/, "Ask Salem opens the Salem rail");
+  assert.doesNotMatch(view, /Ask Salem/, "the retired assistant is not offered");
+  assert.doesNotMatch(view, /cave:salem-open/, "projects cannot dispatch the retired assistant");
 });
 
 test("the toolbar creates projects through the one shared add flow", () => {
   assert.match(view, /import \{ useAddProjectFlow \} from "@\/components\/project-picker"/, "creation reuses the shared add-project flow (native dialog + web fallback + grant)");
   assert.match(view, /const addFlow = useAddProjectFlow\(\{[\s\S]{0,200}familiarId: familiar\?\.id \?\? null/, "the new project is granted to the picked familiar");
-  assert.match(view, /createProject, createProjectOrThrow, updateRepoUrl, renameProject, deleteProject \} = useProjects\(\)/, "creation + repo-link + rename/remove mutations come from useProjects");
+  assert.match(view, /createProject, createProjectOrThrow, updateRepoUrl, renameProject, confirmRoot, deleteProject \} = useProjects\(\)/, "creation + repo-link + rename/remove mutations come from useProjects");
   assert.match(view, /useAddProjectFlow\(\{[\s\S]{0,260}createProjectOrThrow,/, "the shared add flow keeps the throwing creation error contract");
   assert.match(view, /onAdded: \(\) => \{[\s\S]{0,120}reload\(\);[\s\S]{0,120}void loadGrants\(\);/, "a successful add refreshes both the registry and the grants snapshot");
   assert.match(view, /className="projects-access-new"[\s\S]{0,220}onClick=\{addFlow\.beginAddProject\}/, "the toolbar exposes the New project button");
@@ -264,6 +281,7 @@ test("each row opens per-project settings with the GitHub repo link", () => {
   assert.match(view, /aria-label=\{`Project settings — \$\{row\.name\}`\}/, "the settings trigger is named per project");
   assert.match(view, /row\.kind === "workspace" \? "ph:folder" : "ph:github-logo"/, "the kind glyph distinguishes workspaces from repositories");
   assert.match(view, /<ProjectSettingsModal[\s\S]{0,160}project=\{settingsProject\}[\s\S]{0,160}onSaveRepoUrl=\{saveRepoUrl\}/, "the modal is wired to the derived project + save handler");
+  assert.match(view, /<ProjectSettingsModal[\s\S]{0,320}onConfirmRoot=\{confirmRoot\}/, "the modal confirms a project's folder through useProjects (#6215)");
   assert.match(view, /const ok = await updateRepoUrl\(id, repoUrl\);/, "saves go through useProjects().updateRepoUrl");
   assert.match(css, /\.projects-access-card \{/, "the card is styled");
   assert.match(css, /\.projects-access-gear \{/, "settings trigger is styled");

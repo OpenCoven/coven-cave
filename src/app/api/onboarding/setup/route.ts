@@ -74,10 +74,10 @@ export async function POST(req: Request) {
 
   const covenDir = covenHome();
   const caveDir = caveHome();
-  const familiarsToml = path.join(covenDir, "familiars.toml");
-  const configJson = path.join(caveDir, "config.json");
-  const conversationsDir = path.join(caveDir, "conversations");
-  const memoryDir = path.join(covenDir, "memory");
+  const familiarsToml = path.join(/* turbopackIgnore: true */ covenDir, "familiars.toml");
+  const configJson = path.join(/* turbopackIgnore: true */ caveDir, "config.json");
+  const conversationsDir = path.join(/* turbopackIgnore: true */ caveDir, "conversations");
+  const memoryDir = path.join(/* turbopackIgnore: true */ covenDir, "memory");
 
   const wrote: string[] = [];
 

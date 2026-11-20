@@ -16,6 +16,7 @@ import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { runtimeEventProtocolSchemas } from "../copilot-stream.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
+import { upstreamFetch } from "./upstream-fetch.ts";
 
 const REGISTRY_REPO = "OpenCoven/coven-runtimes" as const;
 const INDEX_PATH = "crates/coven-runtime-registry/canonical/index.json";
@@ -264,13 +265,14 @@ async function refreshRuntimeCompatibilityOnce(
   options: RuntimeCompatibilityOptions = {},
 ): Promise<RuntimeCompatibilitySnapshot | null> {
   const now = options.now ?? new Date();
-  const fetchImpl = options.fetchImpl ?? fetch;
+  // The endpoint is always a string, so a string-only injected fetch is a
+  // valid stand-in for the global one inside the primitive.
+  const fetchImpl = (options.fetchImpl ?? fetch) as typeof fetch;
   const endpoint = `https://api.github.com/repos/${REGISTRY_REPO}/contents/${INDEX_PATH}?ref=main`;
   try {
-    const response = await fetchImpl(endpoint, {
+    const response = await upstreamFetch("github", endpoint, {
       headers: { accept: "application/vnd.github+json", "user-agent": "coven-cave-runtime-compatibility" },
-      signal: AbortSignal.timeout(2_500),
-    });
+    }, { fetchImpl, timeoutMs: 2_500 });
     if (!response.ok) return null;
     const doc = await response.json() as { encoding?: unknown; content?: unknown; sha?: unknown };
     if (doc.encoding !== "base64" || typeof doc.content !== "string" || typeof doc.sha !== "string") return null;

@@ -18,7 +18,7 @@ import {
   type CanvasArtifact,
 } from "@/lib/canvas-artifacts";
 
-const CANVAS_PATH = path.join(caveHome(), "canvas.json");
+const CANVAS_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "canvas.json");
 
 export type CanvasFile = {
   version: number;

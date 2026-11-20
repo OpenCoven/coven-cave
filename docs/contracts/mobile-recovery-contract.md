@@ -1,6 +1,6 @@
 # Cave Mobile Recovery Contract
 
-Status: proposed executable contract
+Status: historical. Written for #5051, implemented by #5056 and extended by #5270. Current behavior lives in `src/lib/mobile-handoff.ts`, `scripts/mobile-recovery.sh`, and [`mobile-tailscale.md`](../mobile-tailscale.md); the R7 state names and the raw `tailscale serve --bg` command below were never adopted (checked 2026-10-20, #6111).
 
 ## Purpose
 
@@ -69,12 +69,15 @@ Recognized degraded reasons include `tailscale_missing`, `tailscale_stopped`, `t
 2. Verify that backend locally.
 3. Read Tailscale self status and require a running, authenticated tailnet.
 4. Read Serve status if available and compare the configured root proxy target with the expected backend after normalizing `localhost`/`127.0.0.1` and trailing slashes.
+   Only Cave's listeners count: HTTPS on `:443`, plus any port whose handlers proxy to the expected backend. Other ports belong to other apps on the same node. They neither make the route foreign nor get changed (#6518). Config without a readable port stays in scope and fails closed.
 5. If the expected route is already present, mark transport healthy.
 6. Otherwise issue `tailscale serve --bg <expected-backend>`.
 7. If the mutation succeeds, derive the stable MagicDNS HTTPS endpoint from self status even if the follow-up JSON status payload cannot be parsed into the expected schema. Record the mismatch as diagnostic telemetry, not a recovery failure.
 8. If the mutation fails, require an independently observed matching route before declaring success.
 9. Probe the recovered endpoint without logging credentials.
 10. Let the client authentication layer decide whether the existing credential is accepted. If not, surface `pairing_required` and offer the normal signed invite/deep-link ceremony.
+
+Removing Cave's route (app stop or explicit reset) turns off only Cave's listeners, for example `tailscale serve --https=443 off`. It never runs `tailscale serve reset`, which would also remove other apps' ports.
 
 ## Golden scenarios
 
@@ -92,6 +95,7 @@ The implementation is not complete until automated tests cover:
 - transport repaired and existing mobile credential still works;
 - transport repaired but credential is stale, yielding `pairing_required` without another transport-repair loop;
 - a foreign dev server on the stale target port is left untouched;
+- another app's Serve listener on a different port (for example `:9443`) neither blocks recovery nor is removed with Cave's route;
 - diagnostics contain no credential material.
 
 ## Regression from the 2026-08-26 incident

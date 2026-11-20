@@ -1,0 +1,80 @@
+{
+  "base": "510c8f4378bb5d1ec70f334fe0e6729002755d67",
+  "branch": "fix/issue-6195-native-teardown-nova",
+  "files": [
+    {
+      "path": "scripts/native-harness-command.mjs",
+      "baseBlobOid": null,
+      "finalSHA256": "8a1c291c4ac72769b12b9e5bed367bb4a1d4f93d296ecf55f68c52f688e84434",
+      "qualifiedNativeRuntime": true
+    },
+    {
+      "path": "scripts/native-harness-command.py",
+      "baseBlobOid": null,
+      "finalSHA256": "35c0df9a6174d7d0a41a22a27a98b850cee25db20f9958593bc8f467e865a2ca",
+      "qualifiedNativeRuntime": true
+    },
+    {
+      "path": "scripts/native-harness-command.test.mjs",
+      "baseBlobOid": null,
+      "finalSHA256": "74045f1e2b359512d2f64f2e1a1a057b15f2eeebace7e37d2c3f9f8b4606927c",
+      "qualifiedNativeRuntime": false
+    },
+    {
+      "path": "scripts/runtime-activity-native-transport.mjs",
+      "baseBlobOid": "f086d79ee80f719d785c7ff1a52bb724cb5dd7ba",
+      "finalSHA256": "1ab66a2d4ef298a887a8321d07757902200dbb44b7219f2be12f35927e8f110d",
+      "qualifiedNativeRuntime": true
+    },
+    {
+      "path": "scripts/run-tests.mjs",
+      "baseBlobOid": "518bcf333b37e397a290531c71796e0ae1248068",
+      "finalSHA256": "3c8250d5f60ff389476f6417ce900083dc26c5bae736296767fea084a8e70343",
+      "qualifiedNativeRuntime": false
+    },
+    {
+      "path": "docs/superpowers/specs/2026-11-17-native-harness-ownership-design.md",
+      "baseBlobOid": null,
+      "finalSHA256": "255c2aa153faa617d55925082d4f3cfa755cc2dc95c410e1b7bf0268fb80b742",
+      "qualifiedNativeRuntime": false
+    },
+    {
+      "path": "docs/superpowers/plans/2026-11-17-native-harness-ownership.md",
+      "baseBlobOid": null,
+      "finalSHA256": "c560ba4d1bf74cb81c2083782cfb5015282dfd05702e9c58d51d4a6e2dde1827",
+      "qualifiedNativeRuntime": false
+    },
+    {
+      "path": "scripts/ci-paths.mjs",
+      "baseBlobOid": "1739563adbb5bd1f3dea65a49bb750cd07965353",
+      "finalSHA256": "d78d809814eb2cf977309f5847bfbd47a6511416d8ceafcb681baa9dc1e1015b",
+      "qualifiedNativeRuntime": false
+    },
+    {
+      "path": "scripts/ci-paths.test.mjs",
+      "baseBlobOid": "3a066a1c9273b5d539f662e3644bcaa5ea97a8ab",
+      "finalSHA256": "5d7e9fbbbe78f37261f683d0db2c59132ec11e61732d68d1c85fff775f10df72",
+      "qualifiedNativeRuntime": false
+    }
+  ],
+  "qualifiedNativeRuntimeFiles": {
+    "scripts/native-harness-command.mjs": "8a1c291c4ac72769b12b9e5bed367bb4a1d4f93d296ecf55f68c52f688e84434",
+    "scripts/native-harness-command.py": "35c0df9a6174d7d0a41a22a27a98b850cee25db20f9958593bc8f467e865a2ca",
+    "scripts/runtime-activity-native-transport.mjs": "1ab66a2d4ef298a887a8321d07757902200dbb44b7219f2be12f35927e8f110d"
+  },
+  "nativeQualificationWorkingTreeHead": "510c8f4378bb5d1ec70f334fe0e6729002755d67",
+  "nativeQualificationSourceFingerprint": "a05693d6b822b6ded4c62a94dde8e6733bc23c97267e5224254f176fbf193bdf",
+  "postNativeDelta": {
+    "ciRoutingOnly": [
+      "scripts/ci-paths.mjs",
+      "scripts/ci-paths.test.mjs"
+    ],
+    "planMetadataOnly": [
+      "docs/superpowers/plans/2026-11-17-native-harness-ownership.md"
+    ],
+    "validation": "CI15/15, fixture runner/teardown23/23 and final app1528/1528; qualified runtime bytes unchanged",
+    "fixtureArgumentsOnly": [
+      "scripts/native-harness-command.test.mjs"
+    ]
+  }
+}

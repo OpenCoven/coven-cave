@@ -31,7 +31,7 @@ export async function ensureAdapterManifestScaffold(
   if (!scaffold) return false;
 
   const adaptersDir = options.adaptersDir ?? covenAdaptersDir();
-  const manifestPath = path.join(adaptersDir, scaffold.filename);
+  const manifestPath = path.join(/* turbopackIgnore: true */ adaptersDir, scaffold.filename);
   if (await isManifestShadowedByBuiltin(manifestPath)) return false;
 
   // A directory or symlink is an intentional user-owned setup, not a Cave
@@ -40,7 +40,7 @@ export async function ensureAdapterManifestScaffold(
   if (kind === "other") return false;
 
   const shouldRepair = kind === "file" && isLegacyWindowsHermesManifest(
-    await readFile(manifestPath, "utf8"),
+    await readFile(/* turbopackIgnore: true */ manifestPath, "utf8"),
     platform,
   );
   if (kind === "missing" || shouldRepair) {

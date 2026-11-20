@@ -94,6 +94,108 @@ test("managed Node and the Coven CLI install through the reviewed serialized lan
   ]);
 });
 
+test("fresh runtime verification recovers a stale managed-node installer failure", async () => {
+  const starts: string[] = [];
+  let inspections = 0;
+  const inspect = inspectionSequence([
+    inspection("missing", "missing"),
+    inspection("ready", "missing"),
+    inspection("ready", "ready"),
+  ]);
+  const result = await ensureOnboardingCoreTools(async () => undefined, dependencies({
+    inspect: async () => { inspections += 1; return inspect(); },
+    startInstall: async (target) => {
+      starts.push(target);
+      return { status: 202, body: { status: "started", started: true } };
+    },
+    readInstall: (target) => target === "managed-node"
+      ? { status: "done", ok: false, failureCode: "verification_failed", tail: "Node probe timed out" }
+      : { status: "done", ok: true, code: 0, tail: "CLI verified" },
+  }));
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(starts, ["managed-node", "coven-cli"]);
+  assert.equal(inspections, 3, "reuse the recovered inspection and still verify final readiness");
+  assert.equal("diagnostics" in result, false, "successful setup must not retain stale failure diagnostics");
+});
+
+test("managed-node verification failure remains actionable when reinspection is unusable", async () => {
+  const starts: string[] = [];
+  const result = await ensureOnboardingCoreTools(async () => undefined, dependencies({
+    inspect: inspectionSequence([inspection("missing", "missing"), inspection("unusable", "missing")]),
+    startInstall: async (target) => {
+      starts.push(target);
+      return { status: 202, body: { status: "started", started: true } };
+    },
+    readInstall: () => ({ status: "done", ok: false, failureCode: "verification_failed", tail: "Node probe timed out" }),
+  }));
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.code, "verification_failed");
+  assert.equal(result.diagnostics?.components.managedNode, "unusable");
+  assert.deepEqual(starts, ["managed-node"]);
+});
+
+for (const failureCode of [
+  "download_failed", "integrity_check_failed", "archive_failed", "filesystem_failed",
+  "application_data_not_writable", "install_timeout", "unknown_failure",
+] as const) {
+  test(`a ready runtime does not suppress managed-node ${failureCode}`, async () => {
+    const starts: string[] = [];
+    const result = await ensureOnboardingCoreTools(async () => undefined, dependencies({
+      inspect: inspectionSequence([inspection("missing", "missing"), inspection("ready", "missing")]),
+      startInstall: async (target) => {
+        starts.push(target);
+        return { status: 202, body: { status: "started", started: true } };
+      },
+      readInstall: () => ({ status: "done", ok: false, failureCode, tail: "Installation failed" }),
+    }));
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(starts, ["managed-node"]);
+  });
+}
+
+test("recovered managed-node installation still requires final readiness", async () => {
+  const starts: string[] = [];
+  const result = await ensureOnboardingCoreTools(async () => undefined, dependencies({
+    inspect: inspectionSequence([
+      inspection("missing", "missing"), inspection("ready", "missing"), inspection("unusable", "ready"),
+    ]),
+    startInstall: async (target) => {
+      starts.push(target);
+      return { status: 202, body: { status: "started", started: true } };
+    },
+    readInstall: (target) => target === "managed-node"
+      ? { status: "done", ok: false, failureCode: "verification_failed", tail: "Node probe timed out" }
+      : { status: "done", ok: true, code: 0, tail: "CLI verified" },
+  }));
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.code, "verification_failed");
+  assert.equal(result.diagnostics?.components.managedNode, "unusable");
+  assert.deepEqual(starts, ["managed-node", "coven-cli"]);
+});
+
+test("a ready runtime does not suppress CLI verification failure", async () => {
+  const starts: string[] = [];
+  const result = await ensureOnboardingCoreTools(async () => undefined, dependencies({
+    inspect: async () => inspection("ready", "missing"),
+    startInstall: async (target) => {
+      starts.push(target);
+      return { status: 202, body: { status: "started", started: true } };
+    },
+    readInstall: () => ({ status: "done", ok: false, failureCode: "verification_failed", tail: "CLI verification failed" }),
+  }));
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.code, "verification_failed");
+  assert.deepEqual(starts, ["coven-cli"]);
+});
+
 test("only a failed real Cave-owned write probe reports application-data writeability", async () => {
   const result = await ensureOnboardingCoreTools(
     async () => undefined,

@@ -10,7 +10,7 @@ const home = await mkdtemp(path.join(tmpdir(), "cave-board-retention-"));
 process.env.COVEN_CAVE_HOME = home;
 const BOARD = path.join(home, "board.json");
 
-const { deleteCard, restoreCards, loadBoard } = await import("./cave-board.ts");
+const { BOARD_SCHEMA_VERSION, deleteCard, restoreCards, loadBoard } = await import("./cave-board.ts");
 
 const ISO = "2026-08-09T00:00:00.000Z";
 const card = (over: Record<string, unknown> = {}) => ({
@@ -128,7 +128,7 @@ assert.equal((await loadBoard()).cards[0].title, "Rich card", "the live card is 
 
 // ── The board file is still well-formed after all of it ─────────────────────
 const raw = JSON.parse(await readFile(BOARD, "utf8"));
-assert.equal(raw.version, 1);
+assert.equal(raw.version, BOARD_SCHEMA_VERSION, "a version 1 board is upgraded on save (#6258)");
 assert.equal(Array.isArray(raw.cards), true);
 
 console.log("cave-board-retention.test.ts ok");

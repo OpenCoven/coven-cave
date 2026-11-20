@@ -3,8 +3,7 @@
 This project crosses the browser → Cave → isolated Coven daemon boundary without
 route interception. It exercises the three journeys in
 [issue #5256](https://github.com/OpenCoven/coven-cave/issues/5256).
-It is advisory. Scheduling and the 30-day ≥99.5% first-attempt success gate are
-still required before promotion; a local successful run does not satisfy them.
+It is advisory. The scheduled 30-day ≥99.5% first-attempt success gate qualified for 2026-09-22 through 2026-10-21 UTC, as recorded in the [final stability audit](https://github.com/OpenCoven/coven-cave/issues/5256#issuecomment-6329965380). Promotion remains a separate decision; a local successful run does not satisfy the gate.
 
 ## Run
 
@@ -60,12 +59,8 @@ by source SHA, browser, run ID and attempt, and does not upload private fixture
 roots or builder output. Build/setup failures remain failed workflow runs;
 missing journey evidence cannot count as a pass.
 
-The 30-day observation gate remains outstanding until actual scheduled evidence
-establishes it. Audit scheduled Chromium attempts over 30 consecutive days;
-retain failed/missing scheduled executions and count retry-success as failure.
-Keep manual runs, workflow reruns and Firefox/WebKit results separately visible;
-none can replace a failed original Chromium attempt. Record the window, expected
-and observed runs, per-journey first-attempt numerator/denominator, source/pin
-changes, gaps and artifact links on #5256. Missing coverage blocks qualification.
-Promotion to a required check is a separate decision after this audit; this
-workflow does not alter branch protection or claim a qualified stability window.
+The [final stability audit](https://github.com/OpenCoven/coven-cave/issues/5256#issuecomment-6329965380), posted on 2026-10-22, qualified the 2026-09-22 through 2026-10-21 UTC window: 30 expected and 30 observed scheduled runs, one per day, all on attempt 1. Each Chromium journey passed 30/30 times, for 90/90 first-attempt passes (100%), with no missing days, reruns or retry-successes and unchanged Coven, Threads and Cargo.lock pins. The audit links the per-run artifacts and records source changes, artifact integrity, shared run identities and fixture cleanup. Firefox and WebKit each passed 90/90 separately; neither contributes to the Chromium gate.
+
+The qualification rules remain unchanged: audit scheduled Chromium attempts over 30 consecutive days; retain failed/missing scheduled executions and count retry-success as failure. Keep manual runs, workflow reruns and Firefox/WebKit results separately visible; none can replace a failed original Chromium attempt. Record the window, expected and observed runs, per-journey first-attempt numerator/denominator, source/pin changes, gaps and artifact links on #5256. Missing coverage blocks qualification.
+
+Promotion to a required check is a separate decision after the audit; this workflow does not alter branch protection. It currently runs only on schedule and manual dispatch, so promotion also requires a PR-capable gating design. The qualified window does not authorize promotion or a producer re-pin.

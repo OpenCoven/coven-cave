@@ -4,6 +4,6 @@
   "description": "Pins the released Coven CLI that scripts/coven-automations-release-canary.ts drives.",
   "license": "MIT",
   "dependencies": {
-    "@opencoven/cli": "0.4.8"
+    "@opencoven/cli": "0.4.10"
   }
 }

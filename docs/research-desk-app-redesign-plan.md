@@ -12,7 +12,7 @@ of the design file):
 
 | Tab | Design screen | Design lines (markup / logic) | Backing data |
 | --- | --- | --- | --- |
-| Prompt | "New research" | 537–621 / 770–875 | mission create API, `/api/prompt/enhance`, `/api/research/links` |
+| Prompt | "New research" | 537–621 / 770–875 | mission create API, the shared `usePromptEnhance` hook, `/api/research/links` |
 | Desk | "Desk" | 48–259 / 1173–1461 | missions list/detail/actions APIs (existing) |
 | Library | "Library" | 261–307 / 1260–1292 | aggregated `mission.artifacts` across missions |
 | Studio | "Generations" | 309–533 / 877–1109 | NEW `/api/research/generations` |
@@ -155,8 +155,9 @@ the desk's existing `@container` breakpoints (900/760/560).
   the selected mission's latest session. Omit `/task` if there is no real
   board-create API reachable from here (check `src/app/api/board`).
 - Prompt tab: keep `RESEARCH_INTENT_MIN_LENGTH` validation, mode auto-routing
-  (`research-mission-routing.ts`), bounds editor semantics. "✦ Improve" POSTs
-  `/api/prompt/enhance` (existing route) with the draft; "Suggest angles"
+  (`research-mission-routing.ts`), bounds editor semantics. "✦ Improve" uses the
+  shared `usePromptEnhance` hook (the template-only `/api/prompt/enhance` route
+  was retired in #5920); "Suggest angles"
   derives chips from saved links + recent mission titles (real data), not
   canned copy. Mode cards: Brief / Sweep / Paper / Deep loop (display name for
   `autoresearch`). Quick saves list = `/api/research/links`; attaching adds the

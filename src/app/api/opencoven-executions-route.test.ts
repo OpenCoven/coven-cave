@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(
-  new URL("./opencoven/executions/route.ts", import.meta.url),
+  new URL("../../lib/server/opencoven-submissions-runtime.ts", import.meta.url),
   "utf8",
 );
 
-assert.match(source, /export async function POST/);
+assert.match(source, /async function postExecution/);
 assert.match(source, /invalid json body/i, "execution route should guard malformed JSON");
 assert.match(source, /harnessId/, "execution requests should select a harness");
 assert.match(source, /runtimeId/, "execution requests may pin a runtime");

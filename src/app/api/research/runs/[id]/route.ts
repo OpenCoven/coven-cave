@@ -1,36 +1,8 @@
-import { NextResponse } from "next/server";
-
-import { loadResearchRunGateway } from "@/lib/server/research-run-gateway";
-import {
-  authorizeResearchRunRequest,
-  researchRunGatewayErrorResponse,
-} from "@/lib/server/research-run-gateway-route";
+import { dispatchResearchRequest } from "@/lib/server/research-package";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const authorized = await authorizeResearchRunRequest(req, id);
-  if (!authorized.ok) return authorized.response;
-  try {
-    const result = await loadResearchRunGateway(
-      authorized.value.missionId,
-      authorized.value.requestedRunId ?? undefined,
-    );
-    if (!result) {
-      return NextResponse.json({ ok: false, error: "research run not found" }, { status: 404 });
-    }
-    return NextResponse.json({
-      ok: true,
-      run: result.run,
-      lastEventSequence: result.lastEventSequence,
-      nextEventSequence: result.nextEventSequence,
-    });
-  } catch (error) {
-    return researchRunGatewayErrorResponse(error);
-  }
+export function GET(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+  return dispatchResearchRequest("research/runs/[id]", "GET", request, context);
 }

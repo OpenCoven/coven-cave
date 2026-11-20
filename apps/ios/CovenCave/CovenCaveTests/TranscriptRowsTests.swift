@@ -202,4 +202,56 @@ final class TranscriptRowsTests: XCTestCase {
         XCTAssertEqual(thread.transcriptRows.count, 2)
         XCTAssertEqual(thread.transcriptRows.last?.id, "m1")
     }
+
+    // MARK: - Current turn (#5933)
+
+    private func reply(_ id: String, at createdAt: Date) -> DisplayMessage {
+        DisplayMessage(id: id, role: .assistant, familiarId: "nyx", text: "", createdAt: createdAt)
+    }
+
+    func testCurrentTurnStartsAtTheLatestUserMessageAndItsDayDivider() {
+        let cal = utc
+        let rows = TranscriptRow.rows(for: [
+            message("u0", at: date(cal, day: 1, hour: 9)),
+            reply("a0", at: date(cal, day: 1, hour: 9, minute: 1)),
+            message("u1", at: date(cal, day: 2, hour: 9)),
+            reply("p1", at: date(cal, day: 2, hour: 9)),
+        ], calendar: cal)
+        XCTAssertEqual(rows.map(\.id), ["day-u0", "u0", "a0", "day-u1", "u1", "p1"])
+        XCTAssertEqual(TranscriptRow.currentTurnStart(in: rows), 3,
+                       "the new day divider, the sent message and the pending reply stay out of the lazy stack")
+    }
+
+    func testCurrentTurnWithoutADividerStartsAtTheUserMessage() {
+        let cal = utc
+        let rows = TranscriptRow.rows(for: [
+            message("u0", at: date(cal, day: 1, hour: 9)),
+            reply("a0", at: date(cal, day: 1, hour: 9, minute: 1)),
+            message("u1", at: date(cal, day: 1, hour: 10)),
+            reply("p1", at: date(cal, day: 1, hour: 10)),
+            reply("p2", at: date(cal, day: 1, hour: 10)),
+        ], calendar: cal)
+        XCTAssertEqual(TranscriptRow.currentTurnStart(in: rows), 3)
+    }
+
+    func testTranscriptWithoutAUserMessageKeepsOnlyTheLatestRowEager() {
+        let cal = utc
+        let rows = TranscriptRow.rows(for: [
+            reply("a0", at: date(cal, day: 1, hour: 9)),
+            reply("a1", at: date(cal, day: 1, hour: 10)),
+        ], calendar: cal)
+        XCTAssertEqual(TranscriptRow.currentTurnStart(in: rows), rows.count - 1)
+        XCTAssertEqual(TranscriptRow.currentTurnStart(in: []), 0)
+    }
+
+    func testAnUnusuallyLongTurnKeepsABoundedEagerTail() {
+        let cal = utc
+        var messages = [message("u0", at: date(cal, day: 1, hour: 9))]
+        for index in 1...20 {
+            messages.append(reply("a\(index)", at: date(cal, day: 1, hour: 9, minute: index)))
+        }
+        let rows = TranscriptRow.rows(for: messages, calendar: cal)
+        XCTAssertEqual(rows.count - TranscriptRow.currentTurnStart(in: rows),
+                       TranscriptRow.maximumCurrentTurnRows)
+    }
 }

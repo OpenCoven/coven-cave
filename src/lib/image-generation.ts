@@ -33,6 +33,24 @@ export type ImageGenModelOption = {
 };
 
 export const IMAGE_GEN_MODEL_OPTIONS: readonly ImageGenModelOption[] = [
+  // GPT Image 2.5 ships as two API ids; there is no bare `gpt-image-2.5`.
+  // Sunburst is the full model, Flare the small fast one. Both take the
+  // recommended sizes below plus `xhigh`/`max` quality. Sizes above 2560x1440
+  // are experimental upstream, so the picker stops at the recommended set.
+  {
+    id: "gpt-image-2.5-sunburst",
+    label: "GPT Image 2.5 Sunburst",
+    provider: "openai",
+    sizes: ["1024x1024", "1536x1024", "1024x1536", "auto"],
+    qualities: ["medium", "low", "high", "xhigh", "max", "auto"],
+  },
+  {
+    id: "gpt-image-2.5-flare",
+    label: "GPT Image 2.5 Flare",
+    provider: "openai",
+    sizes: ["1024x1024", "1536x1024", "1024x1536", "auto"],
+    qualities: ["medium", "low", "high", "xhigh", "max", "auto"],
+  },
   {
     id: "gpt-image-1",
     label: "GPT Image 1",
@@ -64,7 +82,7 @@ export const IMAGE_GEN_MODEL_OPTIONS: readonly ImageGenModelOption[] = [
 ];
 
 export const DEFAULT_IMAGE_GEN_MODELS: Record<ImageGenProvider, string> = {
-  openai: "gpt-image-1",
+  openai: "gpt-image-2.5-sunburst",
   gemini: "imagen-3.0-generate-002",
 };
 

@@ -14,8 +14,11 @@
  * that `/api/sessions/list`'s 4-second poll is the only thing driving.
  */
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const previousEnv = {
@@ -24,7 +27,17 @@ const previousEnv = {
   CAVE_PROJECTS_PATH_OVERRIDE: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
   CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
 };
-const scratchRoot = path.join(process.cwd(), `.slct-${process.pid}`);
+// Outside any Git checkout (#6231). The default compute enriches rows with git
+// context, so fixtures inside a linked worktree are attributed its branch, and
+// the branch-PR cache's detached refresh runs the login shell and `gh`. The
+// shell probe then persists its answer under COVEN_HOME after a later reset
+// has started removing it.
+const scratchRoot = realpathSync(mkdtempSync(path.join(tmpdir(), "slct-")));
+assert.throws(
+  () => execFileSync("git", ["-C", scratchRoot, "rev-parse", "--git-dir"], { stdio: "pipe" }),
+  (error) => error.code === "ENOENT" || /not a git repository/.test(String(error.stderr)),
+  "the fixture root must not sit inside a Git checkout",
+);
 const covenHome = path.join(scratchRoot, "h");
 const projectsPath = path.join(scratchRoot, "projects.json");
 const permissionsPath = path.join(scratchRoot, "project-permissions.json");
@@ -252,6 +265,7 @@ async function writePermissions() {
 }
 
 const realNow = Date.now;
+let flushSummaryIndex = async () => {};
 try {
   process.env.COVEN_HOME = covenHome;
   delete process.env.COVEN_SOCKET;
@@ -259,12 +273,14 @@ try {
   process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = permissionsPath;
 
   const { computeSessionsList } = await import("./sessions-list.ts");
-  const { saveConversation, clearConversationListMetadataCache } = await import(
+  const { saveConversation, clearConversationListMetadataCache, flushConversationSummaryIndex } = await import(
     "../cave-conversations.ts"
   );
+  flushSummaryIndex = flushConversationSummaryIndex;
   const { clearCaveStoreReadCache } = await import("./store-read-cache.ts");
 
   async function reset() {
+    await flushSummaryIndex();
     await rm(scratchRoot, { recursive: true, force: true });
     await mkdir(covenHome, { recursive: true });
     await mkdir(projectRoot, { recursive: true });
@@ -785,6 +801,8 @@ workspace = "${relocatedProjectRoot}
 } finally {
   Date.now = realNow;
   await stopDaemon();
+  // A scheduled or in-flight summary write must settle before its directory is removed.
+  await flushSummaryIndex();
   for (const [key, value] of Object.entries(previousEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;

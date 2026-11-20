@@ -1,9 +1,9 @@
 {
   "schemaVersion": "opencoven.automation-program-map/v1",
   "programId": "coven-automations-v1",
-  "generatedAt": "2026-09-04T04:39:00Z",
+  "generatedAt": "2026-10-20T09:30:00Z",
   "status": "live-state-audited; seed-sync-evidence-historical",
-  "lastLiveAudit": "2026-09-04T04:39:00Z",
+  "lastLiveAudit": "2026-10-20T09:30:00Z",
   "program": {
     "github": "OpenCoven/coven#854",
     "beadId": "cave-hlv.9",
@@ -71,7 +71,11 @@
       "priority": "P0",
       "github": "OpenCoven/coven#855",
       "beadId": "cave-tm1y0",
-      "state": "in_progress",
+      "state": "closed",
+      "evidence": [
+        "OpenCoven/coven#855 closed (completed) 2026-09-10",
+        "follow-on OpenCoven/coven#1054 (executable command and lifecycle parity) closed (completed) 2026-10-18"
+      ],
       "dependsOn": [
         "foundation"
       ],
@@ -87,7 +91,10 @@
       "priority": "P0",
       "github": "OpenCoven/coven#856",
       "beadId": "cave-1sh6p",
-      "state": "open",
+      "state": "closed",
+      "evidence": [
+        "OpenCoven/coven#856 closed (completed) 2026-09-09; remaining crash, fault, and load proof is tracked under OpenCoven/coven#858"
+      ],
       "dependsOn": [
         "foundation",
         "protocol"
@@ -279,9 +286,10 @@
   },
   "nextAction": {
     "github": [
-      "OpenCoven/coven#855"
+      "OpenCoven/coven#857",
+      "OpenCoven/coven#858"
     ],
-    "description": "Task 1 and program control are closed. Continue OpenCoven/coven#855, currently in progress. Familiar embodiment OpenCoven/familiar-contract#17 and automation authority OpenCoven/coven-threads#29 are closed-verified. OpenCoven/coven#856 remains open and dependency-blocked while protocol work continues; OpenCoven/coven#922 is active work, not terminal evidence."
+    "description": "Protocol OpenCoven/coven#855, scheduler reliability OpenCoven/coven#856, and command parity OpenCoven/coven#1054 are closed. Continue OpenCoven/coven#857 (reopened 2026-09-07; no trusted production adapter yet) and OpenCoven/coven#858 certification. OpenCoven/coven#854 recorded NO-GO on 2026-10-18."
   },
   "tracking": {
     "executionQueue": "GitHub issues (outcomes[].github)",

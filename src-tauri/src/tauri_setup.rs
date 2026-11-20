@@ -33,7 +33,7 @@ mod updater_argument_tests {
     use super::msi_verbose_log_installer_args;
     use std::{ffi::OsStr, path::Path};
 
-    const UPDATER_JOIN_CONTRACT_VERSION: &str = "2.10.1";
+    const UPDATER_JOIN_CONTRACT_VERSION: &str = "2.14.1";
 
     fn locked_updater_package_entry() -> &'static str {
         let mut entries = include_str!("../Cargo.lock")
@@ -71,7 +71,7 @@ mod updater_argument_tests {
             )
         );
 
-        // This mirrors tauri-plugin-updater 2.10.1's `ShellExecuteW`
+        // This mirrors tauri-plugin-updater 2.14.1's `ShellExecuteW`
         // parameter construction. No quotes would split this spaced path, and
         // a second pair would end quote mode and split it as well.
         let parameters = installer_args.join(OsStr::new(" "));
@@ -107,6 +107,34 @@ mod native_startup_terminal_tests {
             NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Unknown)
         );
     }
+}
+
+/// Pop the right Chat panel out into the detached Chat window, on the
+/// familiar and conversation the panel was showing. Only a main window may
+/// ask: the Chat window is launched from the app's own chrome, never from an
+/// embedded browser child or an auxiliary window.
+///
+/// Async on purpose: building a window inside a synchronous command
+/// deadlocks on Windows (WebView2), because sync commands run on the main
+/// thread that window creation needs.
+#[cfg(desktop)]
+#[tauri::command]
+async fn open_chat_window(
+    webview: tauri::Webview,
+    familiar_id: Option<String>,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let app = webview.app_handle();
+    if !is_registered_main_window(app, webview.label()) {
+        log::warn!(
+            "[cave] denied open_chat_window from non-main webview: {}",
+            webview.label()
+        );
+        return Err("the Chat window can only be opened from the main app window".to_string());
+    }
+    // An error reaches the page, so the docked panel stays open instead of
+    // announcing a window that never appeared.
+    show_chat_window_from_main(app, &ChatWindowTarget::new(familiar_id, session_id))
 }
 
 /// Keep the native macOS window controls in sync with the primary side panel.
@@ -174,6 +202,14 @@ fn webview_probe_report(report: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(desktop, target_os = "windows"))]
+    if let Some(code) = startup_failure_dialog::run_fatal_dialog_helper_if_requested() {
+        std::process::exit(code);
+    }
+    #[cfg(all(desktop, target_os = "windows"))]
+    if let Some(code) = windows_update_recovery::run_update_install_watcher_if_requested() {
+        std::process::exit(code);
+    }
     #[cfg(desktop)]
     let context = tauri::generate_context!();
 
@@ -300,9 +336,12 @@ pub fn run() {
             shell_open,
             open_tailscale_app,
             open_x_oauth_url,
+            open_update_release_url,
             shell_open_path,
+            shell_reveal_path,
             shell_pick_directory,
             set_traffic_lights_visible,
+            open_chat_window,
             #[cfg(target_os = "macos")]
             microphone::microphone_permission_request,
             #[cfg(target_os = "macos")]
@@ -325,6 +364,14 @@ pub fn run() {
             retry_sidecar_startup,
             #[cfg(target_os = "windows")]
             cancel_sidecar_startup,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::arm_update_install_recovery,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::disarm_update_install_recovery,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::update_install_outcome,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::clear_update_install_outcome,
         ])
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
@@ -342,6 +389,7 @@ pub fn run() {
     #[cfg(desktop)]
     builder
         .setup(move |app| {
+            let setup_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             // Release builds always get `None` here without touching the
             // network, so this costs a packaged launch nothing.
             let dev_server_url = live_dev_server_url(app);
@@ -443,13 +491,13 @@ pub fn run() {
                 // machine-local copy of daemon state and must not follow a
                 // roaming profile onto another machine.
                 app.state::<Arc<offline_cache::OfflineCacheState>>()
-                    .configure(app_local_data_dir.clone());
+                    .configure(app_local_data_dir.clone(), &app.config().identifier);
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =
-                    sidecar_diagnostics::reset_native_diagnostics_file(&diagnostics_path)
+                    sidecar_diagnostics::retain_native_diagnostics_file(&diagnostics_path)
                 {
-                    log::warn!("[cave] could not reset native diagnostics for this launch: {error}");
+                    log::warn!("[cave] could not retain native diagnostics for this launch: {error}");
                 }
             }
             // The updater's Windows pre-exit path clears the application
@@ -493,9 +541,33 @@ pub fn run() {
                     std::process::id()
                 ));
                 log::info!("[cave] updater MSI log -> {}", log_path.display());
+                // A declined UAC prompt or failed msiexec must relaunch Cave
+                // instead of leaving it closed (#5981). The guard rides the
+                // same resource-table drop that stops the sidecar.
+                let install_watch = Arc::new(windows_update_recovery::UpdateInstallWatch::new(
+                    &app.path().app_local_data_dir()?,
+                    log_path.clone(),
+                ));
+                let _ = app
+                    .resources_table()
+                    .add(windows_update_recovery::UpdateInstallWatchGuard(Arc::clone(
+                        &install_watch,
+                    )));
+                app.manage(install_watch);
                 updater_builder.installer_args(msi_verbose_log_installer_args(&log_path))
             };
-            app.handle().plugin(updater_builder.build())?;
+            // A debug build is never an installed app: `tauri dev` runs the bare
+            // `target/debug/app`, with no .app bundle around it. Handed a
+            // release, the macOS installer took `target/debug` itself for the
+            // bundle and replaced it, deleting the binary and the cargo cache
+            // (and on Windows it would run the release MSI over the installed
+            // app). Debug builds register no updater, so a check or install
+            // from the page fails before anything is downloaded.
+            if cfg!(debug_assertions) {
+                log::info!("[cave] updater disabled: debug builds never install releases");
+            } else {
+                app.handle().plugin(updater_builder.build())?;
+            }
             app.handle().plugin(tauri_plugin_process::init())?;
 
             // Dev builds: when the configured dev server (tauri.conf.json
@@ -513,7 +585,7 @@ pub fn run() {
             } else {
                 #[cfg(target_os = "windows")]
                 {
-                    WebviewWindowBuilder::new(
+                    let window = WebviewWindowBuilder::new(
                         app,
                         PRIMARY_MAIN_WINDOW_LABEL,
                         WebviewUrl::App("startup.html".into()),
@@ -521,10 +593,12 @@ pub fn run() {
                         .title("CovenCave")
                         .inner_size(1320.0, 820.0)
                         .min_inner_size(960.0, 600.0)
+                        .visible(false)
                         .resizable(true)
                         .disable_drag_drop_handler()
                         .build()?;
                     register_main_window(app.handle(), PRIMARY_MAIN_WINDOW_LABEL)?;
+                    windows_window_state::initialize(&window)?;
 
                     let startup_control =
                         Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
@@ -624,6 +698,10 @@ pub fn run() {
                 // `hidden_title` drops the native "CovenCave" label. The web side
                 // renders the centered Coven identity, reserves room for the
                 // traffic lights, and marks the strip as a deep drag region.
+                #[cfg(target_os = "windows")]
+                {
+                    main_window = main_window.visible(false);
+                }
                 #[cfg(target_os = "macos")]
                 {
                     main_window = main_window
@@ -648,6 +726,8 @@ pub fn run() {
                 match main_window.build() {
                     Ok(window) => {
                         register_main_window(app.handle(), window.label())?;
+                        #[cfg(target_os = "windows")]
+                        windows_window_state::initialize(&window)?;
                         #[cfg(not(target_os = "windows"))]
                         if let Some((started, success_evidence)) =
                             pending_native_startup_terminal.take()
@@ -676,6 +756,9 @@ pub fn run() {
                                 ),
                             );
                         }
+                        #[cfg(target_os = "windows")]
+                        return Err(e.into());
+                        #[cfg(not(target_os = "windows"))]
                         fatal_exit(&format!("failed to build main window: {}", e));
                     }
                 }
@@ -694,13 +777,6 @@ pub fn run() {
                 MenuItem::with_id(app, "new_reminder", "New Reminder…", true, None::<&str>)?;
             let quick_chat =
                 MenuItem::with_id(app, "quick_chat", "Quick Chat…", true, None::<&str>)?;
-            let notch_mode = MenuItem::with_id(
-                app,
-                "notch_mode",
-                "Move to Centered Notch",
-                true,
-                None::<&str>,
-            )?;
             let show_app =
                 MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -711,7 +787,6 @@ pub fn run() {
                     &open_inbox,
                     &new_reminder,
                     &quick_chat,
-                    &notch_mode,
                     &separator,
                     &show_app,
                     &separator,
@@ -741,25 +816,6 @@ pub fn run() {
                         }
                     }
                     "quick_chat" => show_quick_chat_from_main(app),
-                    // "Move" the menu-bar icon into the centered notch: the
-                    // notch window appears top-center, the tray icon hides,
-                    // and the choice persists across restarts. The notch's
-                    // own dock button (notch:dock-to-tray) is the way back.
-                    "notch_mode" => {
-                        let Some(url) = preferred_main_window(app)
-                            .and_then(|window| window.url().ok())
-                            .and_then(notch_url_from_main)
-                        else {
-                            focus_main_window(app);
-                            return;
-                        };
-
-                        show_notch_window(app, &url);
-                        if app.get_webview_window(NOTCH_WINDOW_LABEL).is_some() {
-                            save_notch_mode(app, true);
-                            set_tray_visible(app, false);
-                        }
-                    }
                     "show_app" => focus_main_window(app),
                     "quit" => {
                         #[cfg(target_os = "windows")]
@@ -812,68 +868,33 @@ pub fn run() {
                 focus_main_window(&app_handle);
             });
 
-            // Notch state machine — the notch webview only emits intents
-            // (capability loopback-notch.json grants it core:event:allow-emit
-            // and nothing else); the shell owns geometry and tray visibility.
-            // Customizations load from notch-config.json.
-            app.manage(NotchState {
-                expanded: std::sync::atomic::AtomicBool::new(false),
-                config: Mutex::new(load_notch_config(app.handle())),
-            });
-            let notch_expand_handle = app.handle().clone();
-            app.listen("notch:expand", move |_| {
-                set_notch_geometry(&notch_expand_handle, true);
-            });
-            let notch_collapse_handle = app.handle().clone();
-            app.listen("notch:collapse", move |_| {
-                set_notch_geometry(&notch_collapse_handle, false);
-            });
-            // Detach: fold the notch back up and pop the traditional floating
-            // quick-chat window with all its operations.
-            let notch_detach_handle = app.handle().clone();
-            app.listen("notch:detach", move |_| {
-                set_notch_geometry(&notch_detach_handle, false);
-                show_quick_chat_from_main(&notch_detach_handle);
-            });
-            // Dock: move the quick chat back to the menu bar — restore the
-            // tray icon, forget the preference, and close the notch window.
-            let notch_dock_handle = app.handle().clone();
-            app.listen("notch:dock-to-tray", move |_| {
-                save_notch_mode(&notch_dock_handle, false);
-                set_tray_visible(&notch_dock_handle, true);
-                if let Some(window) = notch_dock_handle.get_webview_window(NOTCH_WINDOW_LABEL) {
-                    let _ = window.close();
-                }
-            });
-            // Customizations: the page's toolbar toggle emits notch:config
-            // patches ({"fitMenuBar":bool}); the shell persists them and
-            // re-applies geometry immediately.
-            let notch_config_handle = app.handle().clone();
-            app.listen("notch:config", move |event| {
-                apply_notch_config_patch(&notch_config_handle, event.payload());
-            });
-
-            // Restore the notch presentation on launch when the user left it
-            // enabled — the tray icon stays "moved" until they dock it back.
-            if load_notch_mode(app.handle()) {
-                show_notch_from_main(app.handle());
-                if app
-                    .handle()
-                    .get_webview_window(NOTCH_WINDOW_LABEL)
-                    .is_some()
-                {
-                    set_tray_visible(app.handle(), false);
-                }
-            }
-
             // Last statement in the closure on purpose: every `?` above has
             // already succeeded, so the marker only ever vouches for a startup
             // that actually finished. See announce_startup_completed.
             announce_startup_completed();
 
             Ok(())
+            })();
+            #[cfg(target_os = "windows")]
+            if let Err(error) = &setup_result {
+                // Tauri panics on a setup-hook Err before its outer run result
+                // can handle it. Report here, without depending on WebView2.
+                shutdown_owned_processes(app.handle());
+                let path = app.path().app_local_data_dir().ok()
+                    .map(|dir| dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME));
+                let message = sidecar_diagnostics::startup_failure_message(
+                    &format!("CovenCave could not finish startup: {error}"),
+                    path.as_deref(),
+                    &app.package_info().version.to_string(),
+                    "native-setup",
+                );
+                fatal_exit(&message);
+            }
+            setup_result
         })
         .on_window_event(|window, event| {
+            #[cfg(target_os = "windows")]
+            windows_window_state::on_event(window, event);
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 window
                     .app_handle()
@@ -947,5 +968,15 @@ pub fn run() {
             }
         })
         .run(context)
-        .expect("error while running tauri application");
+        .unwrap_or_else(|error| {
+            #[cfg(target_os = "windows")]
+            fatal_exit(&sidecar_diagnostics::startup_failure_message(
+                &format!("CovenCave could not start its native application: {error}\n\nReinstall or repair CovenCave and try again."),
+                None,
+                env!("CARGO_PKG_VERSION"),
+                "native-build",
+            ));
+            #[cfg(not(target_os = "windows"))]
+            panic!("error while running tauri application: {error}");
+        });
 }

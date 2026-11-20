@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "mode": "cancel",
+  "startedAt": "2026-10-18T08:00:54.917Z",
+  "candidate": {
+    "head": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+    "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+    "runnerSha256": "0d8ef10882679c5ad4adc906e743f91dd3b6a4bfb2397afe0817cd4945f869e3"
+  },
+  "classification": "Production client/send/replay/history; real scratch daemon; controlled Hermes provider and fsynced child-process counter.",
+  "providerRequests": 1,
+  "hostileCallbacks": 0,
+  "checkpoints": [
+    {
+      "label": "actual client completed",
+      "counter": 1,
+      "providerRequests": 1,
+      "sessionId": "native-http-response"
+    },
+    {
+      "label": "actual client reopened history",
+      "counter": 1,
+      "providerRequests": 1,
+      "sessionId": "native-http-response"
+    }
+  ],
+  "requests": [],
+  "timingsMs": {
+    "providerFirstActivity": 0.14437499998894054,
+    "controlledTool": 72.28454199999396
+  },
+  "passed": true,
+  "uiRenderingVerified": false,
+  "omissions": [
+    "UI observations require a separate receipt.",
+    "No real provider, protected authority, human accessibility or physical-device claim."
+  ],
+  "covenVersion": "coven v0.4.9 (engine coven-code 0.8.0, pinned 0.8.0)",
+  "packagedExecutableSha256": "63cadd06118c6c3bfa80b02af94a5ebb895c5632cd257e38864696dbe5f7f6ff",
+  "saved": {
+    "id": "09f25e66-50ad-4f7e-8ce9-542b6961c0c2",
+    "role": "assistant",
+    "text": "Inspecting 🧙 café.",
+    "createdAt": "2026-10-18T08:03:36.539Z",
+    "durationMs": 72728,
+    "isError": false,
+    "cancelled": true,
+    "tools": [
+      {
+        "id": "effect-once-1",
+        "name": "increment_counter",
+        "status": "ok",
+        "input": "{\n  \"path\": \"effect-invocations.jsonl\"\n}",
+        "output": "1",
+        "durationMs": 35231,
+        "textOffset": 19,
+        "activity": {
+          "schemaVersion": 1,
+          "runId": "070bf169-281e-449e-97f6-7675d5b97e6f",
+          "attemptId": "fbfcc7c3-5045-4361-a160-969ccc364859",
+          "callId": "effect-once-1",
+          "phase": "ok",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1792310543532,
+          "updatedAt": 1792310578762,
+          "sequence": 1,
+          "executionObservedAt": 1792310543532,
+          "terminalObservedAt": 1792310578762,
+          "authority": {
+            "binding": "unavailable",
+            "approval": "unavailable",
+            "effect": "unavailable"
+          }
+        }
+      }
+    ],
+    "reasoningBlocks": [
+      {
+        "schemaVersion": 1,
+        "id": "fbfcc7c3-5045-4361-a160-969ccc364859:summary-before",
+        "representation": "provider-summary",
+        "textOffset": 0,
+        "phase": "complete",
+        "disclosure": "display-safe",
+        "observation": {
+          "runId": "070bf169-281e-449e-97f6-7675d5b97e6f",
+          "attemptId": "fbfcc7c3-5045-4361-a160-969ccc364859",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1792310543531,
+          "updatedAt": 1792310543531,
+          "completedAt": 1792310543531,
+          "sequence": 0,
+          "binding": "unavailable"
+        },
+        "text": "Increment the isolated counter once."
+      }
+    ],
+    "progress": [
+      {
+        "id": "familiar-contract",
+        "label": "No familiar identity files found",
+        "status": "notice",
+        "createdAt": "2026-10-18T08:02:23.523Z"
+      }
+    ],
+    "parentId": "10cba5ba-a4e8-4235-b57d-b0ef88e1ba63",
+    "responseMetadata": {
+      "familiarId": "effectfixture",
+      "harness": "hermes",
+      "model": "",
+      "runtime": "local:<scratch>/project",
+      "runtimeIdentity": {
+        "schemaVersion": 1,
+        "harness": "hermes",
+        "version": null,
+        "model": null,
+        "activity": {
+          "schemaVersion": 1,
+          "path": "api",
+          "tools": "supported",
+          "reasoning": "supported"
+        }
+      },
+      "requestedModel": "",
+      "desiredModel": "",
+      "modelSource": "runtime-default",
+      "modelApplicationState": "saved",
+      "modelApplicationReason": "Using the runtime's configured default model for this message."
+    }
+  },
+  "negativeControl": {
+    "counter": 2,
+    "repeatedInvocationDetected": true
+  },
+  "appExit": {
+    "code": null,
+    "signal": "SIGTERM"
+  },
+  "serverStopped": true,
+  "daemonStopped": true,
+  "fixtureRootRemoved": true,
+  "finishedAt": "2026-10-18T08:05:11.568Z",
+  "rawReportSha256": "bf44c5849b7cfc4bd14780ec3ece79659e0d11033cb1678c9d3bc9619f3f6ab3"
+}

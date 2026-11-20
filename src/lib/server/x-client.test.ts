@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { MAX_X_JSON_BYTES, XApiError } from "../x-api.ts";
+import { resetUpstreamHealth } from "./upstream-fetch.ts";
 import {
   createXClient,
   exchangeXAuthorizationCode,
@@ -19,6 +20,9 @@ function clientWith(...responses: Array<Response | Error>): {
   client: XClient;
   requests: RecordedRequest[];
 } {
+  // Each case starts a fresh upstreamFetch episode: a 429 in one case must
+  // not leave the "x" host cooling for the next.
+  resetUpstreamHealth();
   const requests: RecordedRequest[] = [];
   const client = createXClient({
     clientId: "synthetic-client-id",

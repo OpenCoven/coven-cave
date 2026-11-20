@@ -35,8 +35,9 @@ is not proof of a way back.
 ### Recording the rollback-readiness verdict
 
 `rollbackReadiness` is the object that gate resolves to, copied verbatim:
-`{ tag, version, baseline, baselineWaived, platforms, ready }`. Three details
-decide whether the rollout gate can act on it:
+`{ tag, version, baseline, baselineWaived, platforms, missingPlatforms,
+baselineFloor, ready }`. Four details decide whether the rollout gate can act
+on it:
 
 - **`version` is the release being shipped, not the one to roll back to.** The
   rollback target is `baseline.version` (or `baseline.tag`). A state file that
@@ -53,6 +54,14 @@ decide whether the rollout gate can act on it:
   advance; every report then states that there is no rollback target and the
   only remedy is patching forward, and `restore-plan` refuses, because there is
   no prior manifest to restore.
+- **`baselineFloor.clear: false` is also a genuine ready verdict.** The
+  baseline's `package.json` pins a dependency below the #5339 bundled-dependency
+  floor, so restoring it would reinstall what that incident replaced
+  ([readiness runbook](release-rollback-readiness.md#a-baseline-below-the-bundled-dependency-floor-is-recorded-not-refused)).
+  As with the waiver, the rollout may advance, every report says the only
+  remedy is patching forward, and `restore-plan` refuses. A verdict with no
+  `baselineFloor` predates that check: the gate holds and `restore-plan`
+  refuses until you re-run the readiness gate and copy its new verdict.
 
 Two pairings that gate cannot emit are therefore hand-edited files, and the
 rollout gate holds on both rather than guessing which half was meant:
@@ -171,6 +180,8 @@ gate, it is an absent one, and it would have advanced silently.
     "baseline": { "tag": "v0.9.4", "version": "0.9.4", "publishedAt": "2026-07-01T00:00:00Z", "url": "…" },
     "baselineWaived": false,
     "platforms": ["darwin-aarch64", "windows-x86_64"],
+    "missingPlatforms": ["darwin-x86_64", "linux-x86_64"],
+    "baselineFloor": { "clear": true, "versions": { "next": "16.3.8", "sharp": "0.35.5" }, "problems": [] },
     "ready": true
   },
   "metrics": {
@@ -195,6 +206,12 @@ back. "Named" means `baseline.tag` or `baseline.version` — whichever the state
 file records, and the drill prints the tag when there is one, because that is
 what an operator types. The two are decided together, so the drill can never
 be admitted on one field and then printed from the other.
+
+`restore-plan` also refuses a named baseline that isn't recorded as clearing the
+bundled-dependency floor: either `baselineFloor.clear` is `false`, or the
+verdict has no `baselineFloor` at all. A drill rehearses the restore an
+incident would run, and the 2026-09-21 Phase 7 record rehearsed restoring
+v0.4.1, which bundles Next 16.3.1.
 
 The procedure is bounded to three steps, and **only one of them mutates
 anything**:

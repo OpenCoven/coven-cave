@@ -234,6 +234,29 @@ final class PerformanceBaselineUITests: XCTestCase {
         }
     }
 
+    /// VoiceOver names the enlarged image by its markdown alt text (#5314)
+    /// instead of landing on a bare, nameless image.
+    @MainActor
+    func testZoomedImageIsNamedByItsAltText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--performance-instrumentation", "--performance-fixture", "--image-zoom-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 60))
+        openDrawer(in: app)
+        let thread = app.buttons["Fixture chat 2"]
+        XCTAssertTrue(thread.waitForExistence(timeout: 10))
+        thread.tap()
+        let inline = app.webViews.images["Zoom fixture image A"].firstMatch
+        let reachable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: inline)
+        XCTAssertEqual(XCTWaiter.wait(for: [reachable], timeout: 60), .completed, "The fixture image must render in WebKit")
+        inline.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 15), "Zoom must present")
+        let zoomed = app.images["Zoomed image"]
+        XCTAssertTrue(zoomed.waitForExistence(timeout: 10), "The enlarged image must be in the accessibility tree")
+        XCTAssertEqual(zoomed.label, "Zoom fixture image A")
+    }
+
     @MainActor
     private func launchRecoveryFixture() -> XCUIApplication {
         let app = XCUIApplication()
@@ -367,7 +390,7 @@ final class PerformanceBaselineUITests: XCTestCase {
     @MainActor
     private func waitForDestination(in app: XCUIApplication) {
         let navigation = app.navigationBars.containing(.button, identifier: "Open navigation").firstMatch
-        let listOptions = app.buttons["Chat list options"]
+        let headerTitle = app.staticTexts["Chats"].firstMatch
         let window = app.windows.firstMatch.frame
         XCTAssertFalse(window.isEmpty)
         let presented = NSPredicate { _, _ in
@@ -376,12 +399,13 @@ final class PerformanceBaselineUITests: XCTestCase {
                 if !frame.isEmpty && abs(frame.minX - window.minX) < 1
                     && abs(frame.maxX - window.maxX) < 1 { return true }
             }
-            // ChatsHomeView hides its native bar and has a custom header
-            // with a 14-point trailing inset around this 44-point control.
-            if listOptions.exists {
-                let frame = listOptions.frame
+            // The Chats title sits immediately after its leading navigation
+            // control. Wait for the custom header to reach its final position.
+            if headerTitle.exists {
+                let frame = headerTitle.frame
+                let menu = app.buttons["Open navigation"].firstMatch.frame
                 return !frame.isEmpty && window.contains(frame)
-                    && abs(frame.maxX - (window.maxX - 14)) < 1
+                    && abs(menu.minX - (window.minX + 14)) < 1
             }
             return false
         }

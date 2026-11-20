@@ -33,10 +33,14 @@ try {
     ["index/research-resources.sqlite-shm", "shm plaintext"],
     ["index/research-resources.sqlite.corrupt-1", "quarantined plaintext"],
   ] as const) await writeFile(path.join(research, relative), contents);
+  await mkdir(path.join(roots.cave, "claude-authority", "1-turn"), { recursive: true });
+  await writeFile(path.join(roots.cave, "claude-authority", "1-turn", "mcp.json"), "server credentials");
 
   const { isAllowedBackupEntry, listBackupFiles } = await import("./backup-manifest.ts");
   assert.equal(isAllowedBackupEntry("cave", "queue-project.json"), true, "Queue selection is a supported backup entry");
+  assert.equal(isAllowedBackupEntry("cave", "claude-authority/1-turn/mcp.json"), false, "a turn's live credentials are never a backup entry");
   const files = await listBackupFiles(roots);
+  assert.equal(files.some((file) => file.rel.startsWith("claude-authority/")), false, "backups skip a turn's live credentials");
   assert.ok(
     files.some((file) => file.root === "cave" && file.rel === "queue-project.json"),
     "backup collection preserves the Queue-specific project selection",

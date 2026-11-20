@@ -14,7 +14,10 @@ import { CLAUDE_OPUS_5_CAVE_ID } from "@/lib/claude-models";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
+import { buildConnectorsDirective, type TurnConnector } from "@/lib/connectors";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
+import { isProjectlessGenerationOrigin } from "@/lib/chat-origins";
+import type { SessionOrigin } from "@/lib/types";
 
 type ModelRequest = {
   familiarId: string;
@@ -62,6 +65,13 @@ type ResponseControlRequest = {
   modelControls?: ModelControlValues;
   modelOverride?: string;
   modelOverrideScope?: ModelRequest["modelOverrideScope"];
+};
+
+/** Prompt-only inputs. Kept off ResponseControlRequest because the raw send
+ * body also satisfies that type and carries connector ids, not TurnConnectors. */
+type PromptResponseControls = ResponseControlRequest & {
+  /** Connectors the user turned on for this chat, with real availability. */
+  connectors?: readonly TurnConnector[];
 };
 
 
@@ -313,7 +323,11 @@ export function turnRetryModel(input: {
 
 /** Add only explicitly selected prompt-only guidance. Native controls must
  * never be duplicated as prose, and unsupported controls never reach here. */
-export function buildPromptWithResponseControls(prompt: string, body: ResponseControlRequest): string {
+export function buildPromptWithResponseControls(
+  prompt: string,
+  body: PromptResponseControls,
+  opts: { origin?: SessionOrigin | null } = {},
+): string {
   const controls = Object.entries(body.modelControls ?? {});
   const guidance = controls.length > 0
     ? [
@@ -324,8 +338,15 @@ export function buildPromptWithResponseControls(prompt: string, body: ResponseCo
         "",
       ]
     : [];
+  // Projectless generation surfaces (canvas, journal, enhance) take only the
+  // response controls: no chat directives and no per-chat connectors.
+  if (isProjectlessGenerationOrigin(opts.origin)) {
+    return [...guidance, prompt].join("\n");
+  }
+  const connectorsBlock = buildConnectorsDirective(body.connectors ?? []);
   return [
     ...guidance,
+    ...(connectorsBlock ? [connectorsBlock, ""] : []),
     buildNextPathsDirective(),
     "",
     buildCovenMarkersDirective(),

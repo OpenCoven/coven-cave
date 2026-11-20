@@ -107,8 +107,10 @@ const sameInstallCredentialB = {
   id: "44444444-4444-4444-8444-44444444d4d4",
 };
 
+// Timestamps read as relative phrases ("3m ago"); the exact instant rides on
+// the <time dateTime> attribute, which the serialized tree includes.
 function displayTime(value: number): string {
-  return new Date(value).toISOString().replace("T", " ").replace(".000Z", " UTC");
+  return new Date(value).toISOString();
 }
 
 function text(renderer: ReactTestRenderer): string {
@@ -1721,6 +1723,7 @@ describe("SettingsClientAccess", () => {
       "profile",
       "general",
       "voice",
+      "local-models",
       "daemon",
       "mobile",
       "client-access",

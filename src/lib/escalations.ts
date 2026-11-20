@@ -28,7 +28,7 @@ export {
 
 // Storage filename kept as `vals-inbox.json` for backward-compat with
 // existing local installs. Do not rename without a migration step.
-const FILE_PATH = path.join(homedir(), ".coven", "vals-inbox.json");
+const FILE_PATH = path.join(/* turbopackIgnore: true */ homedir(), ".coven", "vals-inbox.json");
 
 type EscalationsFile = {
   version: number;

@@ -1,0 +1,714 @@
+{
+  "implementationCommit": "4907843411867fad32c6da44f622048839728b76",
+  "baseCommit": "ee45870b621812602eb8d11bca3677d7f7a3f257",
+  "recordedAt": "2026-11-12T06:17:25.812310+00:00",
+  "localLogs": [
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-acting-gate-final.log",
+      "bytes": 37,
+      "sha256": "619a90424a0d7110ce7663305744f27f57f6c59a0f0057050f4fd11f398e7087"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-admission-green.log",
+      "bytes": 53,
+      "sha256": "e3d1b2d29891d871b7782850a98e0be4e1886f5437ece5dd26c5865e93969af9"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-admission-red.log",
+      "bytes": 3148,
+      "sha256": "bd6b737fe8a66f76071e9d9e0b6baac94825551db878cf08cb233129f45a2b9b"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-api-clean-home.log",
+      "bytes": 71808,
+      "sha256": "57e1de0a5659e8485f0a8440dc21a2b5febddfc197689459839f11f94a785804"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-api-contracts-fixed.log",
+      "bytes": 50,
+      "sha256": "ae216d26702e41c574c15e6425bb8017e0c2151cefa59fe8df8b06e26891c2a3"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-api-final-short-home.log",
+      "bytes": 391682,
+      "sha256": "eefaece430f5552ca20091d08554af096e27e34ff033316642c7ae06de34dfab"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-api-final.log",
+      "bytes": 176578,
+      "sha256": "e28526ca2b925985955080377149e91fff51ff4643c3957cc5a55909e75d13a7"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-clean-home.log",
+      "bytes": 383340,
+      "sha256": "6290b4e87bad8ff0ffdca66b5e5c6b5431bdd5e7dc3078935e74825437d51ca6"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-complete.log",
+      "bytes": 646819,
+      "sha256": "a12a63543a3eaaa0949225817d9353deebb6e08252b32eafe334fc2416a02066"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-final-all.log",
+      "bytes": 636453,
+      "sha256": "159ae9a88e693dadd2118ad297c7feaf39d61d5f09d0649b7886c1ed84f0f67d"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-final-short-home.log",
+      "bytes": 461803,
+      "sha256": "276875bc7081339ae417cd17d503dddc930ed5970a31cf782ae4f6787d01db19"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-final-tail-2.log",
+      "bytes": 26027,
+      "sha256": "e8099c48073983fae675c30577ff2ae80791565d4b8c4f2dcd61e3f4cbe95b9b"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-final-tail-3.log",
+      "bytes": 33304,
+      "sha256": "d7f718ba25e8dee52cb3172e5997493f25270806d78e5c436d0bb70dc658e700"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-final-tail.log",
+      "bytes": 110230,
+      "sha256": "97d00ba0b36454646b259ef5f9985396ef405aa68781f94a6cd9917f166e5313"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-isolated.log",
+      "bytes": 286590,
+      "sha256": "2fe4f7364b8ac2f81e889b440518a8151aea1d5d3560e213fb15fdb4160b2fb3"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-last-tail.log",
+      "bytes": 19023,
+      "sha256": "ded097df54fad7a54952292ae369b1e1143c85e61a042167536aa8e66be3c5da"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-qualified.log",
+      "bytes": 628807,
+      "sha256": "760f5a0c06aeddbd1bef8cfa393e7863327ffa63cd8e166450cea9602820d0f4"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app-tail.log",
+      "bytes": 43027,
+      "sha256": "e9e19f0fcea88f289e31eee8aadbb88f07df975a6219789b0435a84b1e9c17b4"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-app.log",
+      "bytes": 9356,
+      "sha256": "30b134b2336467f80c7c263e64fa8421ee79a1d13eb2b12f1afa9fa19b806691"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-baseline.log",
+      "bytes": 67,
+      "sha256": "85e9ad53c117baf415b5546a33c1409879d5cfda96f3d2f0c9419c74ce2e3a36"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-all6.log",
+      "bytes": 3155,
+      "sha256": "3749c59c63d0dafa30241602e8d7d4985ed1f099ef399e5c244e9b19cc8cb723"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-desktop-latest.log",
+      "bytes": 4772,
+      "sha256": "9e28470d7aa14c68754aee9fbc8e88f1ea428f1ec66eed82541a29fbb779ed0e"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-final-2.log",
+      "bytes": 24132,
+      "sha256": "5c57689deace3106227a049407eb640a32bd39bca736c5205a94003984690ac0"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-final-all.log",
+      "bytes": 14774,
+      "sha256": "624e797bd34f1c39ffdcb4ba680f6752d0df7284c4412aebb0270a2478a10ff7"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-final.log",
+      "bytes": 28789,
+      "sha256": "86abbf5fea53f481f46dd2f672da4876cdeec4f54aaf795900471678b150b662"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-more.log",
+      "bytes": 2635,
+      "sha256": "09dd7623f0c38268c5221cdce325f941f7e61c761aadfd47f2322d11db90d9df"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-production-final.log",
+      "bytes": 13333,
+      "sha256": "73054d94b07d722fb23b29406601457d27fa07fb18344a3a02926a6bfd60be5f"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-production.log",
+      "bytes": 13332,
+      "sha256": "f6695025073c6d4bfd2c8028ed66762a82787103d24a52a1c64f38064c7ac7cb"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-qualified.log",
+      "bytes": 13864,
+      "sha256": "60a8b69e1ec21586f8b7e88f9512e619c1be1b35db5f7258a52a359b68b7baa6"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-red.log",
+      "bytes": 16776,
+      "sha256": "94839455838165f9ccecffea912d5e3bf8c2b20f868e59b0b7652dd5ecea9b96"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-retention.log",
+      "bytes": 7573,
+      "sha256": "4fe17140c221de4c4a3af1fc041ced38a2e8a4e9487cd5029bfdb288074bb33a"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-three.log",
+      "bytes": 10228,
+      "sha256": "abe633566c20d75eb506506e20dd428d6358ab6cbf0e5083dcb69d6fce3ddae4"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-ui.log",
+      "bytes": 3317,
+      "sha256": "fe921a0d11e1c72d3e535760c3967758da9ca9760e234ddf2702503d519a9dad"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-browser-ui2.log",
+      "bytes": 1778,
+      "sha256": "4cb0b50aa4b2b0968b4070aaa43c1257295764411c3aefe460b279f2d2f951cd"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-build-final.log",
+      "bytes": 15789,
+      "sha256": "3eb27c20f015ebefe604be4742bc2ef5d704fe7ca920b24cece55a8868515d10"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-build-qualified.log",
+      "bytes": 15788,
+      "sha256": "30e70f41b07a90b41a1f48fbe202f005c9da08d19ca2a0c5a7311aa0f7c892cc"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-build.log",
+      "bytes": 15791,
+      "sha256": "facd1f8d29d0679a5c2087e942dec441a0cf9a9a8513d4719e4564d66c683c52"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-conflicts.log",
+      "bytes": 210,
+      "sha256": "8d41d3ecf4dd010a2f7e33dee9af14af3f756fb11016ed52c5b8bfb3fc7354d4"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-context-repair-red.log",
+      "bytes": 1886,
+      "sha256": "823d7bea87245a2ca19d6a02a7e7befd1305018d21b6b05526efafc9b195c55a"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-eslint-current.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-eslint-ui.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-execution-red.log",
+      "bytes": 1297,
+      "sha256": "b5d18e300757047f5778d2d65e0b67a1215fd470400f75b2429b6156ac31596f"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-extra-entry-2.log",
+      "bytes": 4664,
+      "sha256": "6ed84414992baa406ae70f02ebdd01b778b46181ca0e9d4d331766c841f70943"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-extra-entry-3.log",
+      "bytes": 1835,
+      "sha256": "ba2699164fafe223cc3856abfb863cf0d452fd26789a0ed584b4c3064aa888c3"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-extra-entry.log",
+      "bytes": 4828,
+      "sha256": "3cfbfc8c0206514d3b061030586f066739fe196e10a3b883cb65feb316d52edf"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-first-send-red.log",
+      "bytes": 2718,
+      "sha256": "1351ca221bbc2ae314e948442963276f6e178324873ed0d78b4b4694aa71e049"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-first-use-green.log",
+      "bytes": 4484,
+      "sha256": "2268a26328d610e20e95571e4636a420c76af9f5bda3beb3d7edeadb18e18947"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-first-use-red.log",
+      "bytes": 1267,
+      "sha256": "760f89dcc7fbe9c86195fc13dde58f151036aaeed98575e85d21e58bfe0defab"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-grants-green.log",
+      "bytes": 733,
+      "sha256": "eb2a181932c0559c5df2466fd06d59ecec0339ffa7229a19926656b6aaee9b36"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-grants-red.log",
+      "bytes": 2242,
+      "sha256": "37c920cf32776c6f92d7838d4199940f023f3c2b1b59710437e4a28d1145b92e"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-guide-and-task-red.log",
+      "bytes": 4645,
+      "sha256": "648d3bed5aa7819a3c5ff1c45708b9977bd2e185a478c0866cf8abc08e674b94"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-guide-review-green.log",
+      "bytes": 4392,
+      "sha256": "a8551c6471563d7f5301a66c3088faa1bcadace8e2cfe7daf4c2f17f2912876b"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-guide-review-red.log",
+      "bytes": 5400,
+      "sha256": "7094ef6bcdf0952f0f79a2eb5afa6d07edebd87ffb722eb5e14fe0d43731e9f1"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-handoff-contract-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-hook-final.log",
+      "bytes": 275,
+      "sha256": "e1e43703739dfd1214816140d7d0c8aa14ed2f1bcfb157ad800544f55108e10b"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-hooks.log",
+      "bytes": 39,
+      "sha256": "b04e1ee39ce61ce0afdc2307a4cfc46f3f04c30daeb73061dfc1d7591674b856"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-install.log",
+      "bytes": 5169,
+      "sha256": "bd09d040003fc0da43ed4eb7c5d1ce198ca3413919ba448ab7feed8a5e4d5d2b"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-iphone-cycle-green.log",
+      "bytes": 1313,
+      "sha256": "a161b28647795dcaba6b9ee52aa55a340a7389a252f7e954a62c0c47a59537ea"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-iphone-focus-contained.log",
+      "bytes": 2387,
+      "sha256": "37d601e044bdee223652fbd2a163d36f0b23c4c4f9ebd76a5732550af71a327f"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-iphone-focus-diagnostic.log",
+      "bytes": 2975,
+      "sha256": "9599bcb5606b05b340e2831f9fde3a176932b09299508ebbe5587587b036376e"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-iphone-select-focus.log",
+      "bytes": 2574,
+      "sha256": "afcf7dda58f49b5d6aafd9b24909da875629b0e3211caca8b09721b353b7cf80"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-legacy-gate-final.log",
+      "bytes": 964,
+      "sha256": "35997cee67206d1e0273b46d34768d6dd2640c112001f70832011386dcb2ef20"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-lint-final-2.log",
+      "bytes": 1361,
+      "sha256": "f0470dbd045f5346524fbddcbc73200e1f7f111db3e4e702592509dc9b92faae"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-lint-final-3.log",
+      "bytes": 1361,
+      "sha256": "f0470dbd045f5346524fbddcbc73200e1f7f111db3e4e702592509dc9b92faae"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-lint-final-4.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-lint-final.log",
+      "bytes": 1820,
+      "sha256": "88ba5727ea3ffd37faae9d26900fd8c6d177c2ea431e7d435bdc3cf30c5974f6"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-lint-qualified.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-lint.log",
+      "bytes": 1361,
+      "sha256": "dfefb1feee205c76dcaef69bca8aff0ac56723a94715f8b7f4f4624cfd3744e0"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-manual-server.log",
+      "bytes": 590,
+      "sha256": "2b7dcd58f849c68e7277f42f9d5f1be3f36e2b1b4dd819beaca12d0af59dc7a2"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-mobile-clean-home.log",
+      "bytes": 16030,
+      "sha256": "c4d5cafc84872221d302837080a5500dc05b8f26d046d9b33cf279659c1af38f"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-mobile-controls-final.log",
+      "bytes": 6561,
+      "sha256": "0267c0a4b2109a26d428684094d6e5a1397bb6ba7703aa7f2367877b0eda0451"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-mobile-final-2.log",
+      "bytes": 3556,
+      "sha256": "cba0d7b3437fd0a1a88b722d836645033aaa32aa0f70b3fd298973f44fd61b07"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-modal-contract-final.log",
+      "bytes": 18,
+      "sha256": "fd17a4358e5fb82ec5bcbd94730bf4fc8929ced8a5fc9e02d6252316d2d0545a"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-model-final.log",
+      "bytes": 802,
+      "sha256": "6e3be614558521fa36df3c18e3adc1d2f75549630e77896a70a4bb97bd313b68"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-old-context.log",
+      "bytes": 13565,
+      "sha256": "9f0fe77d2215501bb69c1032565384b651db42040f21b53c7109099b0dd806eb"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-old-context2.log",
+      "bytes": 51,
+      "sha256": "6f55edbb7d34749323e30afb1eaf9975377640a2355810b2698541d732cb09e0"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-panel-repair-final.log",
+      "bytes": 1471,
+      "sha256": "777708e766d29173a289ec3122aedcee06ec8225de5173bf8f9657ec868f7f1d"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-pending-red.log",
+      "bytes": 6485,
+      "sha256": "148993e8523106a77c73c9ea1ca63e5cb099d1789e15e0680af08c0f9df5fa56"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-plan-final.log",
+      "bytes": 532,
+      "sha256": "5950feac20177f5ee7343cfd99a6f4bf55ee1c475fc6d27fc9e80081e37a7272"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-prefs-final.log",
+      "bytes": 316,
+      "sha256": "c3add7e09c776447af30c19598bb6751e40539b191c09e7787ffe986ea57a96f"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-provider-race-green.log",
+      "bytes": 270,
+      "sha256": "b564dacc47fe2cb931bdcfe4b7afb87c7e843c92e4daf94e3dd56fae4ae2e395"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-provider-race-red.log",
+      "bytes": 1425,
+      "sha256": "e8f180dd65dac5bb2cb26e477533198e989ef665db3391bdfe0a23bcf5ff9b5e"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-controls-final-2.log",
+      "bytes": 13314,
+      "sha256": "1941b5fe56d71e4fa5cd29524182a2cf3309493a85ab424d4629d9350b598fcc"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-controls-final-3.log",
+      "bytes": 31,
+      "sha256": "4e030cddec7a244ec4a556f5e1fc6dcc8d686fa07532c3cf7045dbd345fa0fde"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-controls-final.log",
+      "bytes": 13857,
+      "sha256": "5537f93aa1b954fbe679967aa89f8a256331ef9adfaf597cbf1c300c326d7f9a"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-green-2.log",
+      "bytes": 150,
+      "sha256": "06bd1ae1fc259c064166e278880ee041485c9c7fae356f53e8c2db0a1b717b74"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-green-3.log",
+      "bytes": 7474,
+      "sha256": "afd1817caf0b2caa4cad351b70301423f365f04a3f238f08a36faf69780222ce"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-green-4.log",
+      "bytes": 2437,
+      "sha256": "e0c16961d3a1e1db79f1c47081a197b7b0c93bce1c35b245f8140c955740e932"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-green.log",
+      "bytes": 150,
+      "sha256": "06bd1ae1fc259c064166e278880ee041485c9c7fae356f53e8c2db0a1b717b74"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-hook-2.log",
+      "bytes": 274,
+      "sha256": "3ba4cd309ec70463211f494b1b19e3a2486d41282014ff98ef61387f00967941"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-hook.log",
+      "bytes": 6996,
+      "sha256": "4354c1ac21e2ec14f097e5e080a6d651110fb254859a34a680d2b8c83398d479"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-red.log",
+      "bytes": 7668,
+      "sha256": "dd6dd7e74cce82d592b3c965443a0d7b01c3b0430bb184194547ccb8364564af"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-quick-target-final.log",
+      "bytes": 661,
+      "sha256": "5902aa8df383f586155aaf45a053717297d479bd90f93e410448ce68dd4eb282"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-removed-familiar-red.log",
+      "bytes": 2837,
+      "sha256": "50302b3b6f8230edeae32fd5c39644f7b59c108cc82038966d6f476d84573c40"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-review-2-green.log",
+      "bytes": 1963,
+      "sha256": "62f3d5cc8c941345b203e39e6144965bf92e7fb22dd7ff1a4295a8b8d1ff60e0"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-review-2-red.log",
+      "bytes": 6771,
+      "sha256": "5c33212c656098207468d38be0d3c40fa414dfba1d15b67f1676ace4e21f26db"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-review-3-green.log",
+      "bytes": 275,
+      "sha256": "01fedf3f3ba3b97c5b90a98c053c8a97ee9faf667350f7dd21006441208ba1dd"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-review-3-provider-red.log",
+      "bytes": 2140,
+      "sha256": "c54913d07930109d0599ea6246ce41dac46266b7b0418bfe9372e404155f5f3b"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-review-3-skill-red.log",
+      "bytes": 2342,
+      "sha256": "743cb80e20cf64ece0d5ef39b8931b84e00dbfd27165c6e0a29625a237651166"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-route-final.log",
+      "bytes": 231,
+      "sha256": "f4c5d75e16bffe4e145c99e5d0216e4fc4ec7d96af8ebde9ae6f910a81b3bd92"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-route-full.log",
+      "bytes": 233,
+      "sha256": "cc4c051fd314c87e715bc054159562ea85fa9392ee1c78cb99e63df610a65d2f"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-route-green.log",
+      "bytes": 233,
+      "sha256": "b2fa99900fb595897b2ce97c0afbc3a0a59b644571967a2872f56d9f9ce1d485"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-route-red.log",
+      "bytes": 1771,
+      "sha256": "3681c50916228565de5ac9532f278f06c279c5710729947455ea3363f363f728"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-store-final.log",
+      "bytes": 402,
+      "sha256": "b6e8230c50f27cd1ea75a198cc8d5ec9de4b054b853df7689f58cdfce34b5877"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-store-process-green.log",
+      "bytes": 402,
+      "sha256": "7f7887cd432a6bacdc4f422744246d41bab08e85d4898a662901b4af8c8846b8"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-store-process-red.log",
+      "bytes": 1203,
+      "sha256": "32e149e391f8bac03a1c7143cf799f73a75a88d193cb922e891b0c4f6f276a05"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-store-red.log",
+      "bytes": 1306,
+      "sha256": "8a9ee01b4c27cab12b998c903e3d929c9e6e69e8ae28b99acfcc2c2892b8bd9d"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-task-red.log",
+      "bytes": 150,
+      "sha256": "06bd1ae1fc259c064166e278880ee041485c9c7fae356f53e8c2db0a1b717b74"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-task-red2.log",
+      "bytes": 2615,
+      "sha256": "7d5b15cc81d7e13d2ab41122c7d43494e8027df060b641f0d2248a075b721169"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-tokens.log",
+      "bytes": 369,
+      "sha256": "d63706caf6567ffaa138d690e6c2cb6af0bf66f5b9e504fe1a812a3db1443431"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-tray-contract-final.log",
+      "bytes": 27,
+      "sha256": "b9913675a2296c6f2c8c4c75f9a7d44690da699fd07d694e26def6b66c13f757"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-typecheck-qualified.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-context.log",
+      "bytes": 646,
+      "sha256": "cc05f8f8d0de07caf1d77708f330faa0d55dc4a39a2a6f0bb603ee112f85c8d4"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-current.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-final-2.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-final-3.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-latest.log",
+      "bytes": 404,
+      "sha256": "ee6653cb4ab9dff275cdb8e822e4b31b93b2017dd52c0b93a22923048908a622"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-quick.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-review-2.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-review-3.log",
+      "bytes": 121,
+      "sha256": "81ebed6c7569a337865177d344482a439d6df06956320560a0641eede295f949"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-review-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types-ui.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-types.log",
+      "bytes": 113,
+      "sha256": "4b08296a676793aad34f01ffc26cfbd72957b0eaf044efd0c59886152d2c8177"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-ui-consistency.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-ui-final-2.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-ui-final-3.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-ui-final.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-ui-qualified.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-voice-contract-final.log",
+      "bytes": 1945,
+      "sha256": "f5ecad9da59acf0e21b3cc15afafa3507bf13908f0b5bd8b539d70e841a289b3"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-webkit-draft-probe.log",
+      "bytes": 2267,
+      "sha256": "6af6ada6cdf1607e3d7e7c727cc6dfa97cae655d87bd6a609d84ffaa0490ed32"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-wiring-final-2.log",
+      "bytes": 204,
+      "sha256": "397b4763a91f70cb0c6ef4f3cf55d9941c307a4d64d920ad19dd1d35fb555e24"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-wiring-final-3.log",
+      "bytes": 204,
+      "sha256": "397b4763a91f70cb0c6ef4f3cf55d9941c307a4d64d920ad19dd1d35fb555e24"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-wiring-final.log",
+      "bytes": 204,
+      "sha256": "397b4763a91f70cb0c6ef4f3cf55d9941c307a4d64d920ad19dd1d35fb555e24"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-wiring-latest.log",
+      "bytes": 204,
+      "sha256": "962a615350b050dd38f700e0f0982928e4cdeb50d238ef72222a2d1e2e5a62e7"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-wiring-qualified.log",
+      "bytes": 204,
+      "sha256": "397b4763a91f70cb0c6ef4f3cf55d9941c307a4d64d920ad19dd1d35fb555e24"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-wiring.log",
+      "bytes": 204,
+      "sha256": "96a7b0273d8383081c0ba1dc042c713c8f85ffbcfd3f6c0145d27fcc8b296e20"
+    },
+    {
+      "file": "artifacts/issue-6458/logs/cave-6458-worktrees-final.log",
+      "bytes": 2727,
+      "sha256": "b054dc7ba44d8d9446919c4e5f0020d76c6f1b4111f8e1f2d4eb62e6b3717929"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "delivery-receipts/issue-6458/guide-narrow-coven-dark.png",
+      "bytes": 225854,
+      "sha256": "0d19cbfdbff5310496021b8fd3db7ef3306e166c3b233110e5ec1f6ab00350e3"
+    },
+    {
+      "file": "delivery-receipts/issue-6458/guide-narrow-coven-light.png",
+      "bytes": 266908,
+      "sha256": "cc7236a05dae3f6f9e98a606f4fc79aa384bf0ddf4b7c2cfae00cc35ca3ef043"
+    },
+    {
+      "file": "delivery-receipts/issue-6458/guide-narrow-tide-dark.png",
+      "bytes": 230681,
+      "sha256": "778a0962e0d42f5c1c06cd76b9ed98e203a1b65ea634a15d3d315abc0e187271"
+    }
+  ]
+}

@@ -11,6 +11,11 @@ import {
   type OnboardingBootstrapState,
   type OnboardingBootstrapStageStatus,
 } from "@/lib/onboarding-bootstrap";
+import {
+  publishOnboardingBootstrapState,
+  setOnboardingDialogOpen,
+} from "@/lib/onboarding-bootstrap-status";
+import { clearSetupBackgrounded, markSetupBackgrounded } from "@/lib/setup-events";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
@@ -93,10 +98,32 @@ export function OnboardingOverlay({
     }
   }, []);
 
-  const dismiss = useCallback(() => {
-    if (!state.confirmed) persistDismissal();
+  // Backgrounding keeps the server-owned run going and arms the shell banner
+  // trigger (#5982). The latch is retained on `window` because the startup
+  // gate mounts the Workspace only after this dialog is dismissed.
+  const runInBackground = useCallback(() => {
+    markSetupBackgrounded();
     onDismiss();
-  }, [onDismiss, persistDismissal, state.confirmed]);
+  }, [onDismiss]);
+
+  const dismiss = useCallback(() => {
+    if (state.status === "running") {
+      runInBackground();
+      return;
+    }
+    onDismiss();
+  }, [onDismiss, runInBackground, state.status]);
+
+  const suppressAutomaticSetup = useCallback(() => {
+    try {
+      localStorage.setItem("cave:setup:suppressed", "1");
+    } catch { /* storage unavailable */ }
+    try {
+      document.cookie = "cave_setup_suppressed=1; Path=/; Max-Age=31536000; SameSite=Lax";
+    } catch { /* cookies unavailable */ }
+    announce("Automatic setup prompts turned off.");
+    dismiss();
+  }, [announce, dismiss]);
 
   const finish = useCallback(() => {
     persistDismissal();
@@ -142,6 +169,7 @@ export function OnboardingOverlay({
             : "setup request failed");
         }
         setState(json);
+        publishOnboardingBootstrapState(json);
         setRequestError(null);
         return json;
       } catch (error) {
@@ -177,6 +205,23 @@ export function OnboardingOverlay({
     if (!open || initialState) return;
     void request("GET");
   }, [initialState, open, request]);
+
+  // Only server-resolved states reach the shared status store: the local
+  // default is a placeholder, not a reading, and would mask a live run.
+  useEffect(() => {
+    if (initialState) publishOnboardingBootstrapState(initialState);
+  }, [initialState]);
+
+  useEffect(() => {
+    setOnboardingDialogOpen(open);
+    return () => setOnboardingDialogOpen(false);
+  }, [open]);
+
+  // The open dialog already shows completion, so a backgrounded run that
+  // finishes in view must not also raise the "Cave is set up." banner.
+  useEffect(() => {
+    if (open && state.complete) clearSetupBackgrounded();
+  }, [open, state.complete]);
 
   useEffect(() => {
     if (!open || !state.failure?.diagnostics) setDiagnosticsOpen(false);
@@ -238,6 +283,7 @@ export function OnboardingOverlay({
 
   return (
     <>
+      <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop-scrim)] p-4">
       <div
         ref={dialogRef}
         role="dialog"
@@ -245,7 +291,7 @@ export function OnboardingOverlay({
         inert={diagnosticsOpen || undefined}
         aria-label="Set up Cave"
         tabIndex={-1}
-        className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[color-mix(in_oklch,var(--bg-base)_94%,transparent)] p-4 backdrop-blur-sm"
+        className="max-h-full min-h-0 w-full max-w-2xl overflow-y-auto rounded-[var(--radius-panel)]"
       >
       <section className="w-full max-w-2xl rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-[var(--shadow-elevated)]">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-hairline)] p-5">
@@ -295,6 +341,7 @@ export function OnboardingOverlay({
               </li>
             ))}
           </ol>
+
 
           {running ? (
             <div className="grid gap-1 rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] p-3 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
@@ -381,18 +428,28 @@ export function OnboardingOverlay({
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-hairline)] p-5">
           <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {state.complete
-              ? "Cave is ready."
+              ? "Local setup is complete. Choose your assistant next."
               : running
-                ? "Setup continues if you close this window."
+                ? "Setup continues if you close this dialog."
                 : started
                   ? "Setup is ready to resume."
                   : "No provider credentials or administrator access are requested."}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" onClick={suppressAutomaticSetup}>Don’t show again</Button>
+            {state.complete ? (
+              <Button
+                variant="secondary"
+                loading={loading}
+                onClick={() => void request("POST", { confirm: true })}
+              >
+                Run setup again
+              </Button>
+            ) : null}
             {!started && !state.complete ? (
               <>
                 <Button variant="ghost" onClick={dismiss}>
-                  Not now
+                  Close
                 </Button>
                 <Button
                   variant="primary"
@@ -407,13 +464,14 @@ export function OnboardingOverlay({
                 Open Cave
               </Button>
             ) : running ? (
-              <Button variant="secondary" onClick={onDismiss}>
+              <Button variant="secondary" onClick={runInBackground}>
                 Run in background
               </Button>
             ) : null}
           </div>
         </footer>
       </section>
+      </div>
       </div>
       {state.failure?.diagnostics && diagnosticsOpen ? (
         <OnboardingSetupDiagnosticsModal

@@ -385,7 +385,7 @@ function windowsPowerShellPath(): string {
   // Absolute, never PATH: an attacker who can prepend a directory to PATH could
   // otherwise answer the ownership question with their own `powershell.exe`,
   // which is the one spoof a guard like this must not accept.
-  return join(windowsSystemRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  return join(/* turbopackIgnore: true */ windowsSystemRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
 const WINDOWS_ACL_PROBE_TIMEOUT_MS = 12_000;
@@ -476,7 +476,7 @@ function sanitizedWindowsAclProbeFailure(error: unknown): Error {
  */
 function windowsProbeEnv(path: string): NodeJS.ProcessEnv {
   const systemRoot = windowsSystemRoot();
-  const system32 = join(systemRoot, "System32");
+  const system32 = join(/* turbopackIgnore: true */ systemRoot, "System32");
   return {
     COVEN_CAVE_CLIENT_V1_ACL_PATH: path,
     // Next augments ProcessEnv to require this. It carries no secret.
@@ -485,8 +485,8 @@ function windowsProbeEnv(path: string): NodeJS.ProcessEnv {
     windir: systemRoot,
     PATH: system32,
     PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
-    TEMP: process.env.TEMP || process.env.TMP || join(systemRoot, "Temp"),
-    TMP: process.env.TMP || process.env.TEMP || join(systemRoot, "Temp"),
+    TEMP: process.env.TEMP || process.env.TMP || join(/* turbopackIgnore: true */ systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join(/* turbopackIgnore: true */ systemRoot, "Temp"),
   };
 }
 

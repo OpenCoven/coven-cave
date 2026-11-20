@@ -12,7 +12,8 @@ let renderer;
 let staging;
 function Probe() { staging = useAttachmentStaging(); return null; }
 const file = (name) => new File(["evidence"], name, { type: "text/plain" });
-const captured = (f) => ({ id: f.name, name: f.name, text: "evidence", size: f.size });
+const captured = (f) => ({ id: f.name, name: f.name, type: f.type, text: "evidence", size: f.size });
+const image = (name) => new File(["image"], name, { type: "image/png" });
 beforeEach(async () => {
   vi.mocked(fileToAttachment).mockReset().mockImplementation(async (f) => captured(f));
   await act(async () => { renderer = create(createElement(Probe)); });
@@ -47,7 +48,17 @@ test("overlapping reads reserve slots so the ten-file limit cannot be exceeded",
   expect(fileToAttachment).toHaveBeenCalledTimes(10);
   await act(async () => { release(); await Promise.all([first, second]); });
   expect(staging.attachments).toHaveLength(10);
-  expect(staging.notice).toMatch(/10 files/);
+  expect(staging.notice).toMatch(/10 other files/);
+});
+test("fifty images can stage while non-image files remain capped at ten", async () => {
+  await act(async () => staging.addFiles(Array.from({ length: 51 }, (_, i) => image(`image-${i}.png`))));
+  expect(staging.attachments).toHaveLength(50);
+  expect(staging.notice).toMatch(/50 images/);
+  await act(async () => staging.clearAttachments());
+  await act(async () => staging.addFiles(Array.from({ length: 11 }, (_, i) => file(`file-${i}.txt`))));
+  expect(staging.attachments).toHaveLength(10);
+  await act(async () => staging.addFiles(Array.from({ length: 40 }, (_, i) => image(`mixed-${i}.png`))));
+  expect(staging.attachments).toHaveLength(50);
 });
 test("clearing staging invalidates outstanding reads without resurrecting old attachments", async () => {
   let release;

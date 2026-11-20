@@ -117,7 +117,7 @@ export async function resolveFamiliarWorkspace(
     }
   }
   const familiarsRoot = familiarWorkspacesRoot();
-  const candidate = path.resolve(familiarsRoot, familiarId);
+  const candidate = path.resolve(/* turbopackIgnore: true */ familiarsRoot, familiarId);
   const relative = path.relative(familiarsRoot, candidate);
   if (
     relative.startsWith("..") ||

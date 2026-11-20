@@ -260,7 +260,13 @@ function useToastHeaderClearance(stackRef: RefObject<HTMLDivElement | null>, act
       }
       const clearance = toastHeaderClearance(
         stack.getBoundingClientRect(),
-        headers.map((header) => header.getBoundingClientRect()),
+        headers.map((header) => {
+          const { left, right, top, bottom } = header.getBoundingClientRect();
+          return {
+            left, right, top, bottom,
+            primaryToolbar: header.matches(".grimoire-graph-toolbar"),
+          };
+        }),
         window.innerHeight,
       );
       if (clearance === null) stack.style.removeProperty("--inbox-toast-clearance");

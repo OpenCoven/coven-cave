@@ -7,6 +7,7 @@ import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { CardPatch } from "@/lib/board-card-ops";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 type ProjectLike = { id: string; name: string };
 
@@ -151,6 +152,7 @@ function cardRange(card: Card): { start: Date; end: Date } | null {
 }
 
 export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch, groupMode = "project" }: Props) {
+  const keys = useKeySymbols();
   const { announce } = useAnnouncer();
   // Click a group header to focus it (hide the others); click again to show all.
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -657,7 +659,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
             );
           })}
         </div>
-        <div className="board-group-toggle" role="group" aria-label="Timeline zoom — or pinch / ⌘-scroll the timeline">
+        <div className="board-group-toggle" role="group" aria-label={`Timeline zoom — or pinch / ${keys.mod}-scroll the timeline`}>
           <span className="cg-zoom-cell" aria-hidden><Icon name="ph:magnifying-glass" width={13} /></span>
           {ZOOM_LABELS.map(([z, full, short, hint]) => {
             const active = DAY_W === ZOOM_DAY_W[z];
@@ -672,7 +674,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                 }}
                 aria-pressed={active}
                 aria-label={`Zoom: ${full}`}
-                title={`${full} — ${hint}. Or pinch / ⌘-scroll to zoom freely.`}
+                title={`${full} — ${hint}. Or pinch / ${keys.mod}-scroll to zoom freely.`}
               >
                 {short}
               </button>

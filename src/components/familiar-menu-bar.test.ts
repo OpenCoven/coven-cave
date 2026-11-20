@@ -202,6 +202,18 @@ assert.match(
   /count > 0 \? \(\s*<span[^>]*className="menu-bar__badge needs-you-trigger__badge"/,
   "the badge renders only when something actually needs you",
 );
+// The notification bell sits beside this trigger, so the trigger must not be a
+// second bell (#6243). The raised hand is the app's "waiting on you" glyph.
+assert.match(
+  needsYouPopover,
+  /<Icon name="ph:hand-palm" width=\{22\} height=\{22\} aria-hidden \/>/,
+  "the Needs-you trigger uses the raised hand",
+);
+assert.doesNotMatch(
+  needsYouPopover,
+  /name="ph:bell/,
+  "the Needs-you trigger never renders a bell, which belongs to notifications",
+);
 assert.doesNotMatch(
   needsYouPopover,
   /glass-overlay/,
@@ -214,9 +226,20 @@ assert.match(
 );
 assert.match(
   desktopChrome,
-  /\.menu-bar__badge,\s*\n\.menu-bar \.notification-bell__badge \{\s*\n\s*min-width:\s*15px;\s*\n\s*height:\s*15px;\s*\n\s*border-radius:\s*var\(--radius-control\);/,
+  /\.menu-bar__badge,\s*\n\.menu-bar \.notification-bell__badge \{\s*\n\s*min-width:\s*13px;\s*\n\s*height:\s*13px;\s*\n\s*border-radius:\s*var\(--radius-control\);/,
   "desktop corner badges share the same compact geometry",
 );
+// #5956: a three-character count ("99+") at the old 15px size and -4px offset
+// covered a third of its 14px glyph. The badge is smaller and sits off the
+// button's top-right corner, so it overlaps the glyph by a sliver at most.
+// (The menu bar leaves ~3px above the buttons, so it moves sideways, not up.)
+{
+  const rule = desktopChrome.match(/\.menu-bar__badge,\s*\n\.menu-bar \.notification-bell__badge \{[^}]*\}/)?.[0] ?? "";
+  assert.match(rule, /top:\s*-3px;/, "badge rides the button's top edge");
+  assert.match(rule, /right:\s*-12px;/, "badge sits off the button's right edge, clear of the glyph");
+  assert.match(rule, /padding:\s*0 3px;/, "tighter padding keeps 99+ narrow");
+  assert.match(rule, /font-size:\s*calc\(var\(--text-2xs\) \* 0\.9\);/, "one step smaller than the 2xs text it replaces");
+}
 assert.match(
   desktopChrome,
   /\.notification-bell__badge \{[\s\S]{0,180}?padding:\s*0 var\(--space-1\);/,
@@ -288,8 +311,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
-  "Salem should remain available as a registered page in the drag-to-split pane",
+  /<AskSalemView \/>/,
+  "legacy Salem panes render only the retirement notice without a familiar binding",
 );
 assert.doesNotMatch(
   workspace,

@@ -123,7 +123,7 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*<EnhanceControl[\s\S]*aria-label="Voice call"[\s\S]*aria-label="Send message"/,
+  /const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-edge-actions"[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*<EnhanceControl[\s\S]*aria-label="Voice call"[\s\S]*aria-label="Send message"/,
   "Composer should keep Tools at its edge plus context, enhance, voice, and send actions in the command rail",
 );
 assert.doesNotMatch(source, /className="cave-composer-mode-switch"/, "Access should live inside Response options instead of a large direct switch");
@@ -135,8 +135,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
-  "Composer places the grouped Tools menu at the composer edge",
+  /const composerActionsMenu = \(\s*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*className="cave-composer-edge-actions">\s*\{isMobile \? composerActionsMenu : null\}/,
+  "Composer builds the grouped Tools menu once: on the edge for narrow layouts, in the action cluster on desktop (#5954)",
 );
 
 assert.match(

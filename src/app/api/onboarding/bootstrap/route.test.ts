@@ -51,12 +51,12 @@ assert.match(
 );
 assert.match(
   runner,
-  /path\.join\(covenHome\(\), "defaults"\)/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?covenHome\(\), "defaults"\)/,
   "bootstrap creates the approved ~/.coven/defaults location",
 );
 assert.match(
   runner,
-  /startLocalDaemon\(\{ automatic: true \}\)/,
+  /start: startLocalDaemon,[\s\S]*dependencies\.start\(\{ automatic: true \}\)/,
   "bootstrap uses the shared idempotent local daemon starter",
 );
 assert.match(

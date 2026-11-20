@@ -5,7 +5,7 @@ test.use({ serviceWorkers: "block" });
 type ReadProbe = { path: string; signal: AbortSignal | null | undefined; completed: boolean };
 type ProbedWindow = Window & { generalReads: ReadProbe[] };
 
-async function setup(page: import("@playwright/test").Page) {
+async function setup(page: import("@playwright/test").Page, initialError: string | null = null) {
   // next dev replays mount effects in Strict Mode. Observe cancellation so the
   // initial-read assertion stays exact in both development and production.
   await page.addInitScript(() => {
@@ -35,7 +35,8 @@ async function setup(page: import("@playwright/test").Page) {
     status: { lastAttemptAt: null, lastSuccessAt: null, lastSuccessFile: null, lastError: null, lastReason: null, retainedCount: null },
     defaultDirectory: "/default", effectiveDirectory: "/saved", passphraseSet: true, due: false,
   };
-  let failRead = false;
+  let failRead = initialError !== null;
+  let readError = initialError;
   let readGate: Promise<void> | null = null;
   await page.route("**/api/config", route => { counts.config++; return route.fulfill({ json: { ok: true, config: {} } }); });
   await page.route("**/api/config/workspace-path", route => {
@@ -51,13 +52,31 @@ async function setup(page: import("@playwright/test").Page) {
     counts.sync++;
     const body = JSON.stringify(overview);
     if (readGate) await readGate;
-    await route.fulfill({ status: failRead ? 503 : 200, contentType: "application/json", body: failRead ? '{"ok":false}' : body }).catch(() => {});
+    await route.fulfill({ status: failRead ? 503 : 200, contentType: "application/json", body: failRead ? JSON.stringify({ ok: false, error: readError }) : body }).catch(() => {});
   });
   await page.goto("/settings#general");
-  await expect(page.getByRole("switch", { name: "Scheduled sync", exact: true })).toBeChecked();
+  if (initialError) await expect(page.getByText("Couldn't load scheduled sync", { exact: true })).toBeVisible();
+  else await expect(page.getByRole("switch", { name: "Scheduled sync", exact: true })).toBeChecked();
   await expect(page.locator(".settings-overview")).toContainText("/test/workspaces");
-  return { counts, fail: () => { failRead = true; }, gate: (promise: Promise<void>) => { readGate = promise; } };
+  return {
+    counts,
+    fail: (error: string | null = null) => { failRead = true; readError = error; },
+    recover: () => { failRead = false; },
+    gate: (promise: Promise<void>) => { readGate = promise; },
+  };
 }
+
+test("backup state errors show recovery guidance and clear after retry", async ({ page }) => {
+  const error = "Scheduled backup settings are invalid. Restore a valid backup-sync.json backup before changing settings.";
+  const controls = await setup(page, error);
+  const card = page.getByRole("region", { name: "Scheduled sync", exact: true });
+  await expect(card.getByText(error, { exact: true })).toBeVisible();
+  await expect(card.getByRole("switch")).toHaveCount(0);
+  controls.recover();
+  await card.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Scheduled sync", exact: true })).toBeChecked();
+  await expect(page.getByText(error, { exact: true })).toHaveCount(0);
+});
 
 test("General shares initial reads and immediately reflects a saved sync setting", async ({ page }) => {
   const { counts } = await setup(page);
@@ -75,10 +94,12 @@ test("a failed background refresh keeps the unsaved destination visible", async 
   const controls = await setup(page);
   const destination = page.getByRole("textbox", { name: "Backup destination folder" });
   await destination.fill("/unsaved-draft");
-  controls.fail();
+  const error = "Scheduled backup settings were written by a newer version of Cave. Update Cave before changing settings.";
+  controls.fail(error);
   await page.evaluate(() => window.dispatchEvent(new Event("cave:backup-sync-refresh")));
   await expect(page.getByText("Scheduled sync details couldn't refresh", { exact: true })).toBeVisible();
   await expect(destination).toHaveValue("/unsaved-draft");
+  await expect(page.getByText(error, { exact: true })).toBeVisible();
 });
 
 test("an older backup read cannot undo a successful toggle", async ({ page }) => {

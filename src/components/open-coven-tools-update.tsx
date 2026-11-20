@@ -41,7 +41,7 @@ export type ToolStatus = {
   packageVerified: boolean;
   executableVerified: boolean;
   packagePath: string | null;
-  discoveryError: "version-probe-failed" | "launcher-unreadable" | null;
+  discoveryError: "lookup-failed" | "version-probe-failed" | "launcher-unreadable" | null;
   minimumVersion: string;
   installCommand: string;
   checkedAt: string;

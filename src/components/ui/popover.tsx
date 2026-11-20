@@ -504,17 +504,20 @@ export function PopoverBody({
   className,
   role,
   ariaLabel,
+  onKeyDown,
 }: {
   children: ReactNode;
   className?: string;
   role?: "menu";
   ariaLabel?: string;
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
 }) {
   return (
     <div
       className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}
       role={role}
       aria-label={ariaLabel}
+      onKeyDown={onKeyDown}
     >
       {children}
     </div>

@@ -32,22 +32,22 @@ assert.doesNotMatch(
 
 assert.match(
   scan,
-  /path\.join\(homedir\(\), "\.claude", "skills"\), "user"/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?homedir\(\), "\.claude", "skills"\), "user"/,
   "scanClaudeUserSkills scans ~/.claude/skills and labels entries \"user\"",
 );
 assert.match(
   scan,
-  /path\.join\(homedir\(\), "\.codex", "skills"\), "codex-user"/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?homedir\(\), "\.codex", "skills"\), "codex-user"/,
   "scanCodexUserSkills scans ~/.codex/skills and labels entries \"codex-user\"",
 );
 assert.match(
   scan,
-  /path\.join\(projectRoot, "\.agents", "skills"\), "agents-project"/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?projectRoot, "\.agents", "skills"\), "agents-project"/,
   "scanAgentSharedSkills scans project .agents/skills",
 );
 assert.match(
   scan,
-  /path\.join\(homedir\(\), "\.agents", "skills"\), "agents-user"/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?homedir\(\), "\.agents", "skills"\), "agents-user"/,
   "scanAgentSharedSkills scans ~/.agents/skills",
 );
 

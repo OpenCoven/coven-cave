@@ -20,7 +20,7 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { isValidFamiliarId } from "./familiar-id.ts";
 import { acquireProcessIntentLock } from "./process-intent-lock.ts";
-import { isValidResearchMissionId } from "./research-mission-store.ts";
+import { isValidResearchMissionId } from "./research-runtime-contract.ts";
 
 export type XSourceAvailability = "available" | "unavailable" | "deleted";
 
@@ -471,7 +471,7 @@ async function withAllSourcesLock<T>(
 ): Promise<T> {
   await ensureRealDirectory(sourcesRoot());
   return withTransactionLock(
-    path.join(sourcesRoot(), ".all-sources"),
+    path.join(/* turbopackIgnore: true */ sourcesRoot(), ".all-sources"),
     "X sources",
     operation,
   );

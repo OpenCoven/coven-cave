@@ -49,7 +49,7 @@ export async function isAllowedSkillFilePath(fullPath: string, home = homedir())
   if (path.basename(candidateRealPath) === CODEX_AUTOMATION_FILE_NAME) {
     try {
       const automationsRoot = await realpath(
-        /* turbopackIgnore: true */ path.join(home, ".codex", "automations"),
+        /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ home, ".codex", "automations"),
       );
       return isWithinRoot(candidateRealPath, automationsRoot);
     } catch {
@@ -106,10 +106,10 @@ export async function isRemovableSkillDir(dir: string, home = homedir()): Promis
 
   const parent = path.dirname(real);
   const rootCandidates = [
-    path.join(covenHome(), "skills"),
-    path.join(home, ".claude", "skills"),
-    path.join(home, ".codex", "skills"),
-    path.join(home, ".agents", "skills"),
+    path.join(/* turbopackIgnore: true */ covenHome(), "skills"),
+    path.join(/* turbopackIgnore: true */ home, ".claude", "skills"),
+    path.join(/* turbopackIgnore: true */ home, ".codex", "skills"),
+    path.join(/* turbopackIgnore: true */ home, ".agents", "skills"),
     path.join(process.cwd(), ".agents", "skills"),
   ];
   for (const root of rootCandidates) {

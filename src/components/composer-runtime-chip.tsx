@@ -33,7 +33,24 @@ import type {
   ModelControlFamily,
 } from "@/lib/model-control-capabilities";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
+import { useState } from "react";
+import dynamic from "next/dynamic";
+import { useAnnouncer } from "@/components/ui/live-region";
 import "@/styles/composer-runtime-chip.css";
+
+const HarnessAuthTerminal = dynamic(
+  () => import("./harness-auth-terminal").then((m) => m.HarnessAuthTerminal),
+  { ssr: false },
+);
+
+/**
+ * Runtimes whose local CLI can switch its signed-in account from the Runtime
+ * menu. Each command signs in, then prints the account it now uses.
+ */
+const ACCOUNT_SWITCH: Record<string, { label: string; command: string }> = {
+  claude: { label: "Claude", command: "claude auth login && claude auth status --text" },
+  codex: { label: "Codex", command: "codex login && codex login status" },
+};
 
 /** Preserve the exact provider-qualified selection in every composer. */
 export function runtimeModelLabel(
@@ -124,6 +141,8 @@ export function ComposerRuntimePopover({
   placement = "top-start",
   runtime,
   onPickRuntime,
+  executionRuntime,
+  disabled = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -131,40 +150,76 @@ export function ComposerRuntimePopover({
   placement?: PopoverPlacement;
   runtime: string;
   onPickRuntime: (runtime: string) => void;
+  executionRuntime?: string | null;
+  disabled?: boolean;
 }) {
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  const { announce } = useAnnouncer();
+  const accountSwitch = !disabled &&
+    (executionRuntime === "local" || executionRuntime?.startsWith("local:"))
+    ? ACCOUNT_SWITCH[runtime]
+    : undefined;
   return (
-    <Popover
-      open={open}
-      onOpenChange={onOpenChange}
-      anchorRef={anchorRef}
-      placement={placement}
-      minWidth={200}
-      ariaLabel="Runtime"
-    >
-      <PopoverBody role="menu" ariaLabel="Runtime">
-        <PopoverLabel>Runtime</PopoverLabel>
-        {Object.values(RUNTIME_MODEL_CATALOG).map((catalog) => (
-          <PopoverItem
-            key={catalog.runtime}
-            leading={
-              <span className="cave-runtime-chip__logo" aria-hidden>
-                <RuntimeLogo runtime={catalog.runtime} size={13} />
-              </span>
-            }
-            checked={catalog.runtime === runtime}
-            onSelect={() => {
-              // Close before the pick: a switch is complete only once a model
-              // is chosen (cave-bfwk), so the caller's pick handler opens the
-              // Model menu and must win the state batch over this close.
-              onOpenChange(false);
-              if (catalog.runtime !== runtime) onPickRuntime(catalog.runtime);
-            }}
-          >
-            {runtimeDisplayName(catalog.runtime)}
-          </PopoverItem>
-        ))}
-      </PopoverBody>
-    </Popover>
+    <>
+      <Popover
+        open={open}
+        onOpenChange={onOpenChange}
+        anchorRef={anchorRef}
+        placement={placement}
+        minWidth={200}
+        ariaLabel="Runtime"
+      >
+        <PopoverBody role="menu" ariaLabel="Runtime">
+          <PopoverLabel>Runtime</PopoverLabel>
+          {Object.values(RUNTIME_MODEL_CATALOG).map((catalog) => (
+            <PopoverItem
+              key={catalog.runtime}
+              leading={
+                <span className="cave-runtime-chip__logo" aria-hidden>
+                  <RuntimeLogo runtime={catalog.runtime} size={13} />
+                </span>
+              }
+              checked={catalog.runtime === runtime}
+              onSelect={() => {
+                // Close before the pick: a switch is complete only once a model
+                // is chosen (cave-bfwk), so the caller's pick handler opens the
+                // Model menu and must win the state batch over this close.
+                onOpenChange(false);
+                if (catalog.runtime !== runtime) onPickRuntime(catalog.runtime);
+              }}
+            >
+              {runtimeDisplayName(catalog.runtime)}
+            </PopoverItem>
+          ))}
+          {accountSwitch ? (
+            <>
+              <PopoverSeparator />
+              <PopoverItem onSelect={() => {
+                // Restore the persistent chip before the menu disappears so
+                // the terminal dialog returns focus to a connected element.
+                anchorRef.current?.focus({ preventScroll: true });
+                onOpenChange(false);
+                setSwitchingAccount(true);
+                announce(`Opening ${accountSwitch.label} account sign-in.`);
+              }}>
+                Switch {accountSwitch.label} account…
+              </PopoverItem>
+            </>
+          ) : null}
+        </PopoverBody>
+      </Popover>
+      {switchingAccount && accountSwitch ? (
+        <HarnessAuthTerminal
+          intent="switch-account"
+          failure={{ harness: runtime, harnessLabel: accountSwitch.label, kind: "login",
+            loginCommand: accountSwitch.command }}
+          onClose={() => {
+            setSwitchingAccount(false);
+            announce(`${accountSwitch.label} sign-in terminal closed.`);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 

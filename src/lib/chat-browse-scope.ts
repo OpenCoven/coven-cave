@@ -7,6 +7,8 @@ import type { SessionRow } from "./types.ts";
 /** Browse context is not the open conversation's immutable execution context. */
 export type ChatBrowseScope = {
   selection: ProjectSelection;
+  /** Local browse filter only; empty means all familiars, independent of the actor. */
+  familiarIds?: readonly string[];
   ready: boolean;
   /** Not ready only because context is still arriving (hydration, a project
    *  fetch), as opposed to a failure. Loading is never shown as an error. */
@@ -45,6 +47,7 @@ export function chatBrowseEmptyMessage(scope: ChatBrowseScope | undefined, hasSe
       ? "Loading this project's chats…"
       : "Project context is unavailable. Choose another project or retry.";
   }
+  if (scope?.familiarIds?.length) return "No chats match these filters. Clear filters to see all chats.";
   if (scope && scope.selection !== "all") return "No chats in this project. Start a chat or choose another project.";
   return "No conversations yet.";
 }
@@ -70,14 +73,17 @@ export function scopeChatBrowseSessions(
 ): SessionRow[] {
   if (!scope) return sessions;
   if (!scope.ready) return [];
-  if (scope.selection === "all") return sessions;
-  const groups = deriveChatProjectGroups(applyProjectOverrides(sessions, overrides), projects);
+  const filtered = scope.familiarIds?.length
+    ? sessions.filter((session) => scope.familiarIds!.includes(session.familiarId ?? ""))
+    : sessions;
+  if (scope.selection === "all") return filtered;
+  const groups = deriveChatProjectGroups(applyProjectOverrides(filtered, overrides), projects);
   const ids = new Set(
     applyProjectScope(groups, scope.selection).flatMap((group) => group.sessions.map((session) => session.id)),
   );
   // Only membership follows an organizational override. Opening a row must
   // still receive its recorded cwd/runtime, never the display folder's root.
-  return sessions.filter((session) => ids.has(session.id));
+  return filtered.filter((session) => ids.has(session.id));
 }
 
 export function retainOpenChatSession(

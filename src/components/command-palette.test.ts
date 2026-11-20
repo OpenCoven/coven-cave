@@ -108,38 +108,8 @@ assert.match(
   "empty-query Recent chats excludes archived sessions",
 );
 
-assert.match(
-  source,
-  /kind:\s*"salem-answer"/,
-  "Command palette includes a Salem AI answer row",
-);
-
-// (cave-42r5) Ask-Salem trails the local matches: Enter on a typed query opens
-// the best local hit; the AI row is the fallback (rows[0] only when nothing
-// matches locally).
-assert.match(
-  source,
-  /return \[\.\.\.localRows, \.\.\.salemRows\];/,
-  "local matches come before the Ask-Salem fallback row",
-);
-
-assert.match(
-  source,
-  /fetch\("\/api\/salem"[\s\S]*body: JSON\.stringify\(\{[\s\S]*message:\s*query\.trim\(\)[\s\S]*context:/,
-  "Salem answer row posts the query plus local search context to /api/salem",
-);
-
-assert.match(
-  source,
-  /buildSalemSearchContext\(\s*rows\.filter\(isSalemContextRow\),\s*query\.trim\(\),\s*\)/,
-  "Salem answer payload should be grounded in the current local search rows",
-);
-
-assert.match(
-  source,
-  /salem\.opencoven\.ai/,
-  "Salem answer row should make the remote Salem brain explicit to the user",
-);
+assert.doesNotMatch(source, /salem-answer|askSalem|\/api\/salem/, "retired Salem cannot turn palette searches into assistant requests");
+assert.match(source, /return localRows;/, "typed search returns local matches without an AI fallback");
 
 // The non-standard aria-current="true" pattern on result items is gone.
 const optionBlocks = source.match(/role="option"[\s\S]{0,300}/g) ?? [];
@@ -321,12 +291,3 @@ assert.match(
 );
 
 console.log("command-palette.test.ts OK");
-
-// ── Salem answer stays inside the palette (issue #2988) ──────────────────────
-// Long answers previously grew the region unboundedly and overflowed the
-// viewport; it now caps and scrolls like the listbox below it.
-assert.match(
-  source,
-  /max-h-\[45vh\] overflow-y-auto border-b/,
-  "the Salem answer region caps its height and scrolls internally",
-);

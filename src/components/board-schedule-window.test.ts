@@ -126,7 +126,7 @@ assert.match(gantt, /className="cg-zoom-cell"[\s\S]{0,80}name="ph:magnifying-gla
 assert.match(gantt, /\["day", "Day", "D",/, "day zoom carries a short label + hint");
 assert.match(gantt, /\["month", "Month", "M",/, "month zoom carries a short label + hint");
 assert.match(gantt, /aria-label=\{`Zoom: \$\{full\}`\}/, "each zoom button announces the full word");
-assert.match(gantt, /title=\{`\$\{full\} — \$\{hint\}\. Or pinch \/ ⌘-scroll to zoom freely\.`\}/, "each zoom button explains the scale + the pinch/⌘-scroll gesture");
+assert.match(gantt, /title=\{`\$\{full\} — \$\{hint\}\. Or pinch \/ \$\{keys\.mod\}-scroll to zoom freely\.`\}/, "each zoom button explains the scale + the pinch/⌘-scroll gesture");
 assert.match(gantt, />\s*\{short\}\s*<\/button>/, "buttons render the compact single-letter label");
 
 // Continuous zoom: pinch / ⌘-scroll resizes the timeline (px-per-day), anchored

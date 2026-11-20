@@ -1,5 +1,8 @@
 import XCTest
 
+/// "Open navigation" is queried with `firstMatch`: a wide window (iPad, an
+/// open iPhone Duo) shows the split view's sidebar header and the
+/// conversation toolbar together, and both carry the control.
 final class DrawerNavigationUITests: XCTestCase {
 
     @MainActor
@@ -13,7 +16,7 @@ final class DrawerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[launchThreadTitle].waitForExistence(timeout: 10),
                       "the launch thread opens on the first Chats mount")
 
-        let openNavigation = app.buttons["Open navigation"]
+        let openNavigation = app.buttons["Open navigation"].firstMatch
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "the conversation exposes navigation")
         openNavigation.tap()
@@ -34,7 +37,7 @@ final class DrawerNavigationUITests: XCTestCase {
         app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "settings"]
         app.launch()
 
-        let openNavigation = app.buttons["Open navigation"]
+        let openNavigation = app.buttons["Open navigation"].firstMatch
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "Settings exposes the navigation drawer")
         openNavigation.tap()
@@ -56,7 +59,7 @@ final class DrawerNavigationUITests: XCTestCase {
 
         XCTAssertFalse(app.tabBars.firstMatch.exists, "the app has no native tab bar")
 
-        let openNavigation = app.buttons["Open navigation"]
+        let openNavigation = app.buttons["Open navigation"].firstMatch
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "a primary destination exposes the navigation drawer")
         openNavigation.tap()
@@ -137,7 +140,7 @@ final class DrawerNavigationUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
-        app.buttons["Open navigation"].tap()
+        app.buttons["Open navigation"].firstMatch.tap()
         app.buttons["Search chats"].tap()
 
         let field = app.textFields["Search chats…"]
@@ -161,11 +164,11 @@ final class DrawerNavigationUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
-        app.buttons["Open navigation"].tap()
+        app.buttons["Open navigation"].firstMatch.tap()
         app.buttons["Search chats"].tap()
         XCTAssertTrue(app.textFields["Search chats…"].waitForExistence(timeout: 10))
 
-        app.buttons["Open navigation"].tap()
+        app.buttons["Open navigation"].firstMatch.tap()
         app.buttons["Chat with Nyx on Jul 26"].tap()
         let composer = app.descendants(matching: .any)["Message"].firstMatch
         let visible = XCTNSPredicateExpectation(
@@ -188,14 +191,14 @@ final class DrawerNavigationUITests: XCTestCase {
         composer.tap()
         composer.typeText("Draft only for Nyx")
 
-        app.buttons["Open navigation"].tap()
+        app.buttons["Open navigation"].firstMatch.tap()
         app.buttons["Lyra design review"].tap()
         XCTAssertTrue(app.navigationBars["Lyra design review"].waitForExistence(timeout: 10))
         XCTAssertFalse((composer.value as? String ?? "").contains("Draft only for Nyx"))
         composer.tap()
         composer.typeText("Draft only for Lyra")
 
-        app.buttons["Open navigation"].tap()
+        app.buttons["Open navigation"].firstMatch.tap()
         app.buttons["Chat with Nyx on Jul 26"].tap()
         XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
         XCTAssertTrue((composer.value as? String ?? "").contains("Draft only for Nyx"))
@@ -209,7 +212,7 @@ final class DrawerNavigationUITests: XCTestCase {
         app.launchArguments = ["--ui-preview-project-context-gate"]
         app.launch()
 
-        let navigation = app.buttons["Open navigation"]
+        let navigation = app.buttons["Open navigation"].firstMatch
         XCTAssertTrue(navigation.waitForExistence(timeout: 10),
                       "access failure must not replace the chat shell with a global project gate")
         navigation.tap()

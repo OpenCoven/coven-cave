@@ -515,7 +515,11 @@ final class AppModel {
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
-    var threads: [ChatThread] = []
+    var threads: [ChatThread] = [] {
+        didSet { removeAccessRevokedThreads() }
+    }
+    @ObservationIgnored private var revokedConversationIDs: Set<String> = []
+    @ObservationIgnored private var revokedThreadIDs: Set<String> = []
     /// Default Chats destination: the newest active conversation. Pinning only
     /// affects list order and never makes an older thread the launch default.
     var mostRecentThread: ChatThread? {
@@ -532,7 +536,9 @@ final class AppModel {
     @ObservationIgnored private var projectNavigationSessionsHydration = ProjectNavigationHydrationState()
     @ObservationIgnored private var projectNavigationTasksHydration = ProjectNavigationHydrationState()
 
-    /// Messages whose agent-activity trail the reader has opened.
+    /// Messages whose agent-activity trail the reader has opened, and the
+    /// `<id>:run-metadata` keys of the Run details disclosures they opened
+    /// (#6045).
     ///
     /// Deliberately not view-local `@State`: a transcript rebuild re-creates
     /// the row, and state that lives on the row goes with it — silently
@@ -2197,7 +2203,43 @@ final class AppModel {
 
     var client: CaveClient? {
         guard let connection else { return nil }
-        return CaveClient(connection: connection, session: clientSession)
+        let generation = connectionConfigurationGeneration
+        return CaveClient(connection: connection, session: clientSession,
+                          onConversationAccessDenied: { [weak self] sessionId in
+            guard let self else { return }
+            try await self.purgeDeniedConversation(sessionId, connection: connection, generation: generation)
+        })
+    }
+
+    private func purgeDeniedConversation(_ sessionId: String, connection: CaveConnection,
+                                         generation: UInt64) async throws {
+        // A delayed response from a replaced host cannot invalidate its successor.
+        // Cancellation alone does not undo an access denial already received.
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedConversationIDs.insert(sessionId)
+        removeAccessRevokedThreads()
+        let removed = try await threadStore.purgeConversation(sessionId: sessionId,
+                                                              snapshotIDs: revokedThreadIDs)
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedThreadIDs.formUnion(removed)
+        removeAccessRevokedThreads()
+    }
+
+    private func removeAccessRevokedThreads() {
+        let affected = threads.filter {
+            $0.isAccessRevoked || revokedThreadIDs.contains($0.id) || revokedConversationIDs.contains($0.id)
+                || $0.sessionIds.values.contains(where: { revokedConversationIDs.contains($0) })
+                || !$0.flowSessionIds.isDisjoint(with: revokedConversationIDs)
+        }
+        guard !affected.isEmpty else { return }
+        for thread in affected {
+            revokedThreadIDs.insert(thread.id)
+            threadDrafts.removeValue(forKey: thread.id)
+            thread.revokeAccess()
+        }
+        // Also runs on late hydration/rollback assignments, so a new instance
+        // created from an old snapshot cannot bypass the held-object fence.
+        threads.removeAll { $0.isAccessRevoked }
     }
 
     /// Drop cached model state for a familiar on the current host. Every model
@@ -2408,7 +2450,7 @@ final class AppModel {
         self.coreResourceClientFactory = coreResourceClientFactory
         #if DEBUG
         self.clientSession = clientSession ?? NativeActivityRecoveryPreview.sessionIfRequested()
-            ?? ToolOutputPreview.sessionIfRequested()
+            ?? ToolOutputPreview.sessionIfRequested() ?? ChatSendPreview.sessionIfRequested()
         #else
         self.clientSession = clientSession
         #endif
@@ -2473,6 +2515,52 @@ final class AppModel {
                 id: "ui-preview-long-chat-scroll",
                 title: "Long Scroll Chat",
                 delayedHistory: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-large-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-large-rich-chat-scroll", title: "Large Rich Scroll Chat",
+                streamsLatest: false, historyCount: 1_000
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-chat-scroll",
+                title: "Rich Scroll Chat",
+                streamsLatest: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-completing-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-completing-chat-scroll", title: "Completing Rich Chat",
+                streamsLatest: true, streamTicks: 4, completionMarker: "Completion marker n8v2"
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-streaming-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-streaming-chat-scroll",
+                title: "Rich Streaming Chat",
+                streamsLatest: true
             )
             _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
@@ -2585,7 +2673,10 @@ final class AppModel {
     }
 
     private func configureEmptyChatPreview() {
-        connection = nil
+        connection = ChatSendPreview.isRequested ? CaveConnection(host: ChatSendPreview.origin) : nil
+        // The send fixture owns a scratch thread store that is never read
+        // back, so its delivery checkpoint may persist without hydration.
+        if ChatSendPreview.isRequested { threadsHydrated = true }
         familiars = [
             Familiar(
                 id: "nyx",
@@ -2711,6 +2802,17 @@ final class AppModel {
                              tags: ["daily"], body: "Yesterday:\nToday:\nBlockers:"),
             ]
         )
+        // Files for the one-to-one chat's `@` picker (#6104).
+        composerSuggestions.seedProjectFiles(
+            [
+                "README.md",
+                "package.json",
+                "src/components/chat-view.tsx",
+                "src/lib/file-mention.ts",
+                "apps/ios/CovenCave/CovenCave/Views/ChatView.swift",
+            ],
+            root: previewProject.root
+        )
 
         connectionState = .connected
     }
@@ -2745,6 +2847,93 @@ final class AppModel {
             }
             self.touch(thread)
         }
+    }
+
+    /// #6090: history whose replies are much taller than the 12-line loading
+    /// placeholder, so rows change height as WebKit measures them while the
+    /// reader scrolls back to the latest reply. Optionally keeps streaming.
+    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool, historyCount: Int = 40,
+                                                 streamTicks: Int = 240, completionMarker: String? = nil) {
+        configureEmptyChatPreview()
+        let base = Date(timeIntervalSince1970: 1_786_000_000)
+        var messages: [DisplayMessage] = []
+        for index in 0..<historyCount {
+            let created = base.addingTimeInterval(Double(index) * 60)
+            if index.isMultiple(of: 2) {
+                messages.append(DisplayMessage(
+                    id: "rich-user-\(index)", role: .user, familiarId: nil,
+                    text: "Operator checkpoint \(index) in the rich scroll fixture",
+                    createdAt: created
+                ))
+            } else {
+                messages.append(DisplayMessage(
+                    id: "rich-assistant-\(index)", role: .assistant, familiarId: "nyx",
+                    text: Self.richChatScrollPreviewReply(index),
+                    createdAt: created
+                ))
+            }
+        }
+        var latest = DisplayMessage(
+            id: "rich-latest", role: .assistant, familiarId: "nyx",
+            text: """
+            ## The latest rich reply
+
+            \(Array(repeating: "This paragraph keeps the newest reply taller than one screen.", count: 8).joined(separator: "\n\n"))
+
+            Latest bottom marker q3k9z
+            """,
+            createdAt: base.addingTimeInterval(Double(historyCount) * 60)
+        )
+        latest.streaming = streamsLatest
+        messages.append(latest)
+
+        let thread = ChatThread(
+            id: id, title: title, familiarIds: ["nyx"],
+            projectRoot: projects.first?.root, messages: messages
+        )
+        thread.updatedAt = latest.createdAt
+        threads = [thread]
+        threadViews[id] = latest.createdAt
+        projectContextDefaults.set(latest.createdAt, forKey: Self.threadViewKey(id))
+
+        guard streamsLatest else { return }
+        Task { @MainActor [weak thread] in
+            for tick in 0..<streamTicks {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let thread, let last = thread.messages.indices.last else { return }
+                // Keep the sentinel unique to the newest line. Older lines
+                // retain an equal-length token so the fixture's rich workload
+                // and wrapping are not reduced while scrolling through history.
+                thread.messages[last].text = thread.messages[last].text
+                    .replacingOccurrences(of: "tail q3k9z", with: "tail q3k9x")
+                    + "\n\nStreaming tail line \(tick) tail q3k9z"
+            }
+            guard let thread, let last = thread.messages.indices.last else { return }
+            if let completionMarker { thread.messages[last].text += "\n\n" + completionMarker }
+            thread.messages[last].streaming = false
+        }
+    }
+
+    private static func richChatScrollPreviewReply(_ index: Int) -> String {
+        let prose = Array(
+            repeating: "This paragraph is long enough to wrap across several lines on every iPhone width, so the rendered reply is well beyond the twelve lines its loading placeholder shows.",
+            count: 6
+        ).joined(separator: "\n\n")
+        let code = (0..<24).map { "let value\($0) = compute(\($0))" }.joined(separator: "\n")
+        let table = (0..<12).map { "| row \($0) | value \($0 * index) |" }.joined(separator: "\n")
+        return """
+        ### Rich fixture reply \(index)
+
+        \(prose)
+
+        ```swift
+        \(code)
+        ```
+
+        | Name | Value |
+        | --- | --- |
+        \(table)
+        """
     }
 
     private static func longChatScrollPreviewSeenBoundary() -> Date {
@@ -3051,6 +3240,10 @@ final class AppModel {
                 generated: false
             ),
         ]
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-list-statuses") {
+            serverSessions[0].status = "running"
+            serverSessions[1].status = "failed"
+        }
         sessionsLoaded = true
 
         cardThreadLinks["cold-launch"] = "ui-preview-empty-chat"
@@ -3247,7 +3440,10 @@ final class AppModel {
         let first = "Inspecting 🧙 café.\n"
         let producer = ToolActivity.Producer(harness: "hermes", version: nil, protocol: "responses")
         let failed = ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-failed")
-        let status: ActivityStep.Status = completed ? (failed ? .error : .ok) : .running
+        let statusArgument = ProcessInfo.processInfo.arguments.firstIndex(of: "--ui-preview-tool-status")
+            .flatMap { ProcessInfo.processInfo.arguments.dropFirst($0 + 1).first }
+            .flatMap { ActivityStep.Status(rawValue: $0) }
+        let status: ActivityStep.Status = statusArgument ?? (completed ? (failed ? .error : .ok) : .running)
         message.text = first + (completed ? "Ready to review.\n" : "")
         message.streaming = !completed
         message.activity = [ActivityStep(
@@ -3257,8 +3453,8 @@ final class AppModel {
             activity: ToolActivity(
                 schemaVersion: 1, runId: run, attemptId: attempt, callId: "a", phase: status.rawValue,
                 source: "runtime-report", producer: producer, firstObservedAt: 100, sequence: 1,
-                updatedAt: completed ? 200 : 100, executionObservedAt: 100,
-                terminalObservedAt: completed ? 200 : nil,
+                updatedAt: completed ? 200 : 100, executionObservedAt: status.isRequested || status.isRejected ? nil : 100,
+                terminalObservedAt: status.isKnownOutcome ? 200 : nil,
                 authority: ["binding": "unavailable", "approval": "unavailable", "effect": "unavailable"]
             ), textOffset: first.utf16.count
         )]
@@ -3272,7 +3468,17 @@ final class AppModel {
             )
         }
         message.reasoningBlocks = [summary("before", "Checking the relevant source.", sequence: 0, offset: 0)]
-        if completed {
+        if completed && ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-withheld") {
+            // A provider-redacted block carries no text (#6057).
+            message.reasoningBlocks?.append(ChatReasoningBlock(
+                schemaVersion: 1, id: "\(attempt):after", representation: "provider-summary",
+                phase: "unavailable", text: nil, textOffset: first.utf16.count, disclosure: "withheld",
+                unavailableReason: "provider-withheld",
+                observation: .init(runId: run, attemptId: attempt, source: "runtime-report",
+                                   producer: producer, firstObservedAt: 100, sequence: 2,
+                                   updatedAt: 200, completedAt: nil, binding: "unavailable")
+            ))
+        } else if completed {
             message.reasoningBlocks?.append(summary("after", "The source check is complete.", sequence: 2, offset: first.utf16.count))
         }
         return message
@@ -4706,8 +4912,7 @@ final class AppModel {
                 projects: nextProjects,
                 familiars: nextFamiliars,
                 directGrants: grants.grants ?? [],
-                groups: grants.accessGroups ?? [],
-                supremeFamiliarId: grants.supremeFamiliarId
+                groups: grants.accessGroups ?? []
             )
             let selectionResolution = try await resolveProjectContextSelection(
                 using: client,
@@ -5366,7 +5571,7 @@ final class AppModel {
         guard !connectionMonitorStarted else { return }
         connectionMonitorStarted = true
         connectionMonitor.pathUpdateHandler = { [weak self] path in
-            let pathAvailable = path.status == .satisfied
+            let pathAvailable = ConnectionPathPolicy.allowsAttempt(path.status)
             Task { @MainActor [weak self] in
                 await self?.updateConnectionPath(available: pathAvailable)
             }
@@ -5438,7 +5643,8 @@ final class AppModel {
         }
     }
 
-    private func updateConnectionPath(available: Bool) async {
+    /// Internal, not private, so tests can drive a path edge without a monitor.
+    func updateConnectionPath(available: Bool) async {
         connectionPathAvailable = available
         guard connection != nil else { connectionState = .unconfigured; return }
         if available {
@@ -5802,6 +6008,7 @@ final class AppModel {
         guard !isPerformanceFixture else { return }
         guard let connection else { connectionState = .unconfigured; return }
         let configurationGeneration = connectionConfigurationGeneration
+        let pathUnavailableAtLaunch = !connectionPathAvailable
         if !quiet { connectionState = .checking }
 
         // Single-flight the transport decision: concurrent callers join the
@@ -5838,10 +6045,23 @@ final class AppModel {
         ) else { return }
         // A probe can finish after NWPathMonitor has already declared the
         // route unavailable. Never let that stale outcome overwrite the
-        // immediate honest offline state; the satisfied edge launches fresh.
-        guard connectionPathAvailable else {
-            connectionState = .unreachable(.diagnosis(for: .offline))
-            return
+        // immediate honest offline state; the next attemptable edge launches
+        // fresh. A refresh STARTED while the flag already read unavailable is
+        // different: only a user action (the pill's Retry, Settings →
+        // Reconnect) launches one then, and a desktop that answered it is
+        // stronger evidence than a monitor that may have missed its edge.
+        // Vetoing that answer left Retry unable to ever reconnect, so accept
+        // it and re-arm the supervisor the unavailable edge stopped.
+        let pathRecoveredByProbe: Bool
+        if connectionPathAvailable {
+            pathRecoveredByProbe = false
+        } else {
+            guard pathUnavailableAtLaunch, case .found = refresh.result else {
+                connectionState = .unreachable(.diagnosis(for: .offline))
+                return
+            }
+            connectionPathAvailable = true
+            pathRecoveredByProbe = true
         }
         // The user may have disconnected while the probe ran; its outcome no
         // longer describes anything configured.
@@ -5919,6 +6139,9 @@ final class AppModel {
                 configurationGeneration: configurationGeneration
             ) else { return }
             connectionState = .connected
+            if pathRecoveredByProbe {
+                requestConnectionRecovery(.networkAvailable)
+            }
             await refreshAccessTokenIfNeeded {
                 self.refreshLeaseIsCurrent(
                     supervisorGeneration,
@@ -6444,13 +6667,29 @@ final class AppModel {
         projectContextDefaults.string(forKey: Self.draftKey(threadId))
     }
 
-    func persistThreadDraft(_ threadId: String, text: String?) {
+    /// Per-thread key for the files picked from the `@` menu in that draft
+    /// (#6104). They live beside the text so a restored draft still sends the
+    /// files its `@path` tokens were picked for, and nothing else.
+    static func draftMentionsKey(_ threadId: String) -> String { "cave.chat.draftMentions.\(threadId)" }
+
+    func persistedThreadDraftMentions(_ threadId: String) -> [String] {
+        projectContextDefaults.stringArray(forKey: Self.draftMentionsKey(threadId)) ?? []
+    }
+
+    func persistThreadDraft(_ threadId: String, text: String?, mentionedFiles: [String] = []) {
         let key = Self.draftKey(threadId)
+        let mentionsKey = Self.draftMentionsKey(threadId)
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             projectContextDefaults.set(text, forKey: key)
+            if mentionedFiles.isEmpty {
+                projectContextDefaults.removeObject(forKey: mentionsKey)
+            } else {
+                projectContextDefaults.set(mentionedFiles, forKey: mentionsKey)
+            }
             setThreadDraft(threadId, text: text)
         } else {
             projectContextDefaults.removeObject(forKey: key)
+            projectContextDefaults.removeObject(forKey: mentionsKey)
             setThreadDraft(threadId, text: nil)
         }
     }
@@ -6459,6 +6698,10 @@ final class AppModel {
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
+        guard !revokedThreadIDs.contains(threadId) else {
+            threadDrafts.removeValue(forKey: threadId)
+            return
+        }
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if threadDrafts[threadId] != text { threadDrafts[threadId] = text }
         } else if threadDrafts[threadId] != nil {

@@ -6,6 +6,12 @@ const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
+  /await executorStatusesForConfig\(config\)[\s\S]*const observeHealthLifecycle = beginDaemonLifecycleObservation\(\);\s*const res = await callDaemonTarget<Health>\(target,/,
+  "health observations start after config/executor waits, immediately before their own probe",
+);
+
+assert.match(
+  source,
   /import \{[^}]*loadDaemonStatusSnapshot[^}]*\} from "@\/lib\/cave-config"/,
   "daemon status should read a lock-protected Cave snapshot before calling the daemon",
 );
@@ -30,7 +36,7 @@ assert.match(
 
 assert.match(
   source,
-  /availability: "status-unavailable"[\s\S]*?Cave home is temporarily busy/,
+  /availability: "status-unavailable",\s*\n\s*reason: CAVE_HOME_BUSY_REASON/,
   "the structured degraded response should distinguish local Cave storage from daemon availability",
 );
 
@@ -138,7 +144,13 @@ assert.match(
 
 assert.match(
   source,
-  /availability: compatibility && !compatibility\.ok \? "incompatible" : failureAvailability\(target, res\)/,
+  /CAVE_HOME_BUSY_REASON = "Cave home is temporarily busy/,
+  "the busy copy names local Cave storage, not the daemon",
+);
+
+assert.match(
+  source,
+  /const availability = compatibility && !compatibility\.ok \? "incompatible" : failureAvailability\(target, res\)/,
   "daemon failures should expose a machine-readable availability classification",
 );
 
@@ -156,8 +168,31 @@ assert.match(
 
 assert.match(
   source,
-  /availability: compatibility && !compatibility\.ok \? "incompatible"/,
+  /const reason = compatibility && !compatibility\.ok \? compatibility\.diagnostic : failureReason\(target, res\)/,
   "runtime coherence failures should remain separately actionable",
+);
+
+// Every response projects one lifecycle state through the process-global
+// owner, so a start in flight reads as starting/recovering, not stopped (#6298).
+assert.match(
+  source,
+  /import \{ localRuntimeEvidence, beginDaemonLifecycleObservation, observeDaemonLifecycle \} from "@\/lib\/server\/daemon-lifecycle-owner"/,
+  "status projects lifecycle through the shared owner",
+);
+assert.equal(
+  (source.match(/lifecycle: observe(?:Daemon|Health)Lifecycle\(\{/g) ?? []).length,
+  5,
+  "each of the five response shapes carries a lifecycle projection",
+);
+assert.match(
+  source,
+  /if \(target\.mode === "local" && availability === "offline"\) \{\s*\n\s*await localRuntimeEvidence\(\{ probe: installedCovenVersion \}\);/,
+  "only an offline local target probes the runtime, so `missing` has proof and hubs never spawn",
+);
+assert.match(
+  source,
+  /availability: "online",\s*\n\s*serviceConflict,/,
+  "a healthy daemon the service does not own projects foreign-owned from the same conflict evidence",
 );
 
 console.log("daemon status route.test.ts: ok");

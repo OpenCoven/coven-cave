@@ -29,6 +29,7 @@ let responsesByUrl: Map<string, () => Response> = new Map();
 };
 
 const { GET } = await import("./route.ts");
+const { resetUpstreamHealth } = await import("../../../../../lib/server/upstream-fetch.ts");
 
 const VOICES_PAYLOAD = {
   voices: [
@@ -49,6 +50,9 @@ const MODELS_PAYLOAD = [
 beforeEach(() => {
   delete process.env.ELEVENLABS_API_KEY;
   responsesByUrl = new Map();
+  // Reads are retried once through upstreamFetch and a failure streak can
+  // open its cooldown; start each case with a clean ledger.
+  resetUpstreamHealth("elevenlabs");
 });
 
 test("400 vault_key_unresolved when ELEVENLABS_API_KEY is not set", async () => {

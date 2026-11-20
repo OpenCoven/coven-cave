@@ -14,25 +14,24 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { resetUpstreamHealth, upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import {
-  commitLocalEncryptedSecretBatch,
-  hasLocalEncryptedSecret,
-} from "@/lib/local-encrypted-vault";
+import { commitLocalEncryptedSecretBatch } from "@/lib/local-encrypted-vault";
 import {
   loadVaultMapForMutation,
-  resolveSecret,
   saveVaultMap,
   type VaultMap,
 } from "@/lib/vault";
 import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
+import { readAsanaPatStatus } from "@/lib/server/pat-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PAT_KEY = "ASANA_PAT";
 const USER_KEY = "ASANA_USER";
+const VALIDATE_TIMEOUT_MS = 10_000;
 
 function applyEnvUpdates(updates: Record<string, string | null>): void {
   const envPath = envLocalPath();
@@ -51,16 +50,32 @@ function mutationError(error: unknown) {
   );
 }
 
-async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
+type PatValidation = {
+  valid: boolean;
+  login: string | null;
+  /** Asana was unreachable. */
+  network?: boolean;
+  /** Asana answered but could not judge the token (an outage or a rate limit). */
+  unavailable?: number;
+};
+
+async function validatePat(pat: string): Promise<PatValidation> {
   try {
-    const res = await fetch("https://app.asana.com/api/1.0/users/me", {
+    const res = await upstreamFetch("asana", "https://app.asana.com/api/1.0/users/me", {
       headers: { Authorization: `Bearer ${pat}`, Accept: "application/json" },
       cache: "no-store",
-    });
-    if (!res.ok) return { valid: false, login: null };
+      signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
+      // A cooldown belongs to the old token. A new one has its own budget (#6371).
+    }, { honorCooldown: false });
+    // Only Asana's own verdict on the credential rejects it. A 5xx or a 429
+    // says nothing about the token, the same way an unreachable host says
+    // nothing (#6359, mirroring /api/github/pat).
+    if (res.status === 401 || res.status === 403) return { valid: false, login: null };
+    if (!res.ok) return { valid: false, login: null, unavailable: res.status };
     const data = await res.json().catch(() => null);
-    const me = data?.data as { name?: string; email?: string } | undefined;
-    return { valid: true, login: me?.name ?? me?.email ?? null };
+    const me = data?.data as { name?: unknown; email?: unknown } | undefined;
+    const login = typeof me?.name === "string" ? me.name : typeof me?.email === "string" ? me.email : null;
+    return { valid: true, login };
   } catch {
     // Asana unreachable — not evidence the token is bad (cave-d6zq).
     return { valid: false, login: null, network: true };
@@ -68,20 +83,7 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
 }
 
 export async function GET() {
-  const patFromVault = resolveSecret(PAT_KEY);
-  const userFromVault = resolveSecret(USER_KEY);
-
-  const hasPat = !!(patFromVault ?? process.env.ASANA_PAT?.trim() ?? process.env.ASANA_ACCESS_TOKEN?.trim());
-  const login = userFromVault ?? process.env.ASANA_USER?.trim() ?? null;
-  const source: "encrypted" | "vault" | "env" | "none" = hasLocalEncryptedSecret(PAT_KEY)
-    ? "encrypted"
-    : patFromVault
-      ? "vault"
-      : hasPat
-        ? "env"
-        : "none";
-
-  return NextResponse.json({ hasPat, login, source });
+  return NextResponse.json(readAsanaPatStatus());
 }
 
 export async function POST(req: NextRequest) {
@@ -102,6 +104,12 @@ export async function POST(req: NextRequest) {
     if (result.network) {
       return NextResponse.json(
         { ok: false, error: "Couldn't reach Asana to verify the token — check your connection and try again." },
+        { status: 503 },
+      );
+    }
+    if (result.unavailable) {
+      return NextResponse.json(
+        { ok: false, error: `Asana couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.` },
         { status: 503 },
       );
     }
@@ -142,6 +150,7 @@ export async function POST(req: NextRequest) {
   // Inject so the next request resolves the token without a restart.
   process.env[PAT_KEY] = pat;
   if (result.login) process.env[USER_KEY] = result.login;
+  resetUpstreamHealth("asana");
 
   return NextResponse.json({ ok: true, login: result.login, patStoredIn: "encrypted" });
 }

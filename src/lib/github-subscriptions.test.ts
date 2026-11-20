@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -71,6 +71,18 @@ assert.equal(isValidRepo(""), false, "empty rejected");
 }
 
 // ── diffOpenedPrs ────────────────────────────────────────────────────────────
+{
+  const file = process.env.COVEN_GITHUB_SUBSCRIPTIONS_PATH;
+  const saved = readFileSync(file, "utf8");
+  writeFileSync(file, "{invalid");
+  await assert.rejects(loadSubscriptions, SyntaxError, "invalid data is unavailable, not disabled");
+  await assert.rejects(() => patchSubscriptions({ enabled: false }), SyntaxError);
+  await assert.rejects(() => updateCursor("OpenCoven/coven-cave", {}), SyntaxError);
+  assert.equal(readFileSync(file, "utf8"), "{invalid", "failed reads never replace authoritative data");
+  writeFileSync(file, saved);
+  assert.equal((await loadSubscriptions()).enabled, true, "reads recover after the file is restored");
+}
+
 const pr = (number, created_at) => ({
   number,
   title: `PR ${number}`,

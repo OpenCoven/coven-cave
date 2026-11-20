@@ -8,6 +8,7 @@ import {
   selectAll,
   toggleFamiliarSelection,
 } from "@/lib/familiar-multiselect";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   /** Resolved familiars (FamiliarAvatar needs ResolvedFamiliar, not raw Familiar). */
@@ -33,6 +34,7 @@ const chipClass = (active: boolean) =>
  */
 export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
   const all = isAllSelected(selected);
+  const keys = useKeySymbols();
   return (
     <div
       className="mb-4 flex flex-wrap items-center gap-1.5"
@@ -56,7 +58,7 @@ export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
             variant="ghost"
             size="xs"
             aria-pressed={active}
-            title={`${f.display_name} — click to filter, ⌘-click to multi-select`}
+            title={`${f.display_name} — click to filter, ${keys.mod}-click to multi-select`}
             className={chipClass(active)}
             onClick={(e) =>
               onChange(toggleFamiliarSelection(selected, f.id, e.metaKey || e.ctrlKey))
@@ -69,7 +71,7 @@ export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
       })}
       {familiars.length > 1 && (
         <span className="ml-1 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
-          ⌘-click to combine
+          {keys.mod}-click to combine
         </span>
       )}
     </div>

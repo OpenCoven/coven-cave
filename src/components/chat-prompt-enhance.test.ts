@@ -31,6 +31,9 @@ assert.match(chatView, /selectedFiles: \[\.\.\.mentionedFiles, \.\.\.attachments
 assert.match(chatView, /recentThreadTitle: session\?\.title \?\? null/, "enhance request carries the thread title as context");
 assert.match(chatView, /recentMessages:/, "enhance uses a bounded current conversation window as context");
 assert.match(chatView, /recentToolOutcomes:/, "enhance uses bounded settled tool outcomes as context");
+const toolOutcomeBuilder = chatView.match(/recentToolOutcomes: turns[\s\S]*?\.map\(\(tool\) => \(\{[^}]*\}\)\)/)?.[0] ?? "";
+assert.ok(toolOutcomeBuilder, "the Enhance tool-outcome builder is found");
+assert.doesNotMatch(toolOutcomeBuilder, /output/, "Enhance sends tool names and outcomes, never a tool result (#6486)");
 assert.match(chatView, /linkedTask:/, "enhance includes the active linked task when available");
 assert.match(chatView, /modelScope:/, "enhance fingerprints the composer-local selected model scope");
 assert.match(chatView, /familiarId: familiar\.id/, "enhance streams through the thread's familiar");

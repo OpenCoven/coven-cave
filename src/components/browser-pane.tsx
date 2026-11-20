@@ -39,6 +39,7 @@ import {
 } from "./browser-tab-state";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 export type { BrowserTab } from "./browser-tab-state";
 
@@ -76,6 +77,7 @@ export type BrowserPaneHandle = {
 // BrowserPane loads through next/dynamic (lazy-surfaces), whose wrapper does
 // not forward element refs — a plain prop crosses the boundary losslessly.
 export function BrowserPane({ label = "default", active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
+  const keys = useKeySymbols();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBrowserBridge | null>(null);
@@ -815,7 +817,7 @@ export function BrowserPane({ label = "default", active = true, handleRef, navig
               if (!toolbarOpenRef.current) hideAllNativeTabsNow();
               setToolbarOpen((v) => !v);
             }}
-            title="Address bar (⌘L)"
+            title={platformizeHint("Address bar (⌘L)", keys)}
             aria-label="Toggle address bar"
             className={[
               "focus-ring mb-1 grid h-7 w-7 shrink-0 place-items-center rounded transition-colors",
@@ -1018,7 +1020,7 @@ export function BrowserPane({ label = "default", active = true, handleRef, navig
       <footer
         className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[length:var(--text-2xs)] text-[var(--text-muted)]"
       >
-        ⌘L address · ⌘K tabs · ⌘[ back · ⌘] forward · ⌘R reload · [ pin rail
+        {platformizeHint("⌘L address · ⌘K tabs · ⌘[ back · ⌘] forward · ⌘R reload", keys)} · [ pin rail
       </footer>
       </div>{/* end main area */}
     </div>

@@ -82,7 +82,7 @@ assert.match(source, /managedNpmLaunch\(managed\.paths\)/, "npm runs through own
 assert.match(source, /args: \[\.\.\.launch\.args, "install", "--global", target\.packageName\]/, "npm argv is fixed and reviewed");
 assert.match(source, /shell: false/, "installer spawns never use a shell");
 assert.match(source, /commandPath\("npm", \{ refresh: true, refreshOnMiss: true \}\)/, "Coven CLI repair falls back to verified host npm only for its detected prefix");
-assert.match(source, /installManagedNodeToolchain\(/, "managed Node installer is routed through the endpoint");
+assert.match(source, /installManagedNode = installManagedNodeToolchain/, "managed Node installer is routed through the endpoint");
 assert.match(source, /controller\.abort\(\)/, "managed Node installation supports cancellation");
 assert.match(
   source,

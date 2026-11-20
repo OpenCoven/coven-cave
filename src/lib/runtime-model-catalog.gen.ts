@@ -2,11 +2,11 @@
 // Re-generate with: node scripts/sync-model-catalog.mjs
 //
 // Source: config/runtime-model-catalog.json
-// sha256: 8e5c250fe13523770d7e958e7979c81d681467216e985a5c6869d3d99fc0c36e
+// sha256: 709e5b5fdfab1a37a179ad33551cf3b2f0721db6e1b1dc19e70131a04c71dd84
 
 export const MODEL_CATALOG_SOURCE = {
   schemaVersion: 1,
-  sha256: "8e5c250fe13523770d7e958e7979c81d681467216e985a5c6869d3d99fc0c36e",
+  sha256: "709e5b5fdfab1a37a179ad33551cf3b2f0721db6e1b1dc19e70131a04c71dd84",
 } as const;
 
 export type GeneratedRuntimeProvider =
@@ -15,6 +15,8 @@ export type GeneratedRuntimeProvider =
   | "github"
   | "nous"
   | "xai"
+  | "ollama"
+  | "lmstudio"
   | null;
 
 export type GeneratedRuntimeModelCatalog = {
@@ -67,6 +69,20 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
         "label": "GPT-5.3 Codex Spark"
       }
     ],
+    "allowCustom": true,
+    "defaultOwner": "cave"
+  },
+  "codex-ollama": {
+    "runtime": "codex-ollama",
+    "provider": "ollama",
+    "models": [],
+    "allowCustom": true,
+    "defaultOwner": "cave"
+  },
+  "codex-lmstudio": {
+    "runtime": "codex-lmstudio",
+    "provider": "lmstudio",
+    "models": [],
     "allowCustom": true,
     "defaultOwner": "cave"
   },
@@ -234,6 +250,10 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
 export const GENERATED_MODEL_CONTEXT_WINDOWS: Record<string, number> =
   {
   "github/auto": 200000,
+  "openai/gpt-6.2-sol": 1050000,
+  "openai/gpt-6.2-astra": 1050000,
+  "openai/gpt-6.1-terra": 1050000,
+  "openai/gpt-6-luna": 1050000,
   "openai/gpt-5.6-sol": 1000000,
   "github/gpt-5.6-sol": 1000000,
   "openai/gpt-6-astra": 1000000,
@@ -270,4 +290,12 @@ export const GENERATED_MODEL_CONTEXT_WINDOWS: Record<string, number> =
   "github/gemini-3.1-pro": 1000000,
   "nous/hermes-4": 128000,
   "anthropic/opus": 1000000
+};
+
+export const GENERATED_ESTIMATED_WINDOWS: Record<string, number> =
+  {
+  "openai/gpt-6.2-sol": 500000,
+  "openai/gpt-6.2-astra": 272000,
+  "openai/gpt-6.1-terra": 500000,
+  "openai/gpt-6-luna": 272000
 };

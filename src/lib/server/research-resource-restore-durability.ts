@@ -48,7 +48,7 @@ export async function writeResearchRestoreFileDurably(
   let handle = null as Awaited<ReturnType<typeof open>> | null;
   try {
     handle = await open(
-      temporary,
+      /* turbopackIgnore: true */ temporary,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
       0o600,
     );
@@ -58,12 +58,12 @@ export async function writeResearchRestoreFileDurably(
     await observed(observer, "file-fsynced", temporary);
     await handle.close();
     handle = null;
-    await rename(temporary, target);
+    await rename(/* turbopackIgnore: true */ temporary, target);
     await observed(observer, "renamed", target);
     await fsyncResearchRestoreDirectory(path.dirname(target), observer);
   } catch (error) {
     await handle?.close().catch(() => {});
-    await rm(temporary, { force: true }).catch(() => {});
+    await rm(/* turbopackIgnore: true */ temporary, { force: true }).catch(() => {});
     throw error;
   }
 }

@@ -78,7 +78,7 @@ export async function discoverRoleFiles(): Promise<RoleFile[]> {
     }
   }
 
-  const globalRolesDir = path.join(covenHome(), "roles");
+  const globalRolesDir = path.join(/* turbopackIgnore: true */ covenHome(), "roles");
   for (const roleName of await roleDirs(globalRolesDir)) {
     await addRoleFile(files, seen, seenKeys, path.join(/* turbopackIgnore: true */ globalRolesDir, roleName, "ROLE.md"), {
       id: roleName,
@@ -86,7 +86,7 @@ export async function discoverRoleFiles(): Promise<RoleFile[]> {
     });
   }
 
-  const exportedFamiliarsDir = path.join(globalRolesDir, "familiars");
+  const exportedFamiliarsDir = path.join(/* turbopackIgnore: true */ globalRolesDir, "familiars");
   for (const familiar of await roleDirs(exportedFamiliarsDir)) {
     const rolesDir = path.join(/* turbopackIgnore: true */ exportedFamiliarsDir, familiar);
     for (const roleName of await roleDirs(rolesDir)) {

@@ -33,8 +33,13 @@ assert.match(source, /path:\s*"\/api\/v1\/sessions"/, "session executor spawns a
 assert.match(source, /harness:\s*binding\.harness/, "session executor honors the familiar's harness binding");
 assert.match(
   source,
-  /\.\.\.\(binding\.model \? \{ model: binding\.model \} : \{\}\)/,
+  /const launchModel = localLaunch\.local \? localLaunch\.nativeModel : binding\.model;[\s\S]*?\.\.\.\(launchModel \? \{ model: launchModel \} : \{\}\)/,
   "session executor honors explicit bindings and omits an absent runtime-owned model",
+);
+assert.match(
+  source,
+  /prepareLocalCodexLaunch\([^)]*binding\.model, "daemon"\);\s*if \(localLaunch\.local && !localLaunch\.ok\)/,
+  "a local runtime is checked, and refused with its reason, before the daemon starts it (#6049)",
 );
 assert.match(
   source,

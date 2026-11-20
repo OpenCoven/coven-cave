@@ -10,6 +10,36 @@ import UIKit
 final class AgentActivityUITests: XCTestCase {
 
     @MainActor
+    func testLifecycleStatesKeepExactLabelsAndProvenanceInDetail() throws {
+        let cases = [
+            ("approval-requested", "Approval requested"),
+            ("cancel-requested", "Cancellation requested"),
+            ("policy-rejected", "Rejected by policy"),
+            ("user-rejected", "Rejected by user"),
+            ("cancelled", "Cancelled"),
+        ]
+        for (status, label) in cases {
+            let app = launchTimeline(extraArguments: ["--ui-preview-tool-status", status, "--ui-preview-tool-output", "--ui-preview-reasoning-off"])
+            defer { app.terminate() }
+            let tool = timelineTool(in: app)
+            XCTAssertTrue(tool.waitForExistence(timeout: 10))
+            XCTAssertTrue(tool.label.contains(label), "\(status): \(tool.label)")
+            XCTAssertFalse(tool.label.contains("Succeeded"))
+            tool.tap()
+            XCTAssertTrue(app.staticTexts[label].firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Runtime report · hermes · version unavailable"].firstMatch.exists)
+            XCTAssertTrue(app.staticTexts["Approval and change confirmation unavailable."].firstMatch.exists)
+            app.buttons["Show output for Read"].tap()
+            XCTAssertTrue(app.buttons["Close tool output"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts[label].firstMatch.exists)
+            XCTAssertTrue(app.staticTexts["Runtime report · hermes · version unavailable"].firstMatch.exists)
+            try attachScreenshot(named: "timeline-native-\(status)")
+            app.buttons["Close tool output"].tap()
+            XCTAssertTrue(tool.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
     func testTimelinePreservesSummaryProseToolOrder() throws {
         let app = launchTimeline()
         let before = summary("before", in: app)
@@ -63,7 +93,7 @@ final class AgentActivityUITests: XCTestCase {
         tool.tap()
         XCTAssertTrue(app.staticTexts["Checking the relevant source."].exists)
         XCTAssertTrue(app.buttons["Show output for Read"].exists)
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(app.staticTexts["Checking the relevant source."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Show output for Read"].exists)
@@ -91,6 +121,21 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Checking the relevant source."].exists)
         XCTAssertFalse(app.staticTexts["The source check is complete."].exists)
         try attachScreenshot(named: "timeline-native-hidden-failure")
+    }
+
+    /// golden-02 (#6057): a provider-withheld block is a labelled no-text state,
+    /// never a fabricated summary, and keeps its place in the timeline.
+    @MainActor
+    func testTimelineShowsProviderWithheldSummaryHonestly() throws {
+        let app = launchTimeline(extraArguments: ["--ui-preview-timeline-withheld"])
+        let withheld = summary("after", in: app)
+        XCTAssertTrue(withheld.waitForExistence(timeout: 10))
+        XCTAssertEqual(withheld.label, "Reasoning summary")
+        XCTAssertTrue(app.staticTexts["Provider withheld this summary."].exists)
+        XCTAssertFalse(app.staticTexts["The source check is complete."].exists)
+        XCTAssertLessThan(timelineTool(in: app).frame.maxY, withheld.frame.minY)
+        XCTAssertLessThan(withheld.frame.minY, app.staticTexts["Ready to review."].frame.minY)
+        try attachScreenshot(named: "timeline-native-provider-withheld")
     }
 
     @MainActor
@@ -133,14 +178,14 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(before.staticTexts["Reasoning summary"].frame.minY, before.frame.minY)
         XCTAssertLessThanOrEqual(before.staticTexts["Reasoning summary"].frame.maxY, before.frame.maxY)
         XCTAssertGreaterThanOrEqual(before.frame.minX, 0)
-        XCTAssertLessThanOrEqual(before.frame.maxX, app.frame.width)
+        XCTAssertLessThanOrEqual(before.frame.maxX, viewport(app).width)
         try attachScreenshot(named: "timeline-native-accessibility-start")
         let tool = timelineTool(in: app)
         for _ in 0..<5 where !tool.isHittable { transcript.swipeUp() }
         // A tappable row may still sit under the translucent sticky date.
         // Place the entire chip below that header for visual qualification.
-        for _ in 0..<4 where abs(tool.frame.minY - app.frame.height * 0.35) > 20 {
-            let delta = min(150, max(-150, app.frame.height * 0.35 - tool.frame.minY))
+        for _ in 0..<4 where abs(tool.frame.minY - viewport(app).height * 0.35) > 20 {
+            let delta = min(150, max(-150, viewport(app).height * 0.35 - tool.frame.minY))
             let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: delta)),
                         withVelocity: .slow, thenHoldForDuration: 0.3)
@@ -154,7 +199,7 @@ final class AgentActivityUITests: XCTestCase {
                                     "the wrapping title must not draw over the preceding tool")
         XCTAssertTrue(tool.label.contains("Read · src/example.ts · Succeeded"))
         XCTAssertGreaterThanOrEqual(tool.frame.minX, 0)
-        XCTAssertLessThanOrEqual(tool.frame.maxX, app.frame.width)
+        XCTAssertLessThanOrEqual(tool.frame.maxX, viewport(app).width)
         try attachScreenshot(named: "timeline-native-accessibility-tool")
     }
 
@@ -192,6 +237,7 @@ final class AgentActivityUITests: XCTestCase {
         let open = app.buttons["Show output for Read"]
         XCTAssertTrue(open.waitForExistence(timeout: 5), "successful native tools expose their saved output")
         guard open.exists else { return }
+        revealBelowHeader(open, in: app)
         open.tap()
         XCTAssertTrue(app.staticTexts["Tool output"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["NATIVE_TOOL_OUTPUT_PREVIEW\nSecond result line."].waitForExistence(timeout: 5))
@@ -220,11 +266,12 @@ final class AgentActivityUITests: XCTestCase {
         app.buttons["Show output for Read"].tap()
         let result = app.staticTexts["NATIVE_TOOL_OUTPUT_PREVIEW\nSecond result line."]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(app.buttons["Show output for Read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Tool output"].exists)
         XCTAssertFalse(result.exists)
+        revealBelowHeader(app.buttons["Show output for Read"], in: app)
         app.buttons["Show output for Read"].tap()
         XCTAssertTrue(result.waitForExistence(timeout: 5))
     }
@@ -247,7 +294,24 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 15))
         chip.tap()
         XCTAssertTrue(app.buttons["Show output for Read"].waitForExistence(timeout: 5))
+        revealBelowHeader(app.buttons["Show output for Read"], in: app)
         return app
+    }
+
+    /// Scroll the transcript until `element` sits below the header. Expanding
+    /// the trail grows the bottom-anchored transcript upward, so on a short
+    /// screen (iPhone Duo's closed outer display is 678pt) its first rows land
+    /// under the navigation bar, where a tap hits the bar instead. Small, slow
+    /// drags so the row isn't flung past the other edge.
+    @MainActor
+    private func revealBelowHeader(_ element: XCUIElement, in app: XCUIApplication) {
+        let transcript = app.scrollViews["Chat transcript"].firstMatch
+        for _ in 0..<6 where element.frame.minY < app.navigationBars.firstMatch.frame.maxY + 8 {
+            transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                .press(forDuration: 0.05, thenDragTo: transcript.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)
+                ), withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
     }
 
     @MainActor
@@ -268,17 +332,28 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(chip.label.contains("1 failed"), "chip reports the failure: \(chip.label)")
 
         // The enclosing message supplies its identifier to child elements.
+        // The trail is folded into a Run details disclosure (#6045): the
+        // closed summary counts the gaps, and opening it shows the rows.
+        let runDetails = app.buttons.matching(NSPredicate(
+            format: "identifier == %@ AND label BEGINSWITH %@", chip.identifier, "Run details"
+        )).firstMatch
+        XCTAssertTrue(runDetails.waitForExistence(timeout: 5), "the response folds its trail into Run details")
+        XCTAssertEqual(runDetails.label, "Run details · runtime not recorded · 3 unverified",
+                       "the closed summary names the missing runtime and counts the gaps")
+        XCTAssertEqual(runDetails.value as? String, "Collapsed")
+        runDetails.tap()
         // Select the combined status for this message, not an individual line.
         let identity = app.staticTexts.matching(NSPredicate(
             format: "identifier == %@ AND (label == %@ OR label BEGINSWITH %@)",
             chip.identifier, "Model application status", "Runtime:"
         )).firstMatch
         XCTAssertTrue(identity.waitForExistence(timeout: 5), "the response exposes its identity status")
-        XCTAssertTrue(identity.label.contains("Runtime: not recorded"),
+        XCTAssertEqual(runDetails.value as? String, "Expanded")
+        XCTAssertTrue(identity.label.contains("Runtime: Identity not recorded in this response"),
                       "legacy history does not invent a runtime: \(identity.label)")
-        XCTAssertTrue(identity.label.contains("Runtime-reported model: unavailable"),
+        XCTAssertTrue(identity.label.contains("Model: not reported"),
                       "unavailable model evidence is accessible: \(identity.label)")
-        XCTAssertTrue(identity.label.contains("Activity support: not recorded"),
+        XCTAssertTrue(identity.label.contains("Activity: not recorded for this turn"),
                       "unavailable activity support is accessible: \(identity.label)")
 
         // The argument summary — the whole point of the fix. Before it, every
@@ -314,7 +389,7 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(identity.isHittable, "the reported identity is visible in the transcript")
         try attachScreenshot(named: "runtime-identity-reported")
 
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(identity.waitForExistence(timeout: 5), "the response report survives background/foreground")
         assertReportedIdentity(identity)
@@ -326,9 +401,9 @@ final class AgentActivityUITests: XCTestCase {
         let identity = reportedIdentity(in: app)
         assertReportedIdentity(identity)
         XCTAssertTrue(identity.isHittable, "the report remains reachable at accessibility text size")
-        XCTAssertLessThanOrEqual(identity.frame.maxX, app.frame.maxX,
+        XCTAssertLessThanOrEqual(identity.frame.maxX, viewport(app).maxX,
                                  "the identity stays within the viewport")
-        XCTAssertGreaterThanOrEqual(identity.frame.minX, app.frame.minX,
+        XCTAssertGreaterThanOrEqual(identity.frame.minX, viewport(app).minX,
                                     "the identity does not overflow the leading edge")
         try attachScreenshot(named: "runtime-identity-accessibility-text")
 
@@ -344,13 +419,18 @@ final class AgentActivityUITests: XCTestCase {
         }
         // Position the start high enough to capture both the runtime and the
         // wrapped full model ID, not merely the first line at the bottom edge.
+        // A slow drag held at its end, so the scroll stops where the finger
+        // did: a released flick carries momentum past the start of the rows
+        // now that the wrapped Run details summary sits above them (#6045).
+        // Ten tenth-height drags, not five: a short landscape viewport (iPhone
+        // Duo's open inner display is 669pt tall) needs more of them.
         let upperThird = visibleTop + (transcript.frame.maxY - visibleTop) / 3
-        for _ in 0..<5 {
+        for _ in 0..<10 {
             if identity.frame.minY <= upperThird { break }
             transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
                 .press(forDuration: 0.05, thenDragTo: transcript.coordinate(
                     withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)
-                ))
+                ), withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         XCTAssertGreaterThanOrEqual(identity.frame.minY, visibleTop,
                                     "scrolling exposes the start of the identity report")
@@ -373,8 +453,16 @@ final class AgentActivityUITests: XCTestCase {
         return app
     }
 
+    /// Opens the Run details disclosure (#6045) and returns its combined rows.
     @MainActor
     private func reportedIdentity(in app: XCUIApplication) -> XCUIElement {
+        let runDetails = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Run details · claude 2.1.288"
+        )).firstMatch
+        XCTAssertTrue(runDetails.waitForExistence(timeout: 5), "the response folds its report into Run details")
+        XCTAssertEqual(runDetails.label, "Run details · claude 2.1.288 · 1 unverified",
+                       "the closed summary carries the runtime and the one unverified fact")
+        if runDetails.value as? String != "Expanded" { runDetails.tap() }
         let identity = app.staticTexts.matching(NSPredicate(
             format: "label BEGINSWITH %@", "Runtime: claude 2.1.288"
         )).firstMatch
@@ -384,12 +472,21 @@ final class AgentActivityUITests: XCTestCase {
 
     @MainActor
     private func assertReportedIdentity(_ identity: XCUIElement) {
-        XCTAssertTrue(identity.label.contains("Runtime-reported model: claude-opus-5-5"))
+        XCTAssertTrue(identity.label.contains("Model: claude-opus-5-5 · reported by the runtime"))
         XCTAssertTrue(identity.label.contains("Requested model: claude-sonnet-5"))
         XCTAssertTrue(identity.label.contains("Runtime path: Coven relay"))
-        XCTAssertTrue(identity.label.contains("Tool details: supported on this path"))
-        XCTAssertTrue(identity.label.contains("Reasoning summaries: support unverified on this path"))
+        XCTAssertTrue(identity.label.contains("Tool details: available"))
+        XCTAssertTrue(identity.label.contains("Reasoning summaries: not verified on this path"))
         XCTAssertFalse(identity.label.contains("gpt-5.6"), "the familiar's current model cannot overwrite a response report")
+    }
+
+    /// The app's viewport, in the same space as element frames. On iPhone
+    /// Duo's open inner display `app.frame` reports the portrait-native panel
+    /// (669pt wide) while elements lay out in the landscape window, so
+    /// measure the window instead.
+    @MainActor
+    private func viewport(_ app: XCUIApplication) -> CGRect {
+        app.windows.firstMatch.frame
     }
 
     /// Saves a full-screen PNG next to the test run and attaches it, so the

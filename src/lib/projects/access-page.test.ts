@@ -117,6 +117,14 @@ describe("nextAccessState", () => {
     assert.equal(nextAccessState("read"), "write");
     assert.equal(nextAccessState("write"), "none");
   });
+
+  it("skips Write on a folder that holds Cave's private state (#6451)", () => {
+    assert.equal(nextAccessState("none", true), "read");
+    assert.equal(nextAccessState("read", true), "none");
+    assert.equal(nextAccessState("write", true), "none", "an existing Write grant can still be removed");
+    assert.equal(accessStateMeta("read", true).action, "remove access");
+    assert.equal(accessStateMeta("read").action, "grant full access");
+  });
 });
 
 describe("accessStateMeta", () => {
@@ -192,6 +200,18 @@ describe("setAllOps", () => {
       { projectId: "p-read", op: "revoke" },
       { projectId: "p-write", op: "revoke" },
     ]);
+  });
+
+  it("gives a folder holding Cave's private state Read at most (#6451)", () => {
+    const blocked = new Set(["p-none", "p-read", "p-write"]);
+    assert.deepEqual(setAllOps(ids, direct, "write", blocked), [
+      { projectId: "p-none", op: "grant", access: "read" },
+    ], "Set all to Full grants Read where there was nothing and leaves the rest as they are");
+    assert.deepEqual(setAllOps(ids, direct, "read", blocked), [
+      { projectId: "p-none", op: "grant", access: "read" },
+      { projectId: "p-write", op: "grant", access: "read" },
+    ], "narrowing to Read still applies");
+    assert.deepEqual(setAllOps(ids, direct, "none", blocked).length, 2, "removal still applies");
   });
 
   it("no-ops an already-converged set", () => {

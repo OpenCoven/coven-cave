@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 const FAMILIARS = [
   { id: "cody", display_name: "Cody", role: "Implementer", status: "active", icon: "ph:code" },
@@ -71,6 +72,9 @@ async function boot(page: Page) {
     id: "panel-project", name: "Panel project", root: "/repo", access: "write",
     createdAt: "2026-08-01T10:00:00.000Z", updatedAt: "2026-08-01T10:00:00.000Z",
   };
+  await installCompletedFirstUse(page, {
+    project, familiarIds: ["cody"], actingFamiliarId: "cody", permissionMode: "full",
+  });
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
   await page.route("**/api/queue/project", (route) => route.fulfill({
     json: { ok: true, projectId: project.id, project },
@@ -78,6 +82,10 @@ async function boot(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
+    // This journey browses All projects and explicitly changes familiar scope;
+    // a concrete saved launch default must not replace that browsing choice.
+    localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify(null));
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["cody"] }));
     if (!sessionStorage.getItem("cave:e2e:right-chat-pref-seeded")) {
       localStorage.setItem("cave:shell:right-chat-open", "0");
       localStorage.setItem("cave:shell:right-chat-width", "360");
@@ -226,6 +234,40 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   await expect(page.locator(".right-chat").first()).toHaveAttribute("aria-hidden", "true");
 });
 
+test("widening past the mobile breakpoint restores an open panel without a layout error", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const panelErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /not found for Panel right-chat/.test(message.text())) {
+      panelErrors.push(message.text());
+    }
+  });
+  page.on("pageerror", (error) => {
+    if (/not found for Panel right-chat/.test(error.message)) panelErrors.push(error.message);
+  });
+  // Registered before boot()'s seed script so the panel is remembered open.
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:shell:right-chat-open", "1");
+    localStorage.setItem("cave:shell:right-chat-width", "360");
+    sessionStorage.setItem("cave:e2e:right-chat-pref-seeded", "1");
+  });
+  await page.setViewportSize({ width: 900, height: 800 });
+  await boot(page);
+  await expect(page.getByRole("dialog", { name: "Chat panel" })).toBeVisible();
+  await expect(page.locator('[data-panel="true"]#right-chat')).toHaveCount(0);
+
+  // Crossing the breakpoint mounts the desktop Panel in the same commit that
+  // restores its remembered open state, before the Group has registered it.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const outerPanel = page.locator('[data-panel="true"]#right-chat');
+  await expect(outerPanel).toBeVisible();
+  await expect(page.locator(".right-chat").first()).toHaveAttribute("aria-hidden", "false");
+  await expect
+    .poll(async () => Math.abs(((await outerPanel.boundingBox())?.width ?? 0) - 360))
+    .toBeLessThan(4);
+  expect(panelErrors).toEqual([]);
+});
+
 test("mobile uses one focus-trapped right drawer and returns focus", async ({ page }, testInfo) => {
   test.skip(!["pixel-5", "iphone-13"].includes(testInfo.project.name));
   await boot(page);
@@ -323,6 +365,10 @@ test("full-bleed right drawer's close control is reachable by keyboard", async (
 
 async function bootFixThread(page: Page, options: { selectedProjectId?: string | null; denyNovaAlpha?: boolean } = {}) {
   await isolateRuntime(page);
+  await installCompletedFirstUse(page, {
+    project: { id: "fix-project", name: "Fix project", root: "/repo" },
+    familiarIds: ["cody"], actingFamiliarId: "cody", permissionMode: "full",
+  });
   const selectedProjectId = options.selectedProjectId === undefined ? "fix-project" : options.selectedProjectId;
   const sends: Array<Record<string, unknown>> = [];
   const projectAuthorityReads: Array<string | null> = [];
@@ -352,6 +398,23 @@ async function bootFixThread(page: Page, options: { selectedProjectId?: string |
       detail: "The lookup tool cannot find project files.",
     }],
   };
+  let sweepReceipt: string | null = null;
+  await page.route("**/api/chat/signal-sweeps**", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { ok: true, available: true } });
+    const body = route.request().postDataJSON();
+    if (body.action === "prepare") {
+      expect(body.familiarId).toBe("cody");
+      expect(body.sourceReportId).toBe(report.id);
+      expect(body.identities).toEqual(["blocker:lookup"]);
+      if (sweepReceipt && body.expectedPrevious?.["blocker:lookup"] !== sweepReceipt) {
+        return route.fulfill({ status: 409, json: { ok: false, error: "Review the existing fix before retrying.", receipts: { "blocker:lookup": sweepReceipt } } });
+      }
+      sweepReceipt = crypto.randomUUID();
+      return route.fulfill({ json: { ok: true, requestId: sweepReceipt, accepted: ["blocker:lookup"], receipts: { "blocker:lookup": sweepReceipt } } });
+    }
+    if (body.action === "release" && body.requestId === sweepReceipt) sweepReceipt = null;
+    return route.fulfill({ json: { ok: true } });
+  });
   const fixtureSessionId = "fix-thread-new";
   const fixtureReply = "Fix response complete.";
   await page.addInitScript(({ selectedProjectId }) => {
@@ -433,15 +496,18 @@ test("fix-thread popup opens sidechat and sends once without replacing main Chat
   test.skip(!["desktop", "webkit"].includes(testInfo.project.name));
   const fixture = await bootFixThread(page, { selectedProjectId: null });
   await page.mouse.move(0, 0);
-  await expect(fixture.main.getByRole("button", { name: "Delete this chat", exact: true })).toHaveCSS("opacity", "1");
+  // Session actions stay visible without hover. Delete moved into the kebab
+  // with its confirm step (#5953), so the kebab is the always-visible anchor.
+  await expect(fixture.main.getByRole("button", { name: "Session options", exact: true })).toHaveCSS("opacity", "1");
   await expect(fixture.main.locator(".voice-call-button")).not.toHaveClass(/reveal-on-hover/);
   await fixture.main.getByRole("button", { name: "Session options", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Delete chat…", exact: true })).toBeVisible();
   await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
   const card = page.getByRole("article", { name: "Thread Signal" });
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: /Broken lookup/ }).click();
-  await card.getByRole("button", { name: "Fix in new thread", exact: true }).click();
-  await expect(card.getByRole("button", { name: "Fix in new thread", exact: true })).toBeDisabled();
+  await card.getByRole("button", { name: "Fix in Build", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Fix in Build", exact: true })).toBeDisabled();
 
   const panel = page.locator(".right-chat").first();
   await expect(panel).toHaveAttribute("aria-hidden", "false");
@@ -586,7 +652,7 @@ test("mobile fix handoff opens the Chat drawer and restores the main draft on cl
   expect(fixture.sends).toHaveLength(1);
 });
 
-test("fix-thread source lookup failure releases only its launch guard for retry", async ({ page }, testInfo) => {
+test("fix-thread source lookup failure remains unsent and supports explicit retry", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   const fixture = await bootFixThread(page, { selectedProjectId: null });
   let rejectSource = true;
@@ -601,12 +667,12 @@ test("fix-thread source lookup failure releases only its launch guard for retry"
   await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
   const card = page.getByRole("article", { name: "Thread Signal" });
   await card.getByRole("button", { name: /Broken lookup/ }).click();
-  const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+  const fix = card.getByRole("button", { name: "Fix in Build", exact: true });
   await fix.click();
-  await expect(card.getByText("Couldn't open the Chat panel", { exact: true })).toBeVisible();
+  await expect(card.getByText("Couldn't load the source thread's project. Try again.", { exact: true })).toBeVisible();
   await expect(fix).toBeEnabled();
   expect(fixture.sends).toHaveLength(0);
-  await fix.click();
+  await card.getByRole("button", { name: "Retry fix after changes", exact: true }).click();
   await expect.poll(() => fixture.sends.length).toBe(1);
   await expect(fix).toBeDisabled();
 });
@@ -630,7 +696,7 @@ test("superseding a pending fix request makes its original action retryable", as
     await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
     const card = page.getByRole("article", { name: "Thread Signal" });
     await card.getByRole("button", { name: /Broken lookup/ }).click();
-    const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+    const fix = card.getByRole("button", { name: "Fix in Build", exact: true });
     await fix.click();
     await expect(fix).toBeDisabled();
     await expect.poll(() => intercepted).toBe(true);
@@ -657,9 +723,10 @@ test("failure from another window releases the originating fix action", async ({
       document.documentElement.dataset.fixRequest = (event as CustomEvent<{ requestId: string }>).detail.requestId;
     }, { capture: true, once: true });
   });
-  const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+  const fix = card.getByRole("button", { name: "Fix in Build", exact: true });
   await fix.click();
   await expect(fix).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.fixRequest ?? "")).toMatch(/^[a-f0-9-]{36}$/);
   const requestId = await page.evaluate(() => document.documentElement.dataset.fixRequest!);
   const other = await context.newPage();
   try {

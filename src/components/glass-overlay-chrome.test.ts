@@ -125,7 +125,8 @@ for (const sel of ["ui-dock-chat", "ui-tooltip", "familiar-switcher__popover", "
 // table lightbox → cave-md.css — each sheet owns its selectors' fallbacks so
 // surfaces loading only the split sheet keep opaque glass.)
 const featureSheets: Array<[string, string[]]> = [
-  ["../styles/dashboard.css", ["spark-tip"]],
+  // The shared sparkline's sheet, imported by src/components/ui/sparkline.tsx.
+  ["../styles/sparkline.css", ["spark-tip"]],
   ["../styles/dash-act.css", ["dash-snooze__menu"]],
   ["../styles/voice-call.css", ["voice-call-overlay__dialog"]],
   ["../styles/cave-composer.css", ["cave-chat-model-popover"]],

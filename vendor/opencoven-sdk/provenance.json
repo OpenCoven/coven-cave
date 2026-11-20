@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/OpenCoven/sdk",
-  "revision": "d4cf105df882271497ab9eeacf075af87e8d6330",
+  "revision": "89685543a62008533237478c31ecce565798ddf6",
   "packages": [
     {
       "package": "core",
@@ -11,8 +11,8 @@
     },
     {
       "package": "coven",
-      "sha256": "74c6a2d984e52f681d47c96d872c37da2caf7b64783d9d97d0aeca476608f79c",
-      "bytes": 76417,
+      "sha256": "43ea917c8b9930b999373db63c07dd048a2ca1a5e3c1e4817389697821e305ec",
+      "bytes": 131300,
       "name": "@opencoven/coven-client",
       "file": "opencoven-coven-client-0.0.1.tgz"
     }

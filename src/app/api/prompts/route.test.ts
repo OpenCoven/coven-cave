@@ -97,12 +97,12 @@ assert.match(
 );
 assert.match(
   source,
-  /unlink\(path\.join\(userPromptsDir\(\), `\$\{path\.basename\(id\)\}\.md`\)\)/,
+  /unlink\(path\.join\((?:\/\* turbopackIgnore: true \*\/ )?userPromptsDir\(\), `\$\{path\.basename\(id\)\}\.md`\)\)/,
   "DELETE joins the validated slug through path.basename — never a caller-supplied path",
 );
 assert.match(
   source,
-  /path\.join\(dir, `\$\{path\.basename\(id\)\}\.md`\)/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?dir, `\$\{path\.basename\(id\)\}\.md`\)/,
   "POST routes the slug through path.basename (the recognized path-injection sanitizer)",
 );
 assert.match(source, /writeFileAtomic/, "saves are atomic writes");

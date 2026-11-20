@@ -17,8 +17,7 @@ let r = await validateGithubToken("tok", fakeFetch(200, { login: "octocat" }));
 assert.deepEqual(r, { ok: true, login: "octocat" });
 
 r = await validateGithubToken("tok", fakeFetch(200, {}));
-assert.equal(r.ok, true);
-assert.equal(r.login, undefined);
+assert.deepEqual(r, { ok: false, error: "GitHub answered without identifying the token's account" });
 
 r = await validateGithubToken("tok", fakeFetch(401, {}));
 assert.equal(r.ok, false);

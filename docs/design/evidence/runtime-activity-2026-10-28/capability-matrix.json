@@ -1,0 +1,812 @@
+{
+  "schemaVersion": 1,
+  "issue": 5763,
+  "coordinates": [
+    5761,
+    6071,
+    5767
+  ],
+  "recordedAt": "2026-10-28",
+  "sourceHead": "206d7fb613d976a1c7a65c32fdcc78c7ca642880",
+  "passiveInventory": "runtime-matrix.json",
+  "classification": "Synthetic fixture coverage and passive launch inventory at the named head. No real-provider turn, daemon start, trust publication or support promotion. Line references are against sourceHead and drift with later commits.",
+  "criteria": {
+    "1": "Vertical slice: summary → tool request/start → result → second summary → final answer through the real route with deterministic synthetic upstream traffic.",
+    "2": "Fixture-backed coverage for the claimed runtime/path; unavailable runtimes or credentials stay explicitly unverified.",
+    "3": "Parallel same-name calls, duplicate hook/envelope reports, result-before-start, late results and retries keep correct ids and terminal states.",
+    "4": "UTF-8 chunk boundaries, malformed/truncated JSON, snapshots after deltas and unknown events neither duplicate prose nor leak protocol data.",
+    "5": "Reasoning unavailable/withheld/disabled is an honest state, never a spinner or manufactured explanation.",
+    "6": "Opaque reasoning/signature bytes survive a simulated provider continuation unchanged and stay out of SSE, previews and ordinary logs.",
+    "7": "Direct, Coven-backed and SSH paths keep their authorization and environment boundaries; no provider bypass for UI parity."
+  },
+  "statusVocabulary": {
+    "covered": "Route-level behavioural fixture asserts the criterion for this path.",
+    "partial": "Parser/tracker-level or narrower route fixture exists; the full criterion is not asserted on this path.",
+    "none": "No fixture asserts the criterion on this path.",
+    "n/a": "The path is unsupported or deferred, so the criterion is not claimed.",
+    "pathStatus": {
+      "passes": "Every one of the seven criteria is covered by a route-level fixture with deterministic synthetic upstream traffic. Not a real-provider qualification.",
+      "unverified": "Claimed path whose fixtures do not yet cover all seven criteria, or whose runtime/credentials are unavailable; see criteria and missing.",
+      "unsupported": "Cave refuses or degrades this path on purpose; nothing is claimed for it.",
+      "deferred": "Not planned under #5763; tracked elsewhere."
+    }
+  },
+  "paths": [
+    {
+      "runtime": "claude",
+      "launchPath": "coven relay (local)",
+      "status": "unverified",
+      "installedVersion": "2.1.312",
+      "schema": "claude-stream-json-v2",
+      "activity": {
+        "path": "coven",
+        "tools": "supported",
+        "reasoning": "unknown"
+      },
+      "qualification": "fixture-partial; real-provider receipts historical (2.1.289 on 2026-10-05 build coZcWmCnRo0JEjKUxXR1B, 2.1.288 on 2026-10-04), not current-candidate",
+      "criteria": {
+        "1": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts:43-108,216-245,285-294",
+            "src/lib/claude-stream.test.ts:36-59"
+          ],
+          "gap": "No profile can yield summary text, so no second summary exists; text → tool_use → tool_result → final only."
+        },
+        "2": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (Claude on the local Coven relay)",
+            "src/lib/server/claude-runtime-compatibility.test.ts:48-83",
+            "src/lib/claude-stream.test.ts:222-228,271-290"
+          ],
+          "gap": "v1 profile is parser-only; no route run on an unsupported or stale version."
+        },
+        "3": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/harness-routing-tool-events.test.ts:598-624,701-705,726-733,762-819,824-1099",
+            "src/lib/chat-tool-events.test.ts:30-46,294-309"
+          ],
+          "gap": "Tracker-level only; no Claude route run with two same-name calls, duplicates, reordering or a retry."
+        },
+        "4": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/claude-stream.test.ts:85-204,209-257",
+            "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts:240-245,339-391"
+          ],
+          "gap": "No route fixture splits a multibyte character across stdout chunks, truncates a line or replays an assistant envelope."
+        },
+        "5": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (reasoning unknown, no manufactured block)",
+            "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts:285-298,307-320,378-380",
+            "src/lib/claude-stream.test.ts:259-290"
+          ],
+          "gap": "A never-finished thinking block and a user-disabled thinking turn are not route-asserted."
+        },
+        "6": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts:293,301,334-336",
+            "src/lib/claude-stream.test.ts:267,287-288"
+          ],
+          "gap": "No two-turn continuation proving signature/redacted bytes are neither re-sent nor stored."
+        },
+        "7": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-claude-availability.integration.test.ts:147-239",
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (SSH relay; read-only over SSH refused)",
+            "src/app/api/chat/send/flow-read-only.test.ts:200-235"
+          ],
+          "gap": "Claude-specific ungranted-project denial and read-only argv not route-asserted."
+        }
+      },
+      "missing": "Runtimes descriptor classifying thinking as summary or progress (docs/design/claude-reasoning-display-descriptor-proposal.md); authorized canary on the nominated candidate.",
+      "owner": "#5763 (Cave) / Coven Runtimes owner for the descriptor",
+      "nextStep": "Val reviews the descriptor proposal; then run scripts/runtime-activity-canary.mjs --harness claude --execute --http under explicit authority."
+    },
+    {
+      "runtime": "claude",
+      "launchPath": "ssh relay",
+      "status": "unverified",
+      "installedVersion": null,
+      "schema": null,
+      "activity": {
+        "path": "ssh",
+        "tools": "unknown",
+        "reasoning": "unknown"
+      },
+      "qualification": "unverified",
+      "criteria": {
+        "1": {
+          "status": "none"
+        },
+        "2": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (the SSH relay reports every activity detail as unverified)",
+            "src/lib/chat-runtime-activity.test.ts:17-18"
+          ],
+          "gap": "Fake ssh transport only; no registered real host."
+        },
+        "3": {
+          "status": "none"
+        },
+        "4": {
+          "status": "none"
+        },
+        "5": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (SSH relay)"
+          ],
+          "gap": "UI rendering of the not-verified label is a client concern (#5765)."
+        },
+        "6": {
+          "status": "none"
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (read-only over SSH refused; only ssh runs)",
+            "src/app/api/chat/send/flow-read-only.test.ts:200-235",
+            "src/lib/chat-hosts.test.ts:53-92"
+          ],
+          "gap": "The ssh child's familiar-scoped env (route.ts:5667-5671) is not asserted."
+        }
+      },
+      "missing": "A registered SSH host with a remote Coven install; remote version and schema evidence.",
+      "owner": "#6071",
+      "nextStep": "Keep unverified until a host is registered for qualification; a direct/API fixture does not qualify this transport."
+    },
+    {
+      "runtime": "copilot",
+      "launchPath": "direct JSONL",
+      "status": "unverified",
+      "installedVersion": "1.0.103",
+      "schema": "copilot-jsonl-v1",
+      "activity": {
+        "path": "direct",
+        "tools": "supported",
+        "reasoning": "unsupported"
+      },
+      "qualification": "fixture-partial; real-provider receipt historical (1.0.82 on 2026-10-05), not current-candidate",
+      "criteria": {
+        "1": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-copilot-identity.integration.test.ts (tool lifecycle running → ok, final text, no duplicate prose)",
+            "src/lib/copilot-stream.test.ts:501-517,570-645"
+          ],
+          "gap": "Copilot JSONL has no reasoning event type, so no summary slice is possible."
+        },
+        "2": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/copilot-stream.test.ts:63-141,343-354",
+            "src/app/api/chat/send/route-copilot-identity.integration.test.ts",
+            "src/app/api/chat/send/route-copilot-auth.integration.test.ts:49-63",
+            "src/app/api/chat/send/route-runtime-availability.integration.test.ts:320-361"
+          ],
+          "gap": "SSH plain routing is helper-level only (harness-routing-copilot-jsonl.test.ts:139-147)."
+        },
+        "3": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/copilot-stream.test.ts:570-666",
+            "src/lib/chat-tool-events.test.ts:30-46",
+            "src/lib/server/flow-copilot-session.test.ts:662-672,701-709"
+          ],
+          "gap": "Chat-route pending-completion buffer (route.ts:4030) and parallel same-name calls have no behavioural fixture."
+        },
+        "4": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/copilot-stream.test.ts:233-240,258-341,521-566,670-768",
+            "src/app/api/chat/send/route-copilot-identity.integration.test.ts (snapshot after delta does not duplicate prose)"
+          ],
+          "gap": "No route run with a split multibyte character, truncated or non-JSON lines, or an unknown tool.* event."
+        },
+        "5": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-copilot-identity.integration.test.ts (reasoning unsupported, no manufactured block)",
+            "src/lib/server/flow-copilot-session.test.ts:693-697"
+          ]
+        },
+        "6": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/server/flow-copilot-session.test.ts:655,659,665,689"
+          ],
+          "gap": "No chat-route opaque fixture against SSE, disk, history, logs or a --resume turn."
+        },
+        "7": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/copilot-stream.test.ts:171-213,358-481",
+            "src/lib/server/copilot-capability-probe.test.ts:21-22",
+            "src/lib/server/copilot-runtime-launch.test.ts:50-56,238-246",
+            "src/app/api/chat/send/route-copilot-auth.integration.test.ts:59-63"
+          ],
+          "gap": "Read-only --deny-tool argv and the SSH launch are not route-run."
+        }
+      },
+      "missing": "Authorized canary on the nominated candidate.",
+      "owner": "#5763",
+      "nextStep": "scripts/runtime-activity-canary.mjs --harness copilot --execute --http under explicit authority."
+    },
+    {
+      "runtime": "codex",
+      "launchPath": "direct JSONL (admitted 0.144.2 ≤ v < 0.146.0 only)",
+      "status": "unverified",
+      "installedVersion": "0.164.0 (not admitted)",
+      "schema": "codex-jsonl-v1 / codex-jsonl-legacy-v1 by fixture; none selected for the installed version",
+      "activity": {
+        "path": "direct",
+        "tools": "supported",
+        "reasoning": "supported"
+      },
+      "qualification": "fixture-partial for admitted versions; installed version unverified (unsupported-version → fallback); real-provider canary failed on 0.160.1 (2026-10-05) because no schema was admitted",
+      "criteria": {
+        "1": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:78-86,222-298"
+          ],
+          "gap": "Reasoning frames precede the tool; no completed second summary after a tool result."
+        },
+        "2": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/codex-compatibility.test.ts:316-331,338-368",
+            "src/app/api/chat/send/codex-routing.test.ts:304-342",
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:197-318"
+          ],
+          "gap": "Only the 0.145.0 fixture runs through the route; the 0.160 proposal is parsed but not admitted."
+        },
+        "3": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:79-84,229,286-293",
+            "src/lib/codex-compatibility.test.ts:149"
+          ],
+          "gap": "No parallel same-name command_execution, result-before-start, late result or retry fixture."
+        },
+        "4": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/codex-compatibility.test.ts:150-156,204-290,350-358",
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:113-114,225,251-260"
+          ],
+          "gap": "No mid-stream malformed frame at route level; no byte split inside a multibyte character."
+        },
+        "5": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/codex-compatibility.test.ts:619-623",
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:223-224,277"
+          ],
+          "gap": "runtimeIdentity.activity and a disabled state are not route-asserted on the direct path."
+        },
+        "6": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/codex-compatibility.test.ts:371-373,619-622",
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:83,229,277"
+          ],
+          "gap": "No exec resume continuation; disk transcript and logs not checked."
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/lib/codex-compatibility.test.ts:291-294",
+            "src/app/api/chat/send/codex-routing.test.ts:37-50,160-238",
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:306-318,337-385"
+          ]
+        }
+      },
+      "missing": "Signed admission for ≥ 0.146 (publisher key, endpoint, checkpoint); the draft lives uncommitted in the owner-held Runtimes recovery checkout and was not read or copied.",
+      "owner": "Val (admission inputs) / #5763",
+      "nextStep": "Val supplies the publisher inputs and authorizes copying the draft; raising maxVersionExclusive without signed admission is out of scope."
+    },
+    {
+      "runtime": "codex",
+      "launchPath": "coven fallback (coven run codex --stream-json)",
+      "status": "unsupported",
+      "installedVersion": "0.164.0",
+      "schema": null,
+      "activity": {
+        "path": "coven",
+        "tools": "unknown",
+        "reasoning": "unknown"
+      },
+      "qualification": "unsupported for tool and reasoning activity by design: plain chat only on the generic transport",
+      "criteria": {
+        "1": {
+          "status": "none"
+        },
+        "2": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (Codex with an unadmitted version stays on the Coven relay)",
+            "src/app/api/chat/send/harness-routing-codex-direct.test.ts:457-506",
+            "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts:185-308"
+          ]
+        },
+        "3": {
+          "status": "none"
+        },
+        "4": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts:285-309,446-544"
+          ],
+          "gap": "No chunk-boundary, malformed or unknown-variant fixture on the relay."
+        },
+        "5": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (activity unknown/unknown, one notice)",
+            "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts:315-341"
+          ]
+        },
+        "6": {
+          "status": "none"
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts:185-215,418-444",
+            "src/app/api/chat/send/route-runtime-availability.integration.test.ts:139-174"
+          ]
+        }
+      },
+      "missing": "This transport is not claimed for tool or reasoning activity; it is the honest degraded path.",
+      "owner": "#5763",
+      "nextStep": "Keep unknown/unknown until Codex admission moves the installed version to the direct path."
+    },
+    {
+      "runtime": "codex-ollama / codex-lmstudio",
+      "launchPath": "direct admitted-Codex or coven fallback (#6088)",
+      "status": "unverified",
+      "installedVersion": "0.164.0 (CLI); local inference endpoint not probed",
+      "schema": null,
+      "activity": {
+        "path": "coven",
+        "tools": "unknown",
+        "reasoning": "unknown"
+      },
+      "qualification": "unverified-activity: launch/preflight/model-inventory fixtures only",
+      "criteria": {
+        "1": {
+          "status": "none"
+        },
+        "2": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-local-codex.integration.test.ts:107-158",
+            "src/app/api/chat/send/codex-routing.test.ts:351-387",
+            "src/lib/local-codex.test.ts:53-73"
+          ],
+          "gap": "Only codex-ollama on the Coven path is route-run; no codex-lmstudio route test; no direct-mode local run."
+        },
+        "3": {
+          "status": "none"
+        },
+        "4": {
+          "status": "none"
+        },
+        "5": {
+          "status": "none",
+          "gap": "Thinking forwarding is excluded for local backends by source regex only (harness-routing-host-session.test.ts:204-205)."
+        },
+        "6": {
+          "status": "none"
+        },
+        "7": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-local-codex.integration.test.ts:107-148",
+            "src/app/api/chat/send/codex-routing.test.ts:359-374",
+            "src/lib/local-codex.test.ts:40-56"
+          ],
+          "gap": "local_codex_remote_host refusal (route.ts:2999-3005) has no test."
+        }
+      },
+      "missing": "Live tool/reasoning parity through UI, replay and history on an admitted Codex version with a local model.",
+      "owner": "#5763 / #6071",
+      "nextStep": "Qualify after Codex admission; a successful launch is not activity evidence."
+    },
+    {
+      "runtime": "hermes",
+      "launchPath": "Responses API",
+      "status": "passes",
+      "installedVersion": null,
+      "schema": "hermes-responses-v1",
+      "activity": {
+        "path": "api",
+        "tools": "supported",
+        "reasoning": "supported"
+      },
+      "qualification": "passes all seven criteria at route level with synthetic upstream traffic (2026-10-18 packet adds real-daemon/browser/desktop/native-recovery lanes on controlled fixtures); real provider unverified",
+      "criteria": {
+        "1": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts:47-75,94-189",
+            "src/lib/chat-activity-corpus.test.ts:54-76"
+          ]
+        },
+        "2": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts:221-241",
+            "src/app/api/chat/send/route-hermes-availability.integration.test.ts:97-264",
+            "src/lib/hermes-responses-stream.test.ts:239-256"
+          ]
+        },
+        "3": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-hermes-reordered-results.integration.test.ts:44-65",
+            "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts:125-140",
+            "src/lib/hermes-responses-stream.test.ts:156-177"
+          ],
+          "gap": "API-path retry on an invalid previous response is source-regex only."
+        },
+        "4": {
+          "status": "covered",
+          "evidence": [
+            "src/lib/hermes-responses-stream.test.ts:14-20,101-126,179-208",
+            "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts:76,102-105,149-150"
+          ],
+          "gap": "No response.output_text.done snapshot fixture; malformed SSE and missing terminal event are source-regex only."
+        },
+        "5": {
+          "status": "covered",
+          "evidence": [
+            "src/lib/hermes-responses-stream.test.ts:128-154",
+            "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts:106-124,174"
+          ]
+        },
+        "6": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-hermes-disclosure.integration.test.ts:29-30,105,177-178,217-219,243-256"
+          ]
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-hermes-boundaries.integration.test.ts (read-only refused on API and CLI before any request; redirecting endpoint not followed, endpoint and bearer absent from SSE, logs and history; SSH ignores the local endpoint)",
+            "src/lib/hermes-responses-stream.test.ts:210-236",
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (direct CLI without endpoint reports unsupported)"
+          ]
+        }
+      },
+      "missing": "The real provider's served-model report (response.runtime.model) and an authorized canary.",
+      "owner": "#5763 / #5767",
+      "nextStep": "Authorized Hermes canary against a real Responses endpoint; the requested alias never proves the served model."
+    },
+    {
+      "runtime": "hermes",
+      "launchPath": "direct CLI (no Responses endpoint)",
+      "status": "unsupported",
+      "installedVersion": null,
+      "schema": null,
+      "activity": {
+        "path": "direct",
+        "tools": "unsupported",
+        "reasoning": "unsupported"
+      },
+      "qualification": "unsupported for activity: plain text fallback; read-only refused with 501",
+      "criteria": {
+        "1": {
+          "status": "n/a"
+        },
+        "2": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (Hermes on the direct CLI)",
+            "src/app/api/chat/send/route-hermes-availability.integration.test.ts:97-264"
+          ]
+        },
+        "3": {
+          "status": "n/a"
+        },
+        "4": {
+          "status": "n/a"
+        },
+        "5": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (Hermes on the direct CLI)"
+          ]
+        },
+        "6": {
+          "status": "n/a"
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-hermes-boundaries.integration.test.ts (read-only on the direct CLI refused with 501 before the hermes process starts)"
+          ]
+        }
+      },
+      "missing": "Nothing claimed.",
+      "owner": "#5763",
+      "nextStep": "None; this is an explicit unsupported state."
+    },
+    {
+      "runtime": "opencode",
+      "launchPath": "direct CLI (run --format json)",
+      "status": "unverified",
+      "installedVersion": null,
+      "schema": "opencode-run-json-v1 when a verified launcher advertises json",
+      "activity": {
+        "path": "direct",
+        "tools": "supported (structured) / unknown (plain)",
+        "reasoning": "unsupported"
+      },
+      "qualification": "unverified-provider; read-only unsupported (501); installed launcher absent on this host",
+      "criteria": {
+        "1": {
+          "status": "none",
+          "gap": "No schema admits reasoning; closest is tools then a single text frame (route-opencode-preflight.integration.test.ts:201-231)."
+        },
+        "2": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-opencode.integration.test.ts:113-170",
+            "src/app/api/chat/send/route-opencode-preflight.integration.test.ts:137-231",
+            "src/lib/opencode-stream.test.ts:6-437"
+          ],
+          "gap": "All inputs are hand-written; no captured OpenCode fixture file."
+        },
+        "3": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-opencode-preflight.integration.test.ts:83-89,201-231",
+            "src/lib/opencode-stream.test.ts:30-33,395-428"
+          ],
+          "gap": "No same-name parallel, duplicate or late-result route fixture."
+        },
+        "4": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-opencode.integration.test.ts:90-94,130",
+            "src/lib/opencode-stream.test.ts:52-67,186-190,269-299,413-428"
+          ],
+          "gap": "Malformed/oversized frames are source-regex only at route level."
+        },
+        "5": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-opencode-preflight.integration.test.ts:162-163,214-216",
+            "src/lib/opencode-stream.test.ts:113-120"
+          ]
+        },
+        "6": {
+          "status": "none"
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (OpenCode read-only is refused with 501 before launch)",
+            "src/app/api/chat/send/harness-routing-opencode.test.ts:8-17,68-92",
+            "src/app/api/chat/send/flow-read-only.test.ts:99-145"
+          ]
+        }
+      },
+      "missing": "Val's answer on a Full-access canary, or an enforceable read-only path from OpenCode.",
+      "owner": "Val / #5763",
+      "nextStep": "Do not switch to Full access to turn a canary green; wait for the decision."
+    },
+    {
+      "runtime": "grok",
+      "launchPath": "direct CLI (ACP streaming JSON)",
+      "status": "unverified",
+      "installedVersion": null,
+      "schema": "none admitted under stock trust (grok-build-streaming-json-v1 is text-only; 1.0.46 ACP proposal unsigned)",
+      "activity": {
+        "path": "direct",
+        "tools": "unknown",
+        "reasoning": "unsupported"
+      },
+      "qualification": "unverified: no compatible structured schema; SSH refused with 501",
+      "criteria": {
+        "1": {
+          "status": "none"
+        },
+        "2": {
+          "status": "partial",
+          "evidence": [
+            "src/lib/fixtures/grok/1.0.46-*.json",
+            "src/lib/grok-compatibility.test.ts:60-121",
+            "src/app/api/chat/send/route-grok-compatibility.integration.test.ts:65-74,208-226"
+          ],
+          "gap": "Captured 1.0.46 frames replay only under a test-generated signing key."
+        },
+        "3": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-grok-compatibility.integration.test.ts:228-251",
+            "src/lib/grok-compatibility.test.ts:87-98"
+          ],
+          "gap": "Synthetic event names; no parallel same-name, late result or retry."
+        },
+        "4": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-grok-compatibility.integration.test.ts:263-292",
+            "src/lib/grok-build.test.ts:129-133"
+          ],
+          "gap": "No UTF-8 split, truncated JSON or snapshot-after-delta."
+        },
+        "5": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-grok-compatibility.integration.test.ts:158-161",
+            "src/lib/grok-build.test.ts:128"
+          ]
+        },
+        "6": {
+          "status": "partial",
+          "evidence": [
+            "src/app/api/chat/send/route-grok-compatibility.integration.test.ts:69-71,219",
+            "src/lib/grok-compatibility.test.ts:99-101"
+          ],
+          "gap": "Absence from SSE only; transcripts, logs and continuation unchecked."
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (Grok over SSH is refused with 501)",
+            "src/app/api/chat/send/route-grok-compatibility.integration.test.ts:28,111,115",
+            "src/lib/grok-build.test.ts:28-48"
+          ]
+        }
+      },
+      "missing": "Signed ACP admission for 1.0.46 (publisher key, endpoint, checkpoint).",
+      "owner": "Val / Coven Runtimes owner",
+      "nextStep": "Val supplies admission inputs; structured tools stay unqualified until then."
+    },
+    {
+      "runtime": "openclaw",
+      "launchPath": "gateway / bridge / CLI",
+      "status": "deferred",
+      "installedVersion": null,
+      "schema": null,
+      "activity": {
+        "path": "gateway|cli|unknown",
+        "tools": "supported|disabled|unsupported",
+        "reasoning": "unsupported"
+      },
+      "qualification": "deferred per #4892 (not planned); SSH refused with 501",
+      "criteria": {
+        "1": {
+          "status": "n/a"
+        },
+        "2": {
+          "status": "n/a"
+        },
+        "3": {
+          "status": "n/a"
+        },
+        "4": {
+          "status": "n/a"
+        },
+        "5": {
+          "status": "n/a"
+        },
+        "6": {
+          "status": "n/a"
+        },
+        "7": {
+          "status": "covered",
+          "evidence": [
+            "src/app/api/chat/send/route-launch-path-activity.integration.test.ts (OpenClaw over SSH is refused with 501)",
+            "src/app/api/chat/send/route-openclaw-gateway.integration.test.ts:101-125,384-390"
+          ]
+        }
+      },
+      "missing": "Not claimed under #5763.",
+      "owner": "#4892",
+      "nextStep": "None under this issue."
+    }
+  ],
+  "sharedEvidence": [
+    "src/lib/chat-tool-events.test.ts:30-51,272-283,294-309 (tracker: result-before-start, duplicates, ordering)",
+    "src/app/api/chat/send/harness-routing-tool-events.test.ts:596-624,658-675,725-733 (same-name FIFO, interrupted calls)",
+    "src/lib/chat-reasoning-blocks.test.ts:10-47 (withheld, unavailable, conflicting replays; signature dropped)"
+  ],
+  "redToGreen": {
+    "files": [
+      "src/app/api/chat/send/route-launch-path-activity.integration.test.ts",
+      "src/app/api/chat/send/route-hermes-boundaries.integration.test.ts"
+    ],
+    "mutations": [
+      {
+        "change": "route.ts launchActivity: sshRuntime → \"coven\" instead of \"ssh\"",
+        "result": "1 of 8 failed: the SSH relay reports every activity detail as unverified"
+      },
+      {
+        "change": "route.ts: OpenCode read-only refusal disabled",
+        "result": "1 of 8 failed: OpenCode read-only is refused with 501 before its capability probe or launch"
+      },
+      {
+        "change": "route.ts Hermes API fetch: redirect \"error\" → \"follow\"",
+        "result": "1 of 4 failed: a redirecting Responses endpoint fails the turn without following the redirect"
+      },
+      {
+        "change": "route.ts: Hermes read-only refusal disabled",
+        "result": "2 of 4 failed: both read-only cases"
+      }
+    ],
+    "restored": "git checkout -- src/app/api/chat/send/route.ts; route unchanged in the delivered diff"
+  },
+  "realProviderEvidence": {
+    "note": "Historical, build-bound and not current-candidate. Listed so the reader does not mistake fixture coverage for provider qualification.",
+    "receipts": [
+      {
+        "runtime": "claude",
+        "version": "2.1.289",
+        "path": "coven",
+        "result": "passed read-only marker turn",
+        "date": "2026-10-05",
+        "file": "docs/design/evidence/runtime-activity-runtime-refresh-2026-10-05.json"
+      },
+      {
+        "runtime": "copilot",
+        "version": "1.0.82",
+        "path": "direct",
+        "result": "passed read-only marker turn",
+        "date": "2026-10-05",
+        "file": "docs/design/evidence/runtime-activity-runtime-refresh-2026-10-05.json"
+      },
+      {
+        "runtime": "codex",
+        "version": "0.160.1",
+        "path": "coven",
+        "result": "failed: unsupported-version, no native tool output",
+        "date": "2026-10-05",
+        "file": "docs/design/evidence/runtime-activity-runtime-refresh-2026-10-05.json"
+      },
+      {
+        "runtime": "opencode",
+        "version": "0.0.52",
+        "path": "direct",
+        "result": "refused: HTTP 501 read-only",
+        "date": "2026-10-05",
+        "file": "docs/design/evidence/runtime-activity-runtime-refresh-2026-10-05.json"
+      }
+    ],
+    "canariesRunInThisPacket": 0
+  },
+  "summary": {
+    "passes": [
+      "hermes · Responses API"
+    ],
+    "unverified": [
+      "claude · coven relay",
+      "claude · ssh relay",
+      "copilot · direct JSONL",
+      "codex · direct JSONL",
+      "codex-ollama / codex-lmstudio",
+      "opencode · direct CLI",
+      "grok · direct CLI"
+    ],
+    "unsupported": [
+      "codex · coven fallback (activity)",
+      "hermes · direct CLI (activity); read-only on every Hermes path"
+    ],
+    "deferred": [
+      "openclaw (#4892)"
+    ]
+  }
+}

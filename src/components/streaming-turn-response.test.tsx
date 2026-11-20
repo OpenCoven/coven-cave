@@ -885,6 +885,33 @@ describe("StreamingTurnResponse", () => {
     expect(answering.root.findAllByProps({ role: "status" })).toHaveLength(1);
   });
 
+  it("lets Main Chat state the author once on the status row, with Copy waiting for hover", async () => {
+    // #5954: Main Chat used to print "Cody · 09:30" above the bubble and then
+    // "Cody · Completed in 3:01 … Copy" inside it. The row is now the author
+    // line; Quick Chat (no author prop) keeps its own row.
+    const renderer = await render(response({
+      author: {
+        name: <span className="cave-linear-turn-name">Cody</span>,
+        meta: <time dateTime="2026-10-11T14:30:00Z">09:30</time>,
+      },
+      copyReveal: "hover",
+      onCopyCompleted: vi.fn(),
+      durationMs: 181_000,
+      model: model({ status: "complete", activeBlock: null }),
+    }));
+    const phase = renderer.root.findByProps({ className: "streaming-turn-current__phase" });
+    expect(textContent(phase)).toBe("Cody · Completed in 3:01");
+    expect(phase.findAllByType("strong")).toHaveLength(0);
+    expect(textContent(renderer.root.findByProps({ className: "streaming-turn-current__author-meta" }))).toBe("09:30");
+    expect(renderer.root.findByProps({ "data-streaming-turn-response": true }).props["data-copy-reveal"]).toBe("hover");
+    const copy = buttons(renderer, "Copy completed response")[0]!;
+    expect(String(copy.props.className)).toContain("streaming-turn-current__copy");
+
+    const quick = await render(response({ onCopyCompleted: vi.fn(), model: model({ status: "complete", activeBlock: null }) }));
+    expect(quick.root.findByProps({ "data-streaming-turn-response": true }).props["data-copy-reveal"]).toBeUndefined();
+    expect(textContent(quick.root.findByProps({ className: "streaming-turn-current__phase" }))).toContain("Nova · Completed");
+  });
+
   it("keeps the ticking elapsed time outside the live status region", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-23T12:00:18Z"));
@@ -1175,6 +1202,44 @@ describe("StreamingTurnResponse", () => {
     );
   });
 
+  it("shows a settled coven:ui block in Quick Chat as readable lines, and copies them (#6060)", async () => {
+    const text = [
+      "Here is the status.",
+      "",
+      "```coven:ui",
+      '<Card title="Service status"><Badge tone="success">4 healthy</Badge><Button prefill="Restart exports">Restart</Button></Card>',
+      "```",
+      "",
+      "Closing prose",
+    ].join("\n");
+    const renderer = await render(
+      <QuickChatThread
+        familiar={null}
+        messages={[{ id: "quick-ui", role: "assistant", lifecycle: "complete", text }]}
+      />,
+    );
+    await flushMarkdown();
+
+    const readable = renderer.root.findAllByProps({ "data-ui-block-readable": "" });
+    expect(readable).toHaveLength(1);
+    expect(readable[0].findAllByType("p").map((line) => line.children.join(""))).toEqual([
+      "Service status",
+      "4 healthy",
+      "[Restart]",
+    ]);
+    expect(readable[0].findAll((node) => node.type === "button")).toHaveLength(0);
+    const serialized = JSON.stringify(renderer.toJSON());
+    expect(serialized).not.toContain("coven:ui");
+    expect(serialized).not.toContain("<Card");
+    expect(serialized.indexOf("Here is the status.")).toBeLessThan(serialized.indexOf("Service status"));
+    expect(serialized.indexOf("[Restart]")).toBeLessThan(serialized.indexOf("Closing prose"));
+
+    await act(async () => buttons(renderer, "Copy completed response")[0]!.props.onClick());
+    expect(clipboard.copyText).toHaveBeenCalledWith(
+      "Here is the status.\n\nService status\n4 healthy\n[Restart]\n\nClosing prose",
+    );
+  });
+
   it("gives Quick Chat exactly one live region across failed history and a new stream", async () => {
     const renderer = await render(
       <QuickChatThread
@@ -1232,9 +1297,7 @@ describe("StreamingTurnResponse", () => {
     expect(textContent(renderer.root)).toContain("No response.");
     expect(
       renderer.root.findAll(
-        (node) =>
-          node.props.role === "group" &&
-          String(node.props["aria-label"]).startsWith("Response model and controls:"),
+        (node) => node.type === "details" && node.props["data-turn-run-details"] === true,
       ),
     ).toHaveLength(4);
   });
@@ -1390,14 +1453,72 @@ describe("StreamingTurnResponse", () => {
     expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(0);
     expect(textContent(renderer.root)).toContain("No response.");
     expect(textContent(renderer.root)).toContain("Retry");
-    expect(textContent(renderer.root)).toContain("The runtime did not confirm the selected model.");
+    // #6039: one Model row carries the selection and its state; the pending reason sentence no longer restates it.
+    expect(textContent(renderer.root)).toContain("anthropic/claude-sonnet-4-6 · pending confirmation");
     expect(
       renderer.root.findAll(
-        (node) =>
-          node.props.role === "group" &&
-          String(node.props["aria-label"]).startsWith("Response model and controls:"),
+        (node) => node.type === "details" && node.props["data-turn-run-details"] === true,
       ),
     ).toHaveLength(1);
+  });
+
+  it("mounts streamed Quick Chat prose straight into the markdown node that keeps the selection", async () => {
+    // #5840: without the assistant response context, a newly committed Quick
+    // Chat block first painted its raw source in a throwaway fallback span and
+    // swapped it for the rendered markdown once mdToHtml landed, dropping any
+    // selection inside it. Main Chat's MessageBubble supplies this context, so
+    // its blocks only ever show text in the node that stays.
+    const streamingMessage = (text: string) => ({
+      id: "quick-selection",
+      role: "assistant" as const,
+      lifecycle: "streaming" as const,
+      pending: true,
+      text,
+    });
+    const settledText = "Settled paragraph keeps its selection.";
+    const settledBlockId = partitionStreamingMarkdown(`${settledText}\n\nLive`, {
+      turnId: "quick-selection",
+      settled: false,
+    }).committedBlocks[0]?.id;
+    expect(settledBlockId).toBeTruthy();
+
+    markdownRenderer.blocked = true;
+    const pendingRender = await render(
+      <QuickChatThread familiar={null} messages={[streamingMessage(`${settledText}\n\nLive`)]} />,
+    );
+    const unrendered = pendingRender.root.findByProps({ "data-stream-block-id": settledBlockId });
+    expect(textContent(unrendered)).not.toContain(settledText);
+    expect(textContent(unrendered)).toContain("Rendering response");
+    await act(async () => pendingRender.unmount());
+
+    markdownRenderer.blocked = false;
+    const renderer = await render(
+      <QuickChatThread familiar={null} messages={[streamingMessage(`${settledText}\n\nLive`)]} />,
+    );
+    await flushMarkdown();
+    const markdownNode = () =>
+      renderer.root
+        .findByProps({ "data-stream-block-id": settledBlockId })
+        .find((node) => node.props.dangerouslySetInnerHTML !== undefined);
+    const before = markdownNode();
+    expect(before.props.dangerouslySetInnerHTML.__html).toContain(settledText);
+
+    await act(async () => {
+      renderer.update(
+        <QuickChatThread
+          familiar={null}
+          messages={[streamingMessage(`${settledText}\n\nLive text grows`)]}
+        />,
+      );
+    });
+    await flushMarkdown();
+
+    expect(markdownNode()).toBe(before);
+    expect(responseDecorator.decorate).toHaveBeenCalled();
+    // The presentation buffer keeps revealing the new tokens on timers; stop
+    // it and drain in-flight renders so none land in a later test.
+    await act(async () => renderer.unmount());
+    await flushMarkdown();
   });
 
   it("renders a settled bare GitHub URL only as a card without duplicate URL prose", async () => {

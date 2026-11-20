@@ -50,13 +50,13 @@ export function resolveBuildRoot(root: SkillBuildRootId, opts: RootOptions = {})
   const home = opts.home ?? homedir();
   switch (root) {
     case "coven":
-      return path.join(opts.covenHome ?? covenHome(), "skills");
+      return path.join(/* turbopackIgnore: true */ opts.covenHome ?? covenHome(), "skills");
     case "claude":
-      return path.join(home, ".claude", "skills");
+      return path.join(/* turbopackIgnore: true */ home, ".claude", "skills");
     case "codex":
-      return path.join(home, ".codex", "skills");
+      return path.join(/* turbopackIgnore: true */ home, ".codex", "skills");
     case "agents":
-      return path.join(home, ".agents", "skills");
+      return path.join(/* turbopackIgnore: true */ home, ".agents", "skills");
     default:
       return null;
   }

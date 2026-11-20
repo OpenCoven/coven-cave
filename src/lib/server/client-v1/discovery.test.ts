@@ -434,8 +434,10 @@ test("server lifecycle publishes only from listener readiness and performs nonce
     source,
     /removeStandaloneClientV1DiscoveryRecord\(\s*CLIENT_V1_DISCOVERY_NONCE\s*\)/,
   );
-  assert.match(source, /process\.once\("SIGINT"/);
-  assert.match(source, /process\.once\("SIGTERM"/);
+  // The startup-worker coordinator owns both signals through one idempotent
+  // handler (#6209); a repeated signal joins the same bounded shutdown.
+  assert.match(source, /process\.on\("SIGINT", shutdownHttpServer\)/);
+  assert.match(source, /process\.on\("SIGTERM", shutdownHttpServer\)/);
 
   // The cleanup runs first inside the signal handler, so an ownership refusal
   // there would escape it and kill the process before PTY children are

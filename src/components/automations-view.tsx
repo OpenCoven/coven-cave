@@ -1,5 +1,7 @@
 "use client";
 
+import { pendingIntentSession } from "@/lib/automations/pending-intent-store";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
@@ -16,14 +18,13 @@ import {
 } from "@/lib/inbox-feed";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import type {
-  AutomationStatus,
   CodexAutomation,
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
 import { useDaemonShellBannerVisible } from "@/lib/shell-banners";
-import { useDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -38,6 +39,12 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { failingCronIds } from "@/lib/automations/cron-health";
+import { lifecycleCommandMessage, lifecycleControl } from "@/lib/automations/lifecycle";
+import { useAutomationLifecycle } from "@/lib/automations/use-automation-lifecycle";
+import { useAutomationInFlight } from "@/lib/automations/use-automation-in-flight";
+import { inFlightNote } from "@/lib/automations/in-flight";
+import { readCurrentDefinition, saveWithRevisionCheck, type RevisionRebase, type RevisionSaveSession } from "@/lib/automations/revision-rebase";
+import { createWithStableIntent, type AutomationCreateSession } from "@/lib/automations/create-intent";
 import { liveRunView, newestRunFor } from "@/lib/automations/live-run";
 import { LiveRunCard } from "@/components/automations/live-run-card";
 import { FamiliarCarousel } from "@/components/automations/familiar-carousel";
@@ -83,6 +90,11 @@ type Props = {
   calendarSlot?: ReactNode;
   /** Tab to open on mount (deep-link target — e.g. the Calendar nav button). */
   initialTab?: AutomationTab;
+  /** An inbox item to open, from the bell (#6483). Its detail opens on the
+   *  Overview tab once the item has loaded; a new nonce opens it again. */
+  focusItem?: { id: string; nonce: number } | null;
+  /** Called once focusItem has been opened, or found not to exist. */
+  onFocusItemConsumed?: () => void;
 };
 
 // The active Rituals surface: Inbox (the full feed, mostly reminders) plus
@@ -105,7 +117,7 @@ function navigateToMode(mode: string) {
 // ── Ritual overview ──────────────────────────────────────────────────────────
 
 // ── Root ──────────────────────────────────────────────────────────────────────
-export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
+export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab, focusItem, onFocusItemConsumed }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const ritualNow = useRitualNow();
   const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
@@ -300,6 +312,37 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     window.addEventListener("cave:schedules:reload", onSchedulesReload);
     return () => window.removeEventListener("cave:schedules:reload", onSchedulesReload);
   }, [reloadAfterMutation]);
+
+  // The bell opens one item here (#6483): its detail opens on the Overview
+  // tab and its row scrolls into view. Applied once per nonce, after the item
+  // has loaded; an item gone by then (dismissed elsewhere) is dropped rather
+  // than waited for, so it can't pop open on some later visit.
+  const appliedFocusNonceRef = useRef<number | null>(null);
+  const scrollToSelectedRef = useRef(false);
+  useEffect(() => {
+    if (!focusItem || appliedFocusNonceRef.current === focusItem.nonce) return;
+    const target = items.find((it) => it.id === focusItem.id);
+    if (!target) {
+      if (initialLoadDone) {
+        appliedFocusNonceRef.current = focusItem.nonce;
+        onFocusItemConsumed?.();
+      }
+      return;
+    }
+    appliedFocusNonceRef.current = focusItem.nonce;
+    setDeepLinkTab("overview");
+    scrollToSelectedRef.current = true;
+    openInboxItem(target);
+    onFocusItemConsumed?.();
+  }, [focusItem, items, initialLoadDone, openInboxItem, onFocusItemConsumed]);
+  useEffect(() => {
+    if (!scrollToSelectedRef.current || !selectedItem) return;
+    scrollToSelectedRef.current = false;
+    const id = selectedItem.id;
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-inbox-item-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" }),
+    );
+  }, [selectedItem]);
 
   // Keep the open reminder detail panel in sync after polls — without this it
   // renders the snapshot captured at selection time until reselected.
@@ -539,59 +582,118 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [announce]);
 
   // ── Codex toggle ──────────────────────────────────────────────────────────
+  // Pause/resume reads Coven's canonical lifecycle and sends the command at the
+  // revision on screen. Coven refuses a moved definition (REVISION_CONFLICT)
+  // instead of Cave overwriting it, and an unverifiable state sends nothing.
+  const lifecycleIds = useMemo(() => codexAutos.map((a) => a.id), [codexAutos]);
+  const lifecycle = useAutomationLifecycle(lifecycleIds);
+  const { view: lifecycleOf, send: sendLifecycle } = lifecycle;
+  // Read only while there are crons to show; four reads cover every row.
+  const inFlight = useAutomationInFlight(lifecycleIds.length > 0);
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
+    const control = lifecycleControl(lifecycleOf(auto.id));
+    if (control.disabledReason !== null || !control.command) {
+      setError(control.disabledReason ?? "The current state can't be verified.");
+      return;
+    }
     setBusyId(auto.id);
     try {
-      const newStatus: AutomationStatus = auto.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
-      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) throw new Error(`http ${res.status}`);
-      announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
+      const result = await sendLifecycle(auto.id, control.command, control.expectedRevision);
+      const outcome = lifecycleCommandMessage(result, control.command, auto.name);
+      if (outcome.ok) announce(outcome.message);
+      else setError(outcome.message);
       await reloadAfterMutation();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "codex patch failed");
+      setError(err instanceof Error ? err.message : "lifecycle command failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [lifecycleOf, sendLifecycle, reloadAfterMutation]);
+
+  // A save Coven refused, or would have refused, because the definition moved.
+  const [conflict, setConflict] = useState<{ id: string; rebase: RevisionRebase } | null>(null);
+  // Bumped to load the selected definition into the panel's form over unsaved edits.
+  const [formResetKey, setFormResetKey] = useState(0);
+  useEffect(() => {
+    if (conflict && conflict.id !== selectedCodex?.id) setConflict(null);
+  }, [conflict, selectedCodex?.id]);
+
+  /** Save an edit of `base` only at a revision whose fields the person has seen; otherwise review. */
+  const revisionSaveSession = useRef<RevisionSaveSession>(pendingIntentSession("definition-edit"));
+  const saveCodex = useCallback(async (base: CodexAutomation, patch: CodexAutomationPatch) => {
+    setBusyId(base.id);
+    setConflict(null);
+    try {
+      const result = await saveWithRevisionCheck(base, patch, revisionSaveSession.current);
+      if (result.kind === "review") {
+        setConflict({ id: base.id, rebase: result.rebase });
+        announce(`Not saved: Coven has a newer revision of '${base.name}'. Review what changed.`);
+        return;
+      }
+      if (result.kind === "failed") {
+        setError(result.message);
+        return;
+      }
+      if (result.kind === "resolved") {
+        setError("The previous save is confirmed. Your newer edits have not been saved; review them and save again.");
+        await reloadAfterMutation();
+        return;
+      }
+      if (result.automation) setSelectedCodex(result.automation);
+      setFormResetKey((key) => key + 1);
+      announce(`Saved '${patch.name ?? base.name}'.`);
+      await reloadAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The pending save could not be retained safely.");
     } finally {
       setBusyId(null);
     }
   }, [reloadAfterMutation]);
 
-  const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
-    setBusyId(auto.id);
-    try {
-      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
-      if (json.automation) setSelectedCodex(json.automation);
-      announce(`Saved '${patch.name ?? auto.name}'.`);
-      await reloadAfterMutation();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "codex save failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [reloadAfterMutation]);
+  const conflictSaveMine = useCallback((patch: CodexAutomationPatch) => {
+    if (!conflict) return;
+    // The rebased edit starts from Coven's newer definition; the save re-checks it.
+    void saveCodex(conflict.rebase.theirs, patch);
+  }, [conflict, saveCodex]);
+  const conflictUseTheirs = useCallback(() => {
+    if (!conflict) return;
+    setSelectedCodex(conflict.rebase.theirs);
+    setFormResetKey((key) => key + 1);
+    setConflict(null);
+    announce(`Showing Coven's revision ${conflict.rebase.revision} of '${conflict.rebase.theirs.name}'. Your edit was not saved.`);
+    void reloadAfterMutation();
+    void lifecycle.refresh();
+  }, [conflict, reloadAfterMutation, lifecycle]);
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
     focusHeaderAction(); // panel held focus
+    // The revision the person chose to delete; a change since then is a conflict.
+    const expectedRevision = lifecycleOf(auto.id).revision;
+    if (expectedRevision === null) {
+      setError("Not deleted: the current revision is unavailable. Refresh the automation and review it before deleting.");
+      return;
+    }
+    // Deleting the same ID at the same reviewed revision is the same intent,
+    // including a retry after a lost response or a browser reload.
+    const adoptionKey = `cave-delete:${auto.id}:${expectedRevision}`;
     scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
       setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
       try {
-        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
+        const query = `?expectedRevision=${expectedRevision}`;
+        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}${query}`, { method: "DELETE", headers: { "Idempotency-Key": adoptionKey } });
         const json = await res.json().catch(() => null);
+        if (res.status === 409 && json?.conflict) {
+          // Deleting is never retried at a revision the person did not choose.
+          const holds = Number.isSafeInteger(json.currentRevision) ? `revision ${json.currentRevision}` : "a newer revision";
+          throw new Error(`Not deleted: Coven holds ${holds} of “${auto.name}”, which changed after you chose to delete it. Open it to see the change, then delete again if you still want to.`);
+        }
         if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "codex delete failed");
       } finally { await reloadAfterMutation(); }
     });
-  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction]);
+  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction, lifecycleOf]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -611,21 +713,51 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     }
   }, [refreshRuns, refreshLastRuns]);
 
+  const createSession = useRef<AutomationCreateSession>(pendingIntentSession("definition-create"));
+  const createInFlight = useRef(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const createCodex = useCallback(async (input: AutomationCreateInput) => {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
+    setCreateBusy(true);
+    setCreateError(null);
     try {
-      const res = await fetch("/api/codex-automations", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      const result = await createWithStableIntent(input, createSession.current);
+      if (result.kind === "failed") { setCreateError(result.message); return; }
+      if (result.kind === "resolved") {
+        setCreateError("The previous creation is confirmed paused. Your changed form has not been created; review it before creating another scheduled job.");
+        await reloadAfterMutation();
+        return;
+      }
       setCreateOpen(false);
-      announce(`Created cron '${input.name}'.`);
+      const createdId = result.automation.id;
+      if (input.start === "active") {
+        const detail = await readCurrentDefinition(`/api/codex-automations/${encodeURIComponent(createdId)}`);
+        if (detail.kind === "available" && detail.automation.status === "PAUSED") {
+          const approved = await confirm({ title: `Activate “${detail.automation.name}”?`,
+            body: `Review revision ${detail.revision}: ${detail.automation.scheduleHuman}, timezone ${detail.reviewedSource.routine.timezone}, familiar ${detail.automation.familiars.join(", ")}, model ${detail.automation.model || "default"}. Instructions: ${detail.automation.prompt}`,
+            confirmLabel: "Activate scheduled job" });
+          if (approved) {
+            const outcome = lifecycleCommandMessage(await sendLifecycle(createdId, "activate", detail.revision), "activate", detail.automation.name);
+            if (outcome.ok) announce(`Created scheduled job '${detail.automation.name}' and activated it.`);
+            else setError(`Created '${detail.automation.name}' paused. ${outcome.message}`);
+          } else announce(`Created scheduled job '${input.name}', paused.`);
+        } else {
+          setError(`Created '${input.name}' paused. Coven's revision couldn't be read, so it wasn't resumed.`);
+        }
+      } else {
+        announce(`Created scheduled job '${input.name}', paused.`);
+      }
       await reloadAfterMutation();
-      if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
+      setSelectedCodex(result.automation); setSelectedItem(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "codex create failed");
+      setCreateError(err instanceof Error ? err.message : "Creation failed. Review the form and try again.");
+    } finally {
+      createInFlight.current = false;
+      setCreateBusy(false);
     }
-  }, [reloadAfterMutation]);
+  }, [reloadAfterMutation, sendLifecycle, confirm]);
 
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
@@ -669,18 +801,27 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const codexActive = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!failingOnly || failingIds.has(a.id)) && (!q || a.name.toLowerCase().includes(q)),
+        (a) => lifecycleOf(a.id).state === "active" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!failingOnly || failingIds.has(a.id)) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, failingIds, failingOnly, hiddenIds, q],
+    [codexAutos, familiarFilter, failingIds, failingOnly, hiddenIds, lifecycleOf, q],
   );
   const codexPaused = useMemo(
     // A paused cron is off, not failing, so the failing filter hides the whole
     // Paused group rather than pretending none of them match.
     () =>
       failingOnly ? [] : codexAutos.filter(
-        (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
+        (a) => (lifecycleOf(a.id).state === "paused" || lifecycleOf(a.id).state === "disabled") && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, failingOnly, hiddenIds, q],
+    [codexAutos, familiarFilter, failingOnly, hiddenIds, lifecycleOf, q],
+  );
+  // Rows Coven has not confirmed a state for. They are listed apart rather
+  // than filed under Active or Paused on the strength of the legacy mirror.
+  const codexUnverified = useMemo(
+    () =>
+      failingOnly ? [] : codexAutos.filter(
+        (a) => lifecycleOf(a.id).state === "unknown" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
+      ),
+    [codexAutos, familiarFilter, failingOnly, hiddenIds, lifecycleOf, q],
   );
   // Cron counts per familiar for the carousel cards — unfiltered, so the strip
   // keeps reporting the whole picture while a scope is active.
@@ -816,12 +957,12 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // would be reporting the filter back at you instead of the crons.
   const summary = useMemo(() => {
     return {
-      active: liveAutos.filter((a) => a.status === "ACTIVE").length,
-      paused: liveAutos.filter((a) => a.status === "PAUSED").length,
+      active: liveAutos.filter((a) => lifecycleOf(a.id).state === "active").length,
+      paused: liveAutos.filter((a) => lifecycleOf(a.id).state === "paused" || lifecycleOf(a.id).state === "disabled").length,
       failing: failingIds.size,
       soonest: undefined as string | undefined,
     };
-  }, [liveAutos, failingIds.size]);
+  }, [liveAutos, failingIds.size, lifecycleOf]);
 
   // The card's view of the followed run, recomputed each render so the elapsed
   // readout stays honest without this component owning a timer of its own.
@@ -888,6 +1029,8 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     <ScheduleActionsContext.Provider
       value={{
         runAutomation: runCodexNow,
+        lifecycleOf,
+        inFlightOf: inFlight.view,
         togglePauseAutomation: toggleCodex,
         busyId,
       }}
@@ -1262,7 +1405,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                 )}
               </>
             )
-          ) : q && codexActive.length + codexPaused.length === 0 ? (
+          ) : q && codexActive.length + codexPaused.length + codexUnverified.length === 0 ? (
             <EmptyState
               className="mt-12"
               icon="ph:magnifying-glass"
@@ -1291,6 +1434,8 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               <AutomationsPanel
                 active={codexActive}
                 paused={codexPaused}
+                unverified={codexUnverified}
+                inFlightNote={inFlightNote(inFlight.cache, inFlight.now, (iso) => formatTimestamp(iso, readDateTimePrefs()))}
                 // Scoped to the rows actually rendered, unlike the header chip:
                 // "Active · 1  3 failing" would be counting failures that a
                 // familiar scope has already hidden. Suppressed entirely while
@@ -1302,7 +1447,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                 lastRunById={lastRunById}
                 onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
               />
-              {codexActive.length === 0 && codexPaused.length === 0 && (
+              {codexActive.length === 0 && codexPaused.length === 0 && codexUnverified.length === 0 && (
                 <p className="mt-2 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
                   {failingOnly
                     ? "No failing crons — clear the failing filter to see the rest."
@@ -1346,6 +1491,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
           {selectedCodex && (
             <CodexDetailPanel
               auto={selectedCodex}
+              lifecycle={lifecycleOf(selectedCodex.id)}
               busy={busyId === selectedCodex.id}
               expanded={cronDetailExpanded}
               onToggleExpanded={() => setDetailExpanded((v) => !v)}
@@ -1355,6 +1501,13 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               onDelete={deleteCodex}
               onRun={runCodexNow}
               runs={automationRuns}
+              formResetKey={formResetKey}
+              inFlightKey={JSON.stringify(inFlight.view(selectedCodex.id).entry)}
+              conflict={conflict?.id === selectedCodex.id ? conflict.rebase : null}
+              onConflictSaveMine={conflictSaveMine}
+              onConflictUseTheirs={conflictUseTheirs}
+              onConflictKeepEditing={() => setConflict(null)}
+              onCanonicalChange={() => void lifecycle.refresh()}
             />
           )}
         </div>
@@ -1363,8 +1516,10 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       {/* ── Create automation dialog ───────────────────────────────────────── */}
       {createOpen && (
         <AutomationCreateDialog
+          busy={createBusy}
+          error={createError}
           resolvedFamiliars={resolvedFamiliars}
-          onClose={() => setCreateOpen(false)}
+          onClose={() => { setCreateOpen(false); focusHeaderAction(); }}
           onCreate={(i) => void createCodex(i)}
         />
       )}

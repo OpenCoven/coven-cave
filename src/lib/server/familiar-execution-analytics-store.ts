@@ -10,12 +10,12 @@ import {
 import { isValidFamiliarId } from "./familiar-id.ts";
 
 function ledgerDir(): string {
-  return path.join(caveHome(), "familiar-execution-analytics", "v1");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "familiar-execution-analytics", "v1");
 }
 
 function ledgerFile(familiarId: string): string {
   if (!isValidFamiliarId(familiarId)) throw new Error("path not allowed");
-  return path.join(ledgerDir(), `${familiarId}.jsonl`);
+  return path.join(/* turbopackIgnore: true */ ledgerDir(), `${familiarId}.jsonl`);
 }
 
 export function serializeExecutionAttemptLedgerRecord(

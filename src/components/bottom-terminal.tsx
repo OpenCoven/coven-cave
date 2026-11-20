@@ -49,12 +49,6 @@ const DESKTOP_HEALTH_INTERVAL_MS = 5_000;
 
 export type TerminalHealth = "starting" | "healthy" | "recovering" | "failed";
 
-type PtyDiagnoseReport = {
-  exit: number | null;
-  bytes: number;
-  output: string;
-};
-
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
@@ -607,20 +601,6 @@ export function BottomTerminal({
         return;
       }
       log("mount: tauri bridge ready");
-
-      const diagnostic = await withTimeout(
-        bridge.invoke<PtyDiagnoseReport>("pty_diagnose"),
-        DESKTOP_COMMAND_TIMEOUT_MS,
-        "PTY diagnostic",
-      );
-      if (
-        diagnostic.exit !== 0 ||
-        diagnostic.bytes === 0 ||
-        !diagnostic.output.includes("coven-cave-pty-ok")
-      ) {
-        throw new Error("PTY diagnostic did not return the expected shell output");
-      }
-      log("pty_diagnose: ok", { bytes: diagnostic.bytes });
 
       // Lazy-load + build xterm (only on the client + inside Tauri so SSR and
       // the in-browser dev path don't pull it in). Shared with the WS path.

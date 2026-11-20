@@ -12,7 +12,7 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["profile", "general", "voice", "daemon", "mobile", "client-access", "appearance", "about"];
+  const ids = ["profile", "general", "voice", "local-models", "daemon", "mobile", "client-access", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);
@@ -168,6 +168,24 @@ test("the shell sources sections from settings-sections and renders the overview
     "About replaces the generic overview with its accessible handoff hero",
   );
   assert.doesNotMatch(shell, /section="addons"|AddonsSection|Add-ons/, "Add-ons is not a settings section");
+});
+
+test("the General summary shows a compact workspace path and keeps the full one on hover (#6243)", () => {
+  assert.match(
+    overview,
+    /import \{ compactPath \} from "@\/components\/familiars-memory-utils";/,
+    "the summary reuses the shared compactPath helper rather than another copy",
+  );
+  assert.match(
+    overview,
+    /summary\?\.workspacePath \? compactPath\(summary\.workspacePath\) : null/,
+    "the header summary shows the compact path, not the raw absolute one",
+  );
+  assert.match(
+    overview,
+    /<span title=\{summary\?\.workspacePath \|\| undefined\}>\{summaryMessage\}<\/span>/,
+    "the full path stays available as the summary's title",
+  );
 });
 
 console.log("settings-overview.test.ts: ok");

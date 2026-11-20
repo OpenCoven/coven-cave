@@ -9,6 +9,10 @@ const source = [
   ),
   await readFile(new URL("../lib/onboarding-bootstrap.ts", import.meta.url), "utf8"),
 ].join("\n");
+const runtimeStep = await readFile(
+  new URL("./onboarding-runtime-step.tsx", import.meta.url),
+  "utf8",
+);
 const lazy = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 const diagnostics = await readFile(
   new URL("./onboarding-setup-diagnostics.tsx", import.meta.url),
@@ -68,8 +72,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!state\.confirmed\) persistDismissal\(\)/,
-  "declining setup persists the first-run dismissal",
+  /const suppressAutomaticSetup = useCallback\(\(\) => \{[\s\S]*?localStorage\.setItem\("cave:setup:suppressed", "1"\);[\s\S]*?dismiss\(\);/,
+  "the explicit suppression control persists the preference before leaving",
 );
 assert.match(
   source,
@@ -151,11 +155,12 @@ assert.match(
   /Git is optional/,
   "Git remains visibly optional",
 );
-assert.doesNotMatch(
-  source,
-  /Codex|Claude|Copilot|OpenClaw/i,
-  "first-run setup stays independent of provider runtimes",
-);
+assert.doesNotMatch(source, /<OnboardingRuntimeStep/,
+  "local bootstrap hands off to the single assistant chooser instead of duplicating it");
+assert.match(runtimeStep, /confirmInstall: true/,
+  "a runtime install uses the existing confirmed allowlisted API");
+assert.match(runtimeStep, /"\/api\/harnesses"/,
+  "setup checks existing chat runtimes before offering an install");
 assert.match(
   source,
   /private Node\.js and npm runtime, then verify the Coven CLI/,
@@ -192,4 +197,43 @@ assert.doesNotMatch(
   "diagnostics do not widen native path-opening permissions",
 );
 
+// Background re-entry (#5982): leaving a running dialog arms the retained
+// latch the shell banner trigger reads, and the dialog feeds the shared
+// status store so the banner and Settings render the same state.
+assert.match(
+  source,
+  /const runInBackground = useCallback\(\(\) => \{\s*markSetupBackgrounded\(\);\s*onDismiss\(\);\s*\}, \[onDismiss\]\);/,
+  "Run in background arms the latch before dismissing",
+);
+assert.match(
+  source,
+  /const dismiss = useCallback\(\(\) => \{\s*if \(state\.status === "running"\) \{\s*runInBackground\(\);\s*return;\s*\}\s*onDismiss\(\);/,
+  "the close control and Escape background a running setup instead of abandoning it",
+);
+assert.match(source, /onClick=\{runInBackground\}>\s*Run in background/, "the footer button uses the same path");
+assert.match(source, /publishOnboardingBootstrapState\(json\);/, "every server state reaches the shared store");
+assert.match(
+  source,
+  /if \(initialState\) publishOnboardingBootstrapState\(initialState\);/,
+  "the hydrated startup state is published without a request",
+);
+assert.doesNotMatch(
+  source,
+  /publishOnboardingBootstrapState\(state\)/,
+  "the local placeholder state is never published as a reading",
+);
+assert.match(
+  source,
+  /setOnboardingDialogOpen\(open\);\s*return \(\) => setOnboardingDialogOpen\(false\);/,
+  "the store knows when the dialog is showing progress",
+);
+assert.match(
+  source,
+  /if \(open && state\.complete\) clearSetupBackgrounded\(\);/,
+  "completion observed in the dialog clears the latch so no duplicate notice follows",
+);
+
 console.log("onboarding-bootstrap-overlay.test.ts: ok");
+
+assert.match(source, /state\.complete \? \([\s\S]{0,260}request\("POST", \{ confirm: true \}\)[\s\S]{0,80}Run setup again/,
+  "completed setup has an explicit recovery action for a later daemon outage");

@@ -32,7 +32,10 @@ export type WorkspaceContextSwitcherProps = {
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
   contextNotice?: string | null;
+  /** Forwarded to ProjectPicker: each increment opens the picker (#5982). */
+  projectOpenRequest?: number;
   variant?: "rail" | "titlebar";
+  fullAccessOnly?: boolean;
 };
 
 /**
@@ -63,7 +66,9 @@ export function WorkspaceContextSwitcher({
   sessions,
   responseNeeded,
   contextNotice,
+  projectOpenRequest,
   variant = "rail",
+  fullAccessOnly = false,
 }: WorkspaceContextSwitcherProps) {
   return (
     <div className={`workspace-context-switcher workspace-context-switcher--${variant}`}>
@@ -93,6 +98,7 @@ export function WorkspaceContextSwitcher({
           createProjectOrThrow={createProjectOrThrow}
           ariaLabel="Switch project"
           disabled={projectLoading || Boolean(projectError)}
+          openRequest={projectOpenRequest}
         />
       </div>
       <div className="workspace-context-switcher__crew">
@@ -104,7 +110,7 @@ export function WorkspaceContextSwitcher({
           responseNeeded={responseNeeded}
           onSelectFamiliar={onSelectFamiliar}
           aggregateLabel={projectId ? "Project crew" : "All familiars"}
-          aggregateDescription={projectId ? `${projectCrew.length} with access` : undefined}
+          aggregateDescription={projectId ? `${projectCrew.length} with ${fullAccessOnly ? "Full access" : "access"}` : undefined}
           placement="bottom-start"
           labeled
           disabled={projectCrewLoading || Boolean(projectCrewError)}
@@ -120,7 +126,7 @@ export function WorkspaceContextSwitcher({
       ) : null}
       {project && !projectCrewLoading && !projectCrewError && projectCrew.length === 0 ? (
         <div className="workspace-context-switcher__empty" role="status">
-          No familiars have access to this project
+          {fullAccessOnly ? "No familiars have Full access to this project" : "No familiars have access to this project"}
         </div>
       ) : null}
       {contextNotice ? (

@@ -44,7 +44,11 @@ assert.match(
   /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "grimoire" \} \}\)/,
   "navigation rides the Workspace's cave:navigate-mode bridge",
 );
-assert.match(lib, /window\.history\.replaceState/, "the hash is written before the mode switch");
+assert.match(
+  lib,
+  /replaceHistoryUrl\(`\$\{base\}\$\{grimoireHash\(kind, id\)\}`\);[\s\S]*?cave:navigate-mode/,
+  "the hash is written before the mode switch",
+);
 
 assert.match(reader, /openGrimoireDoc\("memory", row\.contentPath/, "memory reader links its file to the Grimoire");
 assert.match(

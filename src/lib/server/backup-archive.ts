@@ -94,6 +94,10 @@ function sameBackupSourceIdentity(
     && actual.ctimeMs === expected.ctimeMs;
 }
 
+function backupSourceLabel(file: BackupSourceFile): string {
+  return file.root === "cave" && file.rel.startsWith("chat-attachments/") ? "Chat attachment" : "Research";
+}
+
 async function assertBackupSourceAncestors(file: BackupSourceFile): Promise<void> {
   for (const expected of file.ancestorIdentities ?? []) {
     const actual = await lstat(expected.path);
@@ -103,7 +107,7 @@ async function assertBackupSourceAncestors(file: BackupSourceFile): Promise<void
       || actual.dev !== expected.dev
       || actual.ino !== expected.ino
     ) {
-      throw new Error("Research backup directory identity changed before the file could be read safely");
+      throw new Error(`${backupSourceLabel(file)} backup directory identity changed before the file could be read safely`);
     }
   }
 }
@@ -118,12 +122,12 @@ async function readBackupSource(file: BackupSourceFile): Promise<Buffer> {
   try {
     const before = await handle.stat();
     if (!sameBackupSourceIdentity(file.identity, before)) {
-      throw new Error("Research backup entry changed before it could be read safely");
+      throw new Error(`${backupSourceLabel(file)} backup entry changed before it could be read safely`);
     }
     const data = await handle.readFile();
     const after = await handle.stat();
     if (!sameBackupSourceIdentity(file.identity, after)) {
-      throw new Error("Research backup entry changed while it was being read");
+      throw new Error(`${backupSourceLabel(file)} backup entry changed while it was being read`);
     }
     await assertBackupSourceAncestors(file);
     return data;
@@ -132,7 +136,7 @@ async function readBackupSource(file: BackupSourceFile): Promise<Buffer> {
   }
 }
 
-async function hardenResearchRestorePath(target: string, researchRoot: string): Promise<void> {
+async function hardenResearchRestorePath(target: string, researchRoot: string, label = "Research"): Promise<void> {
   let directory = path.dirname(target);
   while (directory === researchRoot || directory.startsWith(`${researchRoot}${path.sep}`)) {
     await chmod(directory, 0o700).catch((error) => {
@@ -146,7 +150,7 @@ async function hardenResearchRestorePath(target: string, researchRoot: string): 
   });
   const metadata = await lstat(target);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
-    throw new Error("Research backup restore target is unsafe");
+    throw new Error(`${label} backup restore target is unsafe`);
   }
 }
 
@@ -154,17 +158,18 @@ async function prepareResearchRestorePath(
   target: string,
   researchRoot: string,
   observer?: ResearchRestoreDurabilityObserver,
+  label = "Research",
 ): Promise<void> {
   const createdRoot = await mkdir(researchRoot, { recursive: true, mode: 0o700 });
   if (createdRoot) await fsyncResearchRestoreDirectory(path.dirname(researchRoot), observer);
   const relativeParent = path.relative(researchRoot, path.dirname(target));
   if (relativeParent === ".." || relativeParent.startsWith(`..${path.sep}`) || path.isAbsolute(relativeParent)) {
-    throw new Error("Research backup restore path escapes its root");
+    throw new Error(`${label} backup restore path escapes its root`);
   }
   const directories = [researchRoot];
   let directory = researchRoot;
   for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
-    directory = path.join(directory, segment);
+    directory = path.join(/* turbopackIgnore: true */ directory, segment);
     let created = false;
     await mkdir(directory, { mode: 0o700 }).then(() => { created = true; }).catch((error) => {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -175,7 +180,7 @@ async function prepareResearchRestorePath(
   for (const current of directories) {
     const metadata = await lstat(current);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-      throw new Error("Research backup restore directory is unsafe");
+      throw new Error(`${label} backup restore directory is unsafe`);
     }
   }
 }
@@ -190,18 +195,18 @@ async function pruneResearchAuthority(
   observer?: ResearchRestoreDurabilityObserver,
 ): Promise<void> {
   const structuralDirectories = new Set([
-    path.join(researchRoot, "blobs", "sha256"),
+    path.join(/* turbopackIgnore: true */ researchRoot, "blobs", "sha256"),
   ]);
   for (const relativeDirectory of RESEARCH_AUTHORITATIVE_DIRECTORIES) {
     const directory = path.join(/* turbopackIgnore: true */ researchRoot, relativeDirectory);
     await prepareResearchRestorePath(
-      path.join(directory, ".restore-placeholder"),
+      path.join(/* turbopackIgnore: true */ directory, ".restore-placeholder"),
       researchRoot,
       observer,
     );
     const walk = async (current: string): Promise<void> => {
       for (const entry of await readdir(current, { withFileTypes: true })) {
-        const candidate = path.join(current, entry.name);
+        const candidate = path.join(/* turbopackIgnore: true */ current, entry.name);
         const metadata = await lstat(candidate);
         if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile()) || (metadata.isFile() && metadata.nlink !== 1)) {
           throw new Error("Research backup restore entry is unsafe");
@@ -241,7 +246,7 @@ async function makeResearchLexicalUnavailable(
   researchRoot: string,
   observer?: ResearchRestoreDurabilityObserver,
 ): Promise<string> {
-  const indexDirectory = path.join(researchRoot, "index");
+  const indexDirectory = path.join(/* turbopackIgnore: true */ researchRoot, "index");
   const createdIndex = await mkdir(indexDirectory, { recursive: true, mode: 0o700 });
   if (createdIndex) await fsyncResearchRestoreDirectory(path.dirname(indexDirectory), observer);
   const info = await lstat(indexDirectory);
@@ -258,7 +263,7 @@ async function makeResearchLexicalUnavailable(
     if (process.platform !== "win32") throw error;
   });
   closeCanonicalResearchResourceLexicalHandlesForRestore(
-    path.join(indexDirectory, "research-resources.sqlite"),
+    path.join(/* turbopackIgnore: true */ indexDirectory, "research-resources.sqlite"),
   );
   const removeLexicalFile = async (candidate: string): Promise<void> => {
     const deadline = Date.now() + 15_000;
@@ -283,7 +288,7 @@ async function makeResearchLexicalUnavailable(
       || entry.name.startsWith(".restore-recovery-")
     ) {
       if (!entry.isFile()) throw new Error("Research lexical restore entry is unsafe");
-      await removeLexicalFile(path.join(indexDirectory, entry.name));
+      await removeLexicalFile(path.join(/* turbopackIgnore: true */ indexDirectory, entry.name));
     }
   }
   await fsyncResearchRestoreDirectory(indexDirectory, observer);
@@ -588,7 +593,7 @@ export async function restoreBackupArchive(
   const archive = await decryptBackupArchive(archiveBytes, passphrase);
   const restored: RestoredBackup["restored"] = [];
   const roots = backupRoots();
-  const researchRoot = path.join(roots.cave, "research-resources");
+  const researchRoot = path.join(/* turbopackIgnore: true */ roots.cave, "research-resources");
   const hasResearchResources = archive.files.some((file) =>
     file.root === "cave" && file.path.startsWith("research-resources/"))
     || hasResearchMarker(archive.manifest);
@@ -597,17 +602,20 @@ export async function restoreBackupArchive(
       const target = resolveBackupEntryPath(file.root, file.path, roots);
       const data = Buffer.from(file.data, "base64");
       const researchFile = file.root === "cave" && file.path.startsWith("research-resources/");
-      if (researchFile) {
-        await prepareResearchRestorePath(target, researchRoot, options.researchDurabilityObserver);
-      }
-      else await mkdir(path.dirname(target), { recursive: true });
-      if (researchFile) {
-        await writeResearchRestoreFileDurably(target, data, options.researchDurabilityObserver);
+      const attachmentFile = file.root === "cave"
+        && (file.path === "chat-attachments" || file.path.startsWith("chat-attachments/"));
+      const privateRoot = attachmentFile ? path.join(/* turbopackIgnore: true */ roots.cave, "chat-attachments") : researchFile ? researchRoot : null;
+      const label = attachmentFile ? "Chat attachment" : "Research";
+      const observer = researchFile ? options.researchDurabilityObserver : undefined;
+      if (privateRoot) {
+        await prepareResearchRestorePath(target, privateRoot, observer, label);
+        await writeResearchRestoreFileDurably(target, data, observer);
+        await hardenResearchRestorePath(target, privateRoot, label);
       } else {
+        await mkdir(path.dirname(target), { recursive: true });
         await writeGenericFileAtomic(target, data);
+        if (file.secret) await chmod(target, 0o600).catch(() => {});
       }
-      if (researchFile) await hardenResearchRestorePath(target, researchRoot);
-      else if (file.secret) await chmod(target, 0o600).catch(() => {});
       restored.push({ root: file.root, path: file.path, bytes: data.byteLength, secret: file.secret });
     }
   };

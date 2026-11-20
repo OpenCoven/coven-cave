@@ -997,15 +997,7 @@ test("a naturally closed supervisor releases ownership without retaining any PID
   assert.equal(isCopilotFlowRunActive(started.sessionId), false);
   assert.equal(await cancelCopilotFlowRun(started.sessionId), "already-finished");
 
-  let daemonCalls = 0;
-  const { cancelResearchSession } = await import("./research-mission-runner.ts");
-  await cancelResearchSession(started.sessionId, {
-    callDaemonImpl: async () => {
-      daemonCalls += 1;
-      return { ok: false, status: 0, error: "offline" };
-    },
-  });
-  assert.equal(daemonCalls, 0, "settled direct ownership never falls through to an offline daemon");
+
 });
 
 test("finished direct-run ownership is hot-reload-safe, bounded, and expiring", async () => {
@@ -1340,12 +1332,23 @@ const { writeFileSync } = require("node:fs");
   setInterval(() => {}, 1000);
 })().catch((error) => { console.error(error); process.exit(1); });
 `);
-  const owner = nodeSpawn(process.execPath, ["--experimental-strip-types", helper], {
+  const owner = nodeSpawn(process.execPath, [
+    "--experimental-strip-types",
+    "--import", new URL("../../../scripts/test-alias-register.mjs", import.meta.url).href,
+    helper,
+  ], {
     cwd: runRoot,
     windowsHide: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
   });
-  await waitUntil(() => existsSync(ready) && existsSync(marker) && statSync(marker).size > 0, 5_000);
+  let ownerError = "";
+  owner.stderr?.on("data", (chunk) => { ownerError = (ownerError + chunk.toString()).slice(-8_192); });
+  try {
+    await waitUntil(() => existsSync(ready) && existsSync(marker) && statSync(marker).size > 0, 5_000);
+  } catch (error) {
+    if (owner.exitCode === null) owner.kill();
+    throw new Error(`${error instanceof Error ? error.message : error}\n${ownerError}`);
+  }
   owner.kill(process.platform === "win32" ? undefined : "SIGKILL");
   await once(owner, "close");
 

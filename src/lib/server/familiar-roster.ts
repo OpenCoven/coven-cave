@@ -40,7 +40,7 @@ export type VisibleFamiliarRosterResult =
 
 export async function loadVisibleFamiliarRoster(): Promise<VisibleFamiliarRosterResult> {
   const covenDir = covenHome();
-  const familiarsToml = path.join(covenDir, "familiars.toml");
+  const familiarsToml = path.join(/* turbopackIgnore: true */ covenDir, "familiars.toml");
   const config = await loadConfig();
   const target = daemonTargetForConfig(config);
   const [res, removedIds, declaredEntries] = await Promise.all([

@@ -8,6 +8,42 @@
       },
       "contextWindow": 200000
     },
+    "gpt-6.2-sol": {
+      "label": "GPT-6.2 Sol",
+      "ids": {
+        "openai": "gpt-6.2-sol"
+      },
+      "contextWindow": 1050000,
+      "estimatedWindow": 500000,
+      "capabilityGated": true
+    },
+    "gpt-6.2-astra": {
+      "label": "GPT-6.2 Astra",
+      "ids": {
+        "openai": "gpt-6.2-astra"
+      },
+      "contextWindow": 1050000,
+      "estimatedWindow": 272000,
+      "capabilityGated": true
+    },
+    "gpt-6.1-terra": {
+      "label": "GPT-6.1 Terra",
+      "ids": {
+        "openai": "gpt-6.1-terra"
+      },
+      "contextWindow": 1050000,
+      "estimatedWindow": 500000,
+      "capabilityGated": true
+    },
+    "gpt-6-luna": {
+      "label": "GPT-6 Luna",
+      "ids": {
+        "openai": "gpt-6-luna"
+      },
+      "contextWindow": 1050000,
+      "estimatedWindow": 272000,
+      "capabilityGated": true
+    },
     "gpt-5.6-sol": {
       "label": "GPT-5.6 Sol",
       "ids": {
@@ -209,6 +245,18 @@
         "gpt-5.4-mini",
         "gpt-5.3-codex-spark"
       ],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
+    "codex-ollama": {
+      "provider": "ollama",
+      "models": [],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
+    "codex-lmstudio": {
+      "provider": "lmstudio",
+      "models": [],
       "allowCustom": true,
       "defaultOwner": "cave"
     },

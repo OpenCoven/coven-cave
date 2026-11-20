@@ -307,10 +307,11 @@ assert.doesNotMatch(
   /onNewChat\(projectRoot \?\? undefined|New session in \$\{projectRoot/,
   "the full-width Chat list has no session-derived project-group launcher",
 );
+const chatSurfaceLaunchBlock = workspaceSource.match(/<ChatSurface\b[\s\S]*?\n      \/>/)?.[0] ?? "";
 assert.match(
-  workspaceSource,
-  /<ChatSurface[\s\S]{0,1800}onRequestNewChat=\{startWorkspaceChat\}/,
-  "the Chat list receives the shell-owned launch gate",
+  chatSurfaceLaunchBlock,
+  /onRequestNewChat=\{startWorkspaceChat\}/,
+  "the Chat list receives the shell-owned launch gate within its own component call",
 );
 assert.match(
   chatSurfaceSource,

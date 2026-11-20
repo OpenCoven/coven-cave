@@ -77,7 +77,7 @@ final class LiveActivityManager {
         }
     }
 
-    /// Advance the island's status line ("Bash", "Reading files…").
+    /// Refresh the island's generic running state without disclosing trace text.
     func updateChat(threadId: String, statusLabel: String) async {
         guard let activity = currentChat, currentChatThreadId == threadId else { return }
         let state = ChatActivityAttributes.ContentState(statusLabel: statusLabel)

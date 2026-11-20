@@ -213,3 +213,20 @@ const rejection = runRailModel([{ id: "denied", tools: [{ id: "a", name: "Bash",
 assert.equal(rejection.rejected, 1);
 assert.equal(rejection.done + rejection.failed + rejection.running + rejection.unknown, 0);
 assert.equal(rejection.now?.heading, "Rejected");
+
+const declined = runRailModel([turn("declined", [
+  { id: "policy", name: "Bash", status: "policy-rejected" },
+  { id: "user", name: "Edit", status: "user-rejected" },
+  { id: "approval", name: "Write", status: "approval-requested" },
+  { id: "stopped", name: "Read", status: "cancelled" },
+])], { nowMs: NOW });
+assert.equal(declined.rejected, 2, "policy and user rejections are rejections, not unknown outcomes");
+assert.equal(declined.requested, 1, "an approval request has not executed");
+assert.equal(declined.cancelled, 1);
+assert.equal(declined.done + declined.failed + declined.running + declined.unknown, 0);
+assert.equal(declined.now?.heading, "Cancelled");
+const policyLast = runRailModel([turn("policy", [{ id: "p", name: "Bash", status: "policy-rejected" }])], { nowMs: NOW });
+assert.equal(policyLast.now?.heading, "Rejected");
+const cancelling = runRailModel([turn("cancelling", [{ id: "c", name: "Bash", status: "cancel-requested" }])], { nowMs: NOW });
+assert.equal(cancelling.running, 1, "a requested cancellation may still be executing");
+assert.equal(cancelling.now?.heading, "Doing now");

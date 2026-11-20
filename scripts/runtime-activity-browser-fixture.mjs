@@ -5,7 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { appendFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lateWriteRecord, removeFixtureRoot } from './native-harness-teardown.mjs';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -146,7 +147,16 @@ finally {
     } catch { report.daemonStopped = false; }
   }
   if (report.serverStopped === true && report.daemonStopped === true) {
-    await rm(root, { recursive: true, force: true }); report.fixtureRootRemoved = true;
+    // A late write under the state directory must not throw out of this
+    // teardown and lose result.json (#6340).
+    const removal = await removeFixtureRoot(root);
+    report.fixtureRootRemoved = removal.removed;
+    if (!removal.removed) {
+      report.preservedRoot = root;
+      report.teardownLateWrite = lateWriteRecord(removal);
+      report.failure ??= `fixture root not removed: ${removal.code} at ${removal.path}`;
+      report.fixturePassed = false; process.exitCode = 1;
+    }
   } else { report.fixturePassed = false; process.exitCode = 1; report.preservedRoot = root; }
   report.finishedAt = new Date().toISOString();
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(report, null, 2) + '\n');

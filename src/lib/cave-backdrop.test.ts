@@ -397,6 +397,22 @@ assert.match(
 );
 assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "backdrop.css is tokens-only");
 
+// One frosted surface over the image (#5956): the pane tabs, the chat title
+// row and the composer dock used three different treatments (a 72% fill, bare
+// blur, an opaque gradient), which read as stripes over the photo. They share
+// the top bar's scrim + blur on desktop, with the same opaque fallbacks.
+{
+  const bands = "html\\[data-backdrop-on\\] \\.chat-scope-tabs,\\s*html\\[data-backdrop-on\\] \\.cave-chat-linear-header,\\s*html\\[data-backdrop-on\\] \\.cave-chat-linear \\.cave-composer-dock";
+  assert.match(
+    css,
+    new RegExp(`@media \\(min-width: 768px\\) \\{\\s*${bands} \\{\\s*background: color-mix\\(in oklch, var\\(--bg-base\\) 46%, transparent\\);\\s*backdrop-filter: blur\\(var\\(--glass-blur\\)\\) saturate\\(var\\(--glass-saturate\\)\\);`),
+    "the chat bands share one frosted surface on desktop",
+  );
+  assert.match(css, new RegExp(`@supports not[^{]*\\{\\s*@media \\(min-width: 768px\\) \\{\\s*${bands} \\{\\s*background: var\\(--bg-base\\);`), "no blur: the bands fall back to opaque");
+  assert.match(css, new RegExp(`@media \\(prefers-reduced-transparency: reduce\\) and \\(min-width: 768px\\) \\{\\s*${bands} \\{\\s*background: var\\(--bg-base\\);\\s*backdrop-filter: none;`), "reduced transparency: opaque bands");
+  assert.doesNotMatch(css, /74%-raised wash/, "the stale comment about a wash that no longer exists is gone");
+}
+
 // Readability over the image (cave-5oeu): the transcript flattens bubbles to
 // bare text, so the reading column (and the group-chat shell) gets real glass
 // — scrim + blur — and the quiet text lifts one contrast step. Engines

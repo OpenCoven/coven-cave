@@ -119,6 +119,9 @@ async function gotoJournal(page: Page, scenario: JournalScenario = {}) {
   };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // The day rail deliberately includes entries written by every familiar.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
@@ -153,7 +156,12 @@ async function gotoJournal(page: Page, scenario: JournalScenario = {}) {
   await page.route("**/api/grimoire/graph**", (route) =>
     route.fulfill({ json: { ok: true, graph: { nodes: [], edges: [] } } }),
   );
-  await page.route("**/api/journal**", (route) => fulfillJournal(route, state));
+  // Automation mounts alongside the entry. It must not consume a response
+  // reserved for the list race, regardless of effect/request ordering.
+  await page.route(/\/api\/journal(?:\?|$)/, (route) => fulfillJournal(route, state));
+  await page.route("**/api/journal/automation**", (route) =>
+    route.fulfill({ json: { ok: true, available: true, routine: null } }),
+  );
   await page.route("**/api/chat/generate/journal", (route) =>
     route.fulfill({
       status: 200,

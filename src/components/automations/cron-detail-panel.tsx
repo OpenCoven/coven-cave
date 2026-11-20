@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CwdPickerField } from "@/components/cwd-picker-field";
-import { SkillSelect } from "@/components/automation-skill-select";
 import { Button } from "@/components/ui/button";
-import { StandardSelect } from "@/components/ui/select";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { CodexAutomation, CodexAutomationPatch } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
@@ -19,6 +17,23 @@ import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
 import { CanonicalAutomationHistory } from "@/components/automations/canonical-history";
+import { AutomationSchedulePreview } from "@/components/automations/automation-schedule-preview";
+import { RevisionConflictReview } from "@/components/automations/revision-conflict-review";
+import type { RevisionRebase } from "@/lib/automations/revision-rebase";
+import { AutomationOccurrences } from "@/components/automations/automation-occurrences";
+import { useAutomationFeed, type AutomationFeedChange } from "@/lib/automations/use-automation-feed";
+import { feedStatusText, type AutomationFeedStream } from "@/lib/automations/feed";
+import { sameRoutineRrule } from "@/lib/automations/routine-rrule";
+import {
+  lifecycleControl,
+  lifecycleFreshnessNote,
+  lifecycleStateLabel,
+  parseLifecycleDetail,
+  type AutomationHealthView,
+  type AutomationLifecycleView,
+} from "@/lib/automations/lifecycle";
+
+const NO_STREAMS: AutomationFeedStream[] = [];
 
 const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
   weekly: "Weekly",
@@ -27,7 +42,6 @@ const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
 };
 const fieldBaseClass = "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
 const inputClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
-const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
 const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
 const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
@@ -51,6 +65,7 @@ function formatDurationMs(ms: number): string {
 
 export function CodexDetailPanel({
   auto,
+  lifecycle,
   busy,
   expanded,
   onToggleExpanded,
@@ -60,8 +75,17 @@ export function CodexDetailPanel({
   onDelete,
   onRun,
   runs,
+  onCanonicalChange,
+  formResetKey = 0,
+  conflict = null,
+  onConflictSaveMine,
+  onConflictUseTheirs,
+  onConflictKeepEditing,
+  inFlightKey = "",
 }: {
   auto: CodexAutomation;
+  /** Coven's canonical lifecycle; the panel's state, badge and controls read only this. */
+  lifecycle: AutomationLifecycleView;
   busy: boolean;
   /** Full-page-width mode: the rail grows to fill the surface and the form
    *  reflows into a two-column canvas (list hidden until collapsed). */
@@ -73,15 +97,78 @@ export function CodexDetailPanel({
   onDelete: (auto: CodexAutomation) => void;
   onRun: (auto: CodexAutomation) => void;
   runs: AutomationRunRecord[];
+  /** Coven's changefeed reported a definition change, or lost its position: re-read the lifecycle. */
+  onCanonicalChange?: () => void;
+  /** Bumped by the owner to load `auto` into the form even over unsaved edits (after a save, or "Use Coven's version"). */
+  formResetKey?: number;
+  /** A save Coven refused because the definition moved: the review the person resolves. */
+  conflict?: RevisionRebase | null;
+  onConflictSaveMine?: (patch: CodexAutomationPatch, revision: number) => void;
+  onConflictUseTheirs?: () => void;
+  onConflictKeepEditing?: () => void;
+  /** Changes when Coven's scheduler reports this automation in a different state. New occurrences appear on no stream the panel follows. */
+  inFlightKey?: string;
 }) {
-  const isActive = auto.status === "ACTIVE";
+  const isActive = lifecycle.state === "active";
+  const control = lifecycleControl(lifecycle);
+  const formatTime = (iso: string) => formatTimestamp(iso, readDateTimePrefs());
+  const freshnessNote = lifecycleFreshnessNote(lifecycle, formatTime);
+  const stateLabel = lifecycleStateLabel(lifecycle);
+  // Health is read on demand for the open automation only, and again whenever
+  // Coven reports a new revision. `undefined` while reading, `null` if it can't be.
+  const [health, setHealth] = useState<AutomationHealthView | null | undefined>(undefined);
+  // The changefeed is the signal to re-read; it never stands in for the reads themselves.
+  const [healthNonce, setHealthNonce] = useState(0);
+  const [occurrenceNonce, setOccurrenceNonce] = useState(0);
+  // Streams are tagged with the automation they were read for, so a selection
+  // change never follows the previous automation's runs under the new id.
+  const [watched, setWatched] = useState<{ automationId: string; streams: AutomationFeedStream[] }>({ automationId: auto.id, streams: [] });
+  const onWatchStreams = useCallback((streams: AutomationFeedStream[]) => setWatched({ automationId: auto.id, streams }), [auto.id]);
+  const onCanonicalChangeRef = useRef(onCanonicalChange);
+  onCanonicalChangeRef.current = onCanonicalChange;
+  const onFeedChange = useCallback((change: AutomationFeedChange) => {
+    if (change.reset || change.topics.includes("definition")) onCanonicalChangeRef.current?.();
+    if (change.reset || change.topics.some((topic) => topic !== "definition")) {
+      setHealthNonce((value) => value + 1);
+      setOccurrenceNonce((value) => value + 1);
+    }
+  }, []);
+  // The overview's scheduler read notices new occurrences; re-read the ones shown here.
+  const seenInFlightKey = useRef(inFlightKey);
+  useEffect(() => {
+    if (seenInFlightKey.current === inFlightKey) return;
+    seenInFlightKey.current = inFlightKey;
+    setHealthNonce((value) => value + 1);
+    setOccurrenceNonce((value) => value + 1);
+  }, [inFlightKey]);
+  const feed = useAutomationFeed(auto.id, watched.automationId === auto.id ? watched.streams : NO_STREAMS, onFeedChange);
+  useEffect(() => {
+    if (lifecycle.revision === null) return;
+    const controller = new AbortController();
+    setHealth(undefined);
+    fetch(`/api/coven-automations/${encodeURIComponent(auto.id)}/lifecycle`, { cache: "no-store", signal: controller.signal })
+      .then((res) => res.json())
+      .then((json) => {
+        if (controller.signal.aborted) return;
+        const detail = parseLifecycleDetail(json);
+        setHealth(detail.kind === "available" ? detail.health : null);
+      })
+      .catch(() => { if (!controller.signal.aborted) setHealth(null); });
+    return () => controller.abort();
+  }, [auto.id, lifecycle.revision, healthNonce]);
   // Dialog semantics for the cron detail panel — trap focus, Escape closes, focus
   // returns to the opening row. aria-modal omitted (see DetailPanel's note).
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useFocusTrap(true, panelRef, { onEscape: onClose });
-  const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
-  const promptParts = splitAutomationPrompt(auto.prompt);
+  // The definition the form is editing. A newer copy of `auto` (a reload, or
+  // Coven's definition changing elsewhere) replaces it only while nothing is
+  // being edited, or when the owner says so (`formResetKey`, after a save or
+  // "Use Coven's version"). Unsaved edits are never wiped by a background
+  // reload: Save checks them against Coven's current revision instead.
+  const [formBase, setFormBase] = useState(auto);
+  const parsedSchedule = useMemo(() => parseCodexRrule(formBase.rrule), [formBase.rrule]);
+  const promptParts = splitAutomationPrompt(formBase.prompt);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [runLog, setRunLog] = useState<string>("");
   const [runLogLoading, setRunLogLoading] = useState(false);
@@ -116,33 +203,42 @@ export function CodexDetailPanel({
   const [goals, setGoals] = useState(promptParts.goals);
   const [deliverables, setDeliverables] = useState(promptParts.deliverables);
   const [model, setModel] = useState(auto.model ?? "");
-  const [reasoningEffort, setReasoningEffort] = useState(auto.reasoningEffort ?? "medium");
-  const [executionEnvironment, setExecutionEnvironment] = useState(auto.executionEnvironment ?? "worktree");
   const [tagsText, setTagsText] = useState(commaInput(auto.tags));
   const [cwdsText, setCwdsText] = useState(listInput(auto.cwds));
-  const [skillPath, setSkillPath] = useState(auto.skillPath ?? "");
   const [scheduleMode, setScheduleMode] = useState<"daily" | "weekly" | "raw">(parsedSchedule.mode);
   const [scheduleTime, setScheduleTime] = useState(parsedSchedule.time);
   const [scheduleDays, setScheduleDays] = useState(parsedSchedule.days);
   const [rawRrule, setRawRrule] = useState(parsedSchedule.raw);
 
+  const dirtyRef = useRef(false);
+  const resetKeyRef = useRef(formResetKey);
+  const [baseMoved, setBaseMoved] = useState(false);
   useEffect(() => {
+    const forced = resetKeyRef.current !== formResetKey;
+    resetKeyRef.current = formResetKey;
+    if (!forced && auto === formBase) return;
+    if (!forced && dirtyRef.current && auto.id === formBase.id) {
+      // Keep the person's edit; Save will review it against Coven first.
+      setBaseMoved(true);
+      return;
+    }
     const nextSchedule = parseCodexRrule(auto.rrule);
     const nextPromptParts = splitAutomationPrompt(auto.prompt);
+    setFormBase(auto);
+    setBaseMoved(false);
     setName(auto.name);
     setGoals(nextPromptParts.goals);
     setDeliverables(nextPromptParts.deliverables);
     setModel(auto.model ?? "");
-    setReasoningEffort(auto.reasoningEffort ?? "medium");
-    setExecutionEnvironment(auto.executionEnvironment ?? "worktree");
     setTagsText(commaInput(auto.tags));
     setCwdsText(listInput(auto.cwds));
-    setSkillPath(auto.skillPath ?? "");
     setScheduleMode(nextSchedule.mode);
     setScheduleTime(nextSchedule.time);
     setScheduleDays(nextSchedule.days);
     setRawRrule(nextSchedule.raw);
-  }, [auto]);
+    // formBase is read, not tracked: this runs when the incoming copy changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, formResetKey]);
 
   const nextRrule = buildCodexRrule(scheduleMode, scheduleTime, scheduleDays, rawRrule);
   const tags = parseListInput(tagsText);
@@ -150,19 +246,17 @@ export function CodexDetailPanel({
   const promptDirty = goals !== promptParts.goals || deliverables !== promptParts.deliverables;
   const nextPrompt = promptDirty
     ? composeAutomationPrompt(goals, deliverables, promptParts.hasStructuredSections || deliverables.trim().length > 0)
-    : auto.prompt;
+    : formBase.prompt;
   const invalidSchedule =
     !nextRrule.startsWith("RRULE:") || (scheduleMode === "weekly" && scheduleDays.length === 0);
   const dirty =
-    name !== auto.name ||
+    name !== formBase.name ||
     promptDirty ||
-    model !== (auto.model ?? "") ||
-    reasoningEffort !== (auto.reasoningEffort ?? "medium") ||
-    executionEnvironment !== (auto.executionEnvironment ?? "worktree") ||
-    tagsText !== commaInput(auto.tags) ||
-    cwdsText !== listInput(auto.cwds) ||
-    skillPath.trim() !== (auto.skillPath ?? "") ||
-    nextRrule !== (auto.rrule ?? "");
+    model !== (formBase.model ?? "") ||
+    tagsText !== commaInput(formBase.tags) ||
+    cwdsText !== listInput(formBase.cwds) ||
+    !sameRoutineRrule(nextRrule, formBase.rrule ?? "");
+  dirtyRef.current = dirty;
   const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
 
   // When Save is disabled because the form is invalid (not merely unchanged),
@@ -184,17 +278,14 @@ export function CodexDetailPanel({
 
   const save = () => {
     if (!canSave) return;
-    onSave(auto, {
+    // The base is what the form was loaded from, so the view can tell whether Coven moved since.
+    onSave(formBase, {
       name: name.trim(),
       prompt: nextPrompt,
       rrule: nextRrule,
       model: model.trim(),
-      reasoning_effort: reasoningEffort,
-      execution_environment: executionEnvironment,
       tags,
       cwds,
-      // Send "" (not undefined) so selecting "— none —" actually clears the skill.
-      skill_path: skillPath.trim(),
     });
   };
   const latestRun = runs[0];
@@ -202,8 +293,12 @@ export function CodexDetailPanel({
   // sentence explaining where it stands. Shares recurrenceFromRrule with the
   // create dialog's preview and the calendar's projection, so all three
   // answer "when does this run" the same way.
-  const upcoming = cronNextRuns(auto, Date.now(), 3);
-  const insight = cronInsight(auto, latestRun, upcoming[0] ?? null);
+  // Whether the saved rule can be read at all; the preview below does the zone-aware reading.
+  const readableRule = cronNextRuns({ rrule: auto.rrule, status: "ACTIVE" }, Date.now(), 1)[0] ?? null;
+  const insight = lifecycle.state === "unknown"
+    ? freshnessNote ?? "Checking the current state with Coven."
+    : cronInsight({ status: isActive ? "ACTIVE" : "PAUSED", scheduleHuman: auto.scheduleHuman }, latestRun, readableRule);
+  const nextDue = isActive ? health?.nextDueAt ?? null : null;
   const runStats = recordedRunStats(runs);
   const latestRunLabel = latestRun
     ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
@@ -235,10 +330,7 @@ export function CodexDetailPanel({
             className={inputClass}
           />
         </div>
-        <div>
-          <FieldLabel>Skill</FieldLabel>
-          <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={selectClass} />
-        </div>
+
       </div>
     </CronDetailSection>
   );
@@ -361,42 +453,11 @@ export function CodexDetailPanel({
             className={inputClass}
           />
         </div>
-        <div>
-          <FieldLabel>Reasoning</FieldLabel>
-          <StandardSelect
-            label="Reasoning"
-            value={reasoningEffort}
-            onChange={setReasoningEffort}
-            className={selectClass}
-            options={[
-              ...(!["low", "medium", "high"].includes(reasoningEffort)
-                ? [{ value: reasoningEffort, label: reasoningEffort }]
-                : []),
-              { value: "low", label: "low" },
-              { value: "medium", label: "medium" },
-              { value: "high", label: "high" },
-            ]}
-          />
-        </div>
-        <div>
-          <FieldLabel>Environment</FieldLabel>
-          <StandardSelect
-            label="Environment"
-            value={executionEnvironment}
-            onChange={setExecutionEnvironment}
-            className={selectClass}
-            options={[
-              ...(!["worktree", "repo"].includes(executionEnvironment)
-                ? [{ value: executionEnvironment, label: executionEnvironment }]
-                : []),
-              { value: "worktree", label: "worktree" },
-              { value: "repo", label: "repo" },
-            ]}
-          />
-        </div>
+
       </div>
       <div>
-        <FieldLabel>Working directories</FieldLabel>
+        <p className="text-[length:var(--text-xs)] [color:var(--text-secondary)]!">Reasoning, environment and skill overrides are unavailable for these scheduled jobs.</p>
+        <FieldLabel>Working directory</FieldLabel>
         <CwdPickerField
           value={cwdsText}
           onChange={setCwdsText}
@@ -405,6 +466,10 @@ export function CodexDetailPanel({
         />
       </div>
     </CronDetailSection>
+  );
+  const occurrencesSection = (
+    // Its own key namespace: it sits beside CanonicalAutomationHistory, which is keyed by the bare id.
+    <AutomationOccurrences key={`occurrences:${auto.id}`} automationId={auto.id} refreshNonce={occurrenceNonce} onWatchStreams={onWatchStreams} />
   );
   const runsSection = runs.length > 0 ? (
     <CronDetailSection
@@ -481,7 +546,8 @@ export function CodexDetailPanel({
               }}
             >
               <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: isActive ? "var(--color-success)" : "var(--text-muted)" }} />
-              {isActive ? "Active" : "Paused"}
+              {stateLabel}
+              {lifecycle.revision !== null ? <span className="[color:var(--text-muted)]!">· rev {lifecycle.revision}</span> : null}
             </span>
             <Button
               variant="ghost"
@@ -508,10 +574,19 @@ export function CodexDetailPanel({
       {/* Merge of main's expanded variant with the split-fit container: columns
           key off the pane, not the viewport (cave-hivd). */}
       <div className={`@container flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
-        <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
+        <div className="space-y-5">
+        {conflict ? (
+          <RevisionConflictReview
+            rebase={conflict}
+            busy={busy}
+            onSaveMine={(patch, revision) => onConflictSaveMine?.(patch, revision)}
+            onUseTheirs={() => onConflictUseTheirs?.()}
+            onKeepEditing={() => onConflictKeepEditing?.()}
+          />
+        ) : null}
         <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " @min-[900px]:grid-cols-4" : ""}`}>
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
-          <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
+          <CronSummaryTile label="Status" value={lifecycle.freshness === "stale" ? `${stateLabel} (stale)` : stateLabel} tone={isActive ? "active" : "paused"} />
           <CronSummaryTile label="Model" value={model.trim() || "Default"} />
           <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
           {/* The tile the pane was missing. A surface that can describe a cron
@@ -521,23 +596,37 @@ export function CodexDetailPanel({
               the insight line above says which. */}
           <CronSummaryTile
             label="Next run"
-            value={upcoming[0] ? formatTimestamp(upcoming[0], readDateTimePrefs()) : "—"}
+            value={nextDue ? formatTimestamp(nextDue, readDateTimePrefs()) : "—"}
           />
         </div>
 
         {/* One sentence for the state, above the fields that configure it. */}
         <p className="cron-detail-insight" role="status">{insight}</p>
 
-        {upcoming.length > 1 ? (
-          <p className="cron-detail-upcoming">
-            <span className="cron-detail-upcoming__label">then</span>
-            {upcoming.slice(1).map((iso) => (
-              <span key={iso} className="cron-detail-upcoming__at">
-                {formatTimestamp(iso, readDateTimePrefs())}
-              </span>
-            ))}
-          </p>
+        {freshnessNote && lifecycle.state !== "unknown" ? (
+          <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="status">{freshnessNote}</p>
         ) : null}
+
+        {/* Not a live region: the check time changes every few seconds. Outages and resets read as text here. */}
+        <div className="space-y-0.5 text-[length:var(--text-2xs)] [color:var(--text-muted)]!">
+          <p>{feedStatusText(feed.state, feed.now, (ms) => formatTimestamp(new Date(ms).toISOString(), readDateTimePrefs()))}</p>
+          {feed.state.lastEvent ? (
+            <p>
+              Last event: {feed.state.lastEvent.label}, {feed.state.lastEvent.detail}{" "}
+              <time dateTime={feed.state.lastEvent.recordedAt} title={feed.state.lastEvent.recordedAt}>
+                ({formatTimestamp(feed.state.lastEvent.recordedAt, readDateTimePrefs())})
+              </time>
+            </p>
+          ) : null}
+        </div>
+
+        <AutomationSchedulePreview
+          rrule={nextRrule}
+          savedRrule={auto.rrule ?? ""}
+          lifecycle={lifecycle}
+          health={lifecycle.revision === null ? null : health}
+          nowMs={Date.now()}
+        />
 
         {expanded ? (
           <div className="grid items-start gap-5 lg:grid-cols-2">
@@ -549,6 +638,7 @@ export function CodexDetailPanel({
               {instructionsSection}
               {runtimeSection}
             </div>
+            <div className="min-w-0 lg:col-span-2">{occurrencesSection}</div>
             {runsSection && <div className="min-w-0 lg:col-span-2">{runsSection}</div>}
             <div className="min-w-0 lg:col-span-2"><CanonicalAutomationHistory key={auto.id} automationId={auto.id} /></div>
           </div>
@@ -558,6 +648,7 @@ export function CodexDetailPanel({
             {instructionsSection}
             {scheduleSection}
             {runtimeSection}
+            {occurrencesSection}
             {runsSection}
             <CanonicalAutomationHistory key={auto.id} automationId={auto.id} />
           </div>
@@ -566,10 +657,17 @@ export function CodexDetailPanel({
       </div>
 
       <div className="cron-detail-actions border-t px-5 py-4 [border-color:var(--border-hairline)]!">
-        <div className={`space-y-3${expanded ? " mx-auto w-full max-w-xl" : ""}`}>
+        {/* The detail fills the pane; its buttons keep a readable width and
+          align with the content's leading edge. */}
+        <div className={`space-y-3${expanded ? " w-full max-w-xl" : ""}`}>
         {saveBlockedReason ? (
           <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="alert">
             {saveBlockedReason}
+          </p>
+        ) : null}
+        {baseMoved && dirty && !conflict ? (
+          <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="status">
+            Coven&apos;s copy of this cron changed while you were editing. Your edits are kept; saving first shows what changed.
           </p>
         ) : null}
         <Button
@@ -594,14 +692,21 @@ export function CodexDetailPanel({
           </Button>
           <Button
             variant={isActive ? "danger" : "secondary"}
-            disabled={busy}
+            disabled={busy || control.disabledReason !== null}
             onClick={() => onToggle(auto)}
             className="justify-center rounded-[var(--radius-control)] text-[length:var(--text-sm)] font-medium"
             leadingIcon={isActive ? "ph:pause" : "ph:play"}
           >
-            {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+            {busy ? (isActive ? "Pausing…" : "Resuming…") : control.label}
           </Button>
         </div>
+        {control.disabledReason ? (
+          <p className="text-[length:var(--text-xs)] [color:var(--text-muted)]!" role="note">{control.disabledReason}</p>
+        ) : control.expectedRevision !== null ? (
+          <p className="text-[length:var(--text-2xs)] [color:var(--text-muted)]!">
+            {control.label} applies only if Coven still holds revision {control.expectedRevision}.
+          </p>
+        ) : null}
         <div className="border-t pt-3 [border-color:var(--border-hairline)]!">
           <Button
             variant="danger-ghost"

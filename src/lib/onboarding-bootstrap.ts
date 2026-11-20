@@ -81,6 +81,13 @@ export type OnboardingSetupDiagnostics = {
     covenCli: OnboardingComponentReadiness;
     localService: OnboardingComponentReadiness;
   };
+  service?: {
+    code: "spawn_failed" | "runner_exited" | "readiness_timeout" | "runtime_incompatible" | "restart_throttled" | "owner_unreachable" | "address_in_use";
+    launchMode: "none" | "shell" | "direct" | "service";
+    readinessAttempts: number | null;
+    elapsedMs: number | null;
+    exitCode: number | null;
+  };
   installer?: {
     target: "managed-node" | "coven-cli";
     status: "idle" | "running" | "done" | "busy" | "unavailable";
@@ -237,6 +244,18 @@ export function normalizeResumableBootstrapState(
     ),
     updatedAt: new Date().toISOString(),
   };
+}
+
+/** An explicit rerun rechecks every stage; passive resume keeps completed setup idle.
+ * Stage runners verify and preserve existing components before doing any work. */
+export function prepareOnboardingBootstrapRun(
+  state: OnboardingBootstrapState,
+  confirm: boolean,
+): OnboardingBootstrapState | null {
+  if ((!state.confirmed || state.complete) && !confirm) return null;
+  return state.complete
+    ? createOnboardingBootstrapState(true)
+    : normalizeResumableBootstrapState(state);
 }
 
 export async function runOnboardingBootstrapStages(

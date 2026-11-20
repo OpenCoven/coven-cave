@@ -326,8 +326,8 @@ assert.match(
 );
 assert.match(
   persistedHandoffEffect,
-  /requestedProjectId === undefined[\s\S]{0,180}reportProblem\("That project is no longer available"\);\s*clearPendingAgentsNewChat\(\);\s*setPendingAgentsNewChat\(null\);\s*return;/,
-  "unknown persisted project roots should be announced and discarded",
+  /requestedProjectId === undefined[\s\S]{0,180}reportProblem\("That project is no longer available"\);\s*return;/,
+  "unknown persisted project roots stay available for explicit repair or discard",
 );
 assert.match(
   persistedHandoffEffect,
@@ -368,7 +368,7 @@ assert.match(workspace, /hasIndependentRightChatProject\(pending\)[\s\S]*startIn
 assert.match(workspace, /projectId !== null && projectRoot === undefined/, "only already crew-verified selected-project requests may skip a grant lookup");
 
 assert.match(workspace, /onFollowMainChat=\{\(\) => setRightChatLaunchRequest\(null\)\}/, "scoped fixes can return to the main familiar");
-assert.match(workspace, /startIndependentRightChat\(pending, generation\)\.then\(\(\) => \{[\s\S]*?clearPendingAgentsNewChat\(\);[\s\S]*?setPendingAgentsNewChat\(null\);/, "terminal independent launch failures clear stale persisted requests");
+assert.match(workspace, /startIndependentRightChat\(pending, generation\)\.then\(\(launched\) => \{[\s\S]*?if \(launched\) \{ clearPendingAgentsNewChat\(\); setPendingAgentsNewChat\(null\); \}/, "independent launch requests clear only after a successful handoff");
 
 assert.match(workspace, /publishRightChatFailure\(request, message\)/, "async launch failures release only the requesting row guard");
 

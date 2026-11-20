@@ -1200,13 +1200,15 @@ describe("a stale applied-session-scope must not block indefinitely once the tar
 });
 
 describe("transient roster errors keep a resolved router mounted (fix 2)", () => {
-  test("a transient sessions error keeps an already-resolved ChatRouter mounted and offers an inline retry", async () => {
+  test("a transient sessions error keeps the resolved chat mounted without a refresh warning", async () => {
     const cody = familiar("cody", "Cody");
     const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
     let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions });
     const renderer = await renderPanel(props);
     expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
     expect(sessionIdAttr(renderer)).toBe("cody-1");
+    const mounted = renderer.root.findByType(MockChatRouter);
+    const opens = router.calls.openSession.length;
 
     props = { ...props, sessionsError: true };
     await update(renderer, props);
@@ -1217,11 +1219,14 @@ describe("transient roster errors keep a resolved router mounted (fix 2)", () =>
     const retryButtons = renderer.root
       .findAllByType(Button)
       .filter((node) => node.props.children === "Retry" && node.props.onClick === props.onRetrySessions);
-    expect(retryButtons.length).toBeGreaterThan(0);
+    expect(retryButtons).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Couldn't refresh chats");
+    expect(renderer.root.findByType(MockChatRouter)).toBe(mounted);
 
     props = { ...props, sessionsError: false };
     await update(renderer, props);
-    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
+    expect(renderer.root.findByType(MockChatRouter)).toBe(mounted);
+    expect(router.calls.openSession.length).toBe(opens);
   });
 
   test("a transient familiars error keeps an already-resolved ChatRouter mounted and offers an inline retry", async () => {

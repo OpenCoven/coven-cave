@@ -27,9 +27,9 @@ assert.match(
   /writeFileAtomic\(\/\* turbopackIgnore: true \*\/ filePath, composeSkillMd\(input\)\)/,
   "SKILL.md lands atomically without tracing the runtime destination",
 );
-assert.match(lib, /path\.join\(home, "\.claude", "skills"\)/, "claude root matches the scanner's root");
-assert.match(lib, /path\.join\(home, "\.codex", "skills"\)/, "codex root matches the scanner's root");
-assert.match(lib, /path\.join\(home, "\.agents", "skills"\)/, "agents root matches the scanner's root");
+assert.match(lib, /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?home, "\.claude", "skills"\)/, "claude root matches the scanner's root");
+assert.match(lib, /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?home, "\.codex", "skills"\)/, "codex root matches the scanner's root");
+assert.match(lib, /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?home, "\.agents", "skills"\)/, "agents root matches the scanner's root");
 assert.match(lib, /covenHome\(\), "skills"/, "coven root matches the scanner's root");
 
 console.log("skills/build route.test.ts OK");

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  buildPromptWithResponseControls,
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
@@ -13,6 +14,34 @@ import {
   savedModelSelectionRequiresForwarding,
   turnRetryModel,
 } from "./chat-send-models.ts";
+
+for (const options of [undefined, {}, { origin: null }, { origin: "chat" }]) {
+  const prompt = buildPromptWithResponseControls("hi", {}, options);
+  for (const directive of ["next_paths", "coven_cards", "citations"]) {
+    assert.ok(prompt.includes(`<${directive}>`), `${JSON.stringify(options)} keeps ${directive}`);
+  }
+  assert.ok(prompt.endsWith("\nhi"));
+}
+
+for (const origin of ["canvas", "enhance", "journal"]) {
+  assert.equal(
+    buildPromptWithResponseControls("hi", {}, { origin }),
+    "hi",
+    `${origin} leaves the generation prompt untouched without selected controls`,
+  );
+  assert.equal(
+    buildPromptWithResponseControls("hi", { modelControls: { verbosity: "low" } }, { origin }),
+    [
+      "<response_controls>",
+      "verbosity: low",
+      "These are user-selected prompt guidance, not provider settings. Do not mention them unless asked.",
+      "</response_controls>",
+      "",
+      "hi",
+    ].join("\n"),
+    `${origin} preserves explicitly selected controls without chat directives`,
+  );
+}
 
 for (const scope of [undefined, "next-message", "session", "runtime-default"]) {
   assert.equal(isModelOverrideScope(scope), true, `${String(scope)} is a supported model scope`);
@@ -417,5 +446,20 @@ assert.equal(
   "This chat runs on Claude Code, which only serves Anthropic models, so it cannot run openai/gpt-6-astra. " +
     "Pick an Anthropic model for this chat, or move the chat to a runtime that serves OpenAI models.",
 );
+
+{
+  const plain = buildPromptWithResponseControls("hello", {});
+  assert.doesNotMatch(plain, /<connectors>/, "no connectors block unless one is on");
+
+  const withGitHub = buildPromptWithResponseControls("hello", {
+    connectors: [{ id: "github", available: true }],
+  });
+  assert.match(
+    withGitHub,
+    /^<connectors>\n[\s\S]*GitHub — on\.[\s\S]*<\/connectors>\n\n<next_paths>/,
+    "the connectors block leads the per-turn directives",
+  );
+  assert.match(withGitHub, /\nhello$/, "the user prompt still closes the block");
+}
 
 console.log("chat-send-models.test.ts: ok");

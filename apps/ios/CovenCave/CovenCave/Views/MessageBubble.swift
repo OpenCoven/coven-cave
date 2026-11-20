@@ -4,6 +4,9 @@ import UIKit
 struct MessageBubble: View {
     let message: DisplayMessage
     var isGroup: Bool
+    /// Resolved by the installed parent, including when equality is evaluated.
+    let colorScheme: ColorScheme
+    let chrome: ChromePalette
     var familiar: Familiar?
     var isLast: Bool = false
     var onDelete: (() -> Void)?
@@ -37,14 +40,6 @@ struct MessageBubble: View {
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
 
-    // The bubble's WebView is transparent over a system-coloured bubble, so its
-    // prose must follow the app's light/dark appearance (the WebView doesn't
-    // pick up `prefers-color-scheme` on its own).
-    @Environment(\.colorScheme) private var colorScheme
-    // The desktop theme palette: its accent drives inline-code / link colours in
-    // the markdown so they match the selected theme instead of a fixed lavender.
-    @Environment(\.chrome) private var chrome
-
     /// Brief "copied" confirmation on the action row (design: copy → check).
     @State private var justCopied = false
     private var isUser: Bool { message.role == .user }
@@ -63,7 +58,7 @@ struct MessageBubble: View {
     @ViewBuilder private var messageActions: some View {
         if !parsed.visible.isEmpty {
             Button {
-                UIPasteboard.general.string = parsed.visible
+                UIPasteboard.general.string = parsed.copyText
                 Haptics.tap()
             } label: {
                 Label("Copy message", systemImage: "doc.on.doc")
@@ -138,20 +133,14 @@ struct MessageBubble: View {
     }
 
     /// Swipe a bubble to the right to quote it into the composer. Runs alongside
-    /// the scroll view's pan (simultaneousGesture) and only tracks clearly
-    /// horizontal drags, so vertical scrolling is unaffected.
-    private var replySwipe: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onChanged { value in
-                guard value.translation.width > 0,
-                      abs(value.translation.width) > abs(value.translation.height),
-                      canReply else { return }
-                replyDrag = min(value.translation.width, 64)
-            }
-            .onEnded { _ in
-                if replyDrag > 48 { Haptics.tap(); fireReply() }
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { replyDrag = 0 }
-            }
+    /// the transcript and begins only on a rightward horizontal drag.
+    private var replySwipe: ReplyPanGesture {
+        ReplyPanGesture(enabled: canReply) { distance in
+            replyDrag = min(max(distance, 0), 64)
+        } onEnd: { completed in
+            if completed && replyDrag > 48 { Haptics.tap(); fireReply() }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { replyDrag = 0 }
+        }
     }
 
     private func fireReply() {
@@ -183,7 +172,7 @@ struct MessageBubble: View {
                     .accessibilityHidden(true)
             }
         }
-        .simultaneousGesture(replySwipe)
+        .gesture(replySwipe)
     }
 
     /// Short one-line feedback ("Model set to Opus 5.5.") as a quiet notice
@@ -293,13 +282,14 @@ struct MessageBubble: View {
                 // What the familiar is doing (tool calls / progress) — live
                 // while streaming, a collapsed summary once finished.
                 // A settled timeline reply shows its tools inline, one by one.
-                // "Run details" sums the whole run up in one place (#5881).
+                // "Tools this run" sums the whole run up in one place (#5881;
+                // "Run details" is the runtime and model disclosure, #6045).
                 let timelineTools = timeline == nil ? [] : message.activitySteps.filter { $0.kind == .tool }
                 if !isUser, !message.streaming, timelineTools.count >= 2 {
                     AgentActivityView(steps: timelineTools, streaming: false,
                                       messageId: "\(message.id):run-details",
                                       onShowToolOutput: onShowToolOutput,
-                                      summaryTitle: "Run details")
+                                      summaryTitle: "Tools this run")
                         .padding(.leading, 2)
                 }
                 let remainingActivity = timeline == nil ? message.activitySteps : message.activitySteps.filter { $0.kind == .progress }
@@ -316,9 +306,11 @@ struct MessageBubble: View {
                     bubble(projection)
                         .contextMenu { messageActions }
                 }
+                // The runtime, model, control and activity trail, folded into
+                // one Run details disclosure like the web (#6045).
                 if !isUser {
-                    responseModelStatus
-                    responseControlStatus
+                    ResponseRunDetailsView(message: message)
+                        .padding(.leading, 2)
                 }
 
                 // Protocol cards and explicit bare-line links can unfurl. Inline
@@ -392,114 +384,17 @@ struct MessageBubble: View {
 
             if !isUser { Spacer(minLength: 48) }
         }
+        // Keep the message identity on this visible native container rather
+        // than inheriting it onto a preloading one-point WebView.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Message bubble \(message.id)")
-    }
-
-    @ViewBuilder private var responseControlStatus: some View {
-        let requested = message.requestedControls ?? [:]
-        let rejected = Set(message.rejectedControlFamilies ?? [])
-        let promptGuidance = Set((message.promptGuidanceControls ?? [:]).keys)
-        let forwarded = Set((message.forwardedControls ?? [:]).keys)
-        let applied = Set((message.appliedControls ?? [:]).keys)
-        if !requested.isEmpty || !rejected.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(requested.keys).sorted(), id: \.self) { family in
-                    let value = requested[family] ?? ""
-                    let status = rejected.contains(family) ? "Rejected" : promptGuidance.contains(family) ? "Prompt guidance" : applied.contains(family) ? "Applied" : forwarded.contains(family) ? "Forwarded — not confirmed" : "Requested — not confirmed"
-                    Text("\(status): \(family) \(value)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(Array(rejected.subtracting(requested.keys)).sorted(), id: \.self) { family in
-                    Text("Rejected: \(family)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Response controls")
-        }
-    }
-
-    @ViewBuilder private var responseModelStatus: some View {
-        let identity = message.runtimeIdentity?.validated()
-        let requested = message.requestedModel
-        let desired = message.desiredModel
-        let forwarded = message.forwardedModel
-        let confirmed = message.confirmedModel
-        let state = message.modelApplicationState
-        let source = message.modelSource
-        let reason = message.modelApplicationReason
-        if !isUser {
-            VStack(alignment: .leading, spacing: 3) {
-                if let identity {
-                    Text("Runtime: \(identity.harness) \(identity.version ?? "version not reported")")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Runtime-reported model: \(identity.model ?? "unavailable")")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    ForEach(identity.activity?.statusLines ?? ["Activity support: not recorded"], id: \.self) { line in
-                        Text(line)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Runtime: not recorded")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Runtime-reported model: unavailable")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Activity support: not recorded")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let requested {
-                    let requestedLabel = requested.isEmpty ? "Runtime default" : requested
-                    Text("Requested model: \(requestedLabel)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let desired, !desired.isEmpty, desired != confirmed {
-                    Text("Selected model: \(desired)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let forwarded, !forwarded.isEmpty, forwarded != desired, forwarded != confirmed {
-                    Text("Forwarded model: \(forwarded)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let confirmed, !confirmed.isEmpty, identity == nil {
-                    Text("Recorded model: \(confirmed)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if let state, !state.isEmpty {
-                    Text("Model: \(state.capitalized)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let source, !source.isEmpty {
-                    Text("Model source: \(source)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let reason, !reason.isEmpty, confirmed == nil {
-                    Text(reason)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        }
     }
 
     /// Quiet icon row under the last settled assistant reply.
     private var actionRow: some View {
         HStack(spacing: 18) {
             Button {
-                UIPasteboard.general.string = parsed.visible
+                UIPasteboard.general.string = parsed.copyText
                 Haptics.tap()
                 withAnimation(.snappy(duration: 0.18)) { justCopied = true }
                 Task {
@@ -545,6 +440,7 @@ struct MessageBubble: View {
 
     private func bubble(_ projection: AssistantResponseProjection) -> some View {
         MessageProseView(message: message, projection: projection, isLast: isLast,
+                         deferOffscreenMessage: !isLast,
                          onOpenReader: onOpenReader, onContentHeightChange: onContentHeightChange)
     }
 
@@ -574,6 +470,7 @@ struct MessageBubble: View {
         return MessageProseView(message: span, projection: projection, isLast: isLast,
                                 preferNativePlainText: true,
                                 deferOffscreenMarkdown: deferOffscreenMarkdown,
+                                deferOffscreenMessage: !isLast,
                                 onOpenReader: message.streaming ? nil : onOpenReader.map { open in { _ in open(parsed.visible) } },
                                 onContentHeightChange: onContentHeightChange)
     }
@@ -586,10 +483,12 @@ private struct MessageAttachmentImage: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var zoomTask: Task<Void, Never>?
+    @State private var isNearViewport = false
+    @State private var thumbnailSize = CGSize(width: 240, height: 240)
 
     var body: some View {
         CachedImageView(
-            source: .dataURL(dataURL),
+            source: isNearViewport ? .dataURL(dataURL) : nil,
             targetSize: CGSize(width: 240, height: 240)
         ) { thumbnail in
             Image(uiImage: thumbnail)
@@ -602,9 +501,18 @@ private struct MessageAttachmentImage: View {
                 .onTapGesture { presentZoom(fallback: thumbnail) }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Tap to enlarge")
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    if size.width > 0, size.height > 0 { thumbnailSize = size }
+                }
         } placeholder: {
-            EmptyView()
+            Color.clear.frame(width: thumbnailSize.width, height: thumbnailSize.height)
+                .accessibilityLabel("Image attachment")
+                .accessibilityAddTraits(.isImage)
         }
+        .onGeometryChange(for: Bool.self) { geometry in
+            ChatResourceViewport.isNearby(size: geometry.size,
+                viewport: geometry.bounds(of: .scrollView))
+        } action: { isNearViewport = $0 }
         .onDisappear {
             zoomTask?.cancel()
             zoomTask = nil
@@ -614,7 +522,12 @@ private struct MessageAttachmentImage: View {
     private func presentZoom(fallback thumbnail: UIImage) {
         zoomTask?.cancel()
         let source = CaveImageSource.dataURL(dataURL)
-        let screenSize = UIScreen.main.bounds.size
+        // The screen this scene is showing on, never `UIScreen.main`: iPhone
+        // Duo has two displays and the scene moves as the device opens.
+        let screenSize = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .screen.bounds.size ?? CGSize(width: 1024, height: 1024)
         let longestScreenPixels = max(screenSize.width, screenSize.height) * displayScale
         let targetPixelSize = CGSize(width: longestScreenPixels, height: longestScreenPixels)
 
@@ -781,7 +694,7 @@ struct SuggestionPills: View {
 // every bubble (each hosts a WKWebView) — the cause of slow typing on long
 // threads. Closures are excluded (they capture fresh state each render but
 // don't change what's drawn); optional-action closures are compared by presence
-// since that toggles which buttons appear. Environment values and the complete
+// since that toggles which buttons appear. Resolved appearance inputs and the complete
 // familiar model are included because they directly control colours, markdown
 // styling, and the familiar attribution row.
 extension MessageBubble: Equatable {
@@ -864,5 +777,44 @@ private struct ReasoningSummaryView: View {
         .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         .onChange(of: showSummaries) { _, _ in app.reasoningDisclosureState.reset() }
         .onChange(of: expanded) { _, _ in onContentHeightChange?() }
+    }
+}
+
+/// Decide direction before UIKit recognizes the gesture so a vertical drag
+/// on a reply stays available to the enclosing transcript.
+private struct ReplyPanGesture: UIGestureRecognizerRepresentable {
+    var enabled: Bool
+    var onChange: (CGFloat) -> Void
+    var onEnd: (Bool) -> Void
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.x > abs(velocity.y)
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.maximumNumberOfTouches = 1
+        pan.isEnabled = enabled
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ pan: UIPanGestureRecognizer, context: Context) {
+        pan.isEnabled = enabled
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        switch pan.state {
+        case .began, .changed: onChange(pan.translation(in: pan.view).x)
+        case .ended: onEnd(true)
+        case .cancelled, .failed: onEnd(false)
+        default: break
+        }
     }
 }

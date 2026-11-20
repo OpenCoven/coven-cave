@@ -78,11 +78,11 @@ let acceptedProfileSequence = BUNDLED_PROFILE_MAX_SEQUENCE;
 let acceptedProfileIdentities = profileCacheIdentities(CLAUDE_COMPATIBILITY_PROFILES)!;
 
 function profileCachePath(): string {
-  return path.join(caveHome(), "runtime-compatibility", "claude.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "runtime-compatibility", "claude.json");
 }
 
 function profileCacheWatermarkPath(): string {
-  return path.join(caveHome(), "runtime-compatibility", "claude-watermark.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "runtime-compatibility", "claude-watermark.json");
 }
 
 function profileCacheIdentities(profiles: readonly unknown[]): ProfileCacheIdentity[] | null {

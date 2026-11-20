@@ -1,0 +1,30 @@
+/* Shared hover-able trend sparkline (src/components/ui/sparkline.tsx).
+   Imported by the component, so every surface that draws one — report metric
+   cards, analytics, profile, and coven:ui chat blocks — gets these rules
+   without loading another surface's stylesheet. Moved verbatim from
+   dashboard.css. */
+.spark { position: relative; display: block; width: 100%; overflow: visible; }
+.spark svg { display: block; width: 100%; height: 100%; }
+.spark--flat { width: 100%; border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
+.spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
+  white-space: nowrap; pointer-events: none; z-index: 4;
+  padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
+  color: var(--text-primary); background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-variant-numeric: tabular-nums; }
+.spark-tip b { font-weight: 700; }
+
+/* The tooltip's frosted glass keeps its opaque fallbacks beside it. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .spark-tip {
+    background: var(--bg-elevated);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .spark-tip {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+  }
+}

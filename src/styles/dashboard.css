@@ -1,3 +1,5 @@
+@import "./settings-switch.css";
+
 /* Dashboard-only layout classes. Reuses the shared .dr-* primitives in
    globals.css; these add only what the adaptive triage/launcher surface needs.
    Namespaced .dash-* so they never collide with /daily-report. */
@@ -46,19 +48,12 @@
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
   }
-  .spark-tip {
-    background: var(--bg-elevated);
-  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .settings-shell__header {
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
-    backdrop-filter: none;
-  }
-  .spark-tip {
-    background: var(--bg-elevated);
     backdrop-filter: none;
   }
 }
@@ -337,6 +332,61 @@
   grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-6);
+}
+
+/* Setup row (issue 5982): the About daemon-row status idiom on the General
+   sheet. A small dot colored by the semantic token, always paired with words:
+   color is never the only channel. */
+.settings-setup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.settings-setup__summary {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.settings-setup-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.settings-setup-status--info {
+  color: var(--accent-presence);
+}
+
+.settings-setup-status--success {
+  color: var(--color-success);
+}
+
+.settings-setup-status--warning {
+  color: var(--color-warning);
+}
+
+.settings-setup-status__dot {
+  width: var(--space-1);
+  height: var(--space-1);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.settings-setup__detail {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
 }
 
 .settings-stop-phrases {
@@ -793,6 +843,11 @@
     gap: var(--space-3);
   }
 
+  .settings-setup {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .settings-stop-phrases {
     align-items: flex-start;
     flex-direction: column;
@@ -883,42 +938,6 @@
 /* Minimal track/knob switch (News headlines) — user-requested slim replacement
    for the 64px On/Off rectangle. The row label carries the meaning; an inset
    negative-hit-area keeps the small control comfortably tappable. */
-.settings-switch {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: var(--bg-base);
-  cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
-}
-.settings-switch::after {
-  content: "";
-  position: absolute;
-  inset: -12px;
-}
-.settings-switch__knob {
-  position: absolute;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-pill);
-  background: var(--text-muted);
-  transition: transform 140ms var(--ease-standard, ease), background 140ms ease;
-}
-.settings-switch.is-on {
-  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
-  background: var(--accent-presence);
-}
-.settings-switch.is-on .settings-switch__knob {
-  transform: translateX(14px);
-  background: var(--accent-presence-foreground);
-}
 
 @media (max-width: 767px) {
   .settings-shell__sidebar {
@@ -967,15 +986,5 @@
 /* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
 
 
-/* Shared hover-able trend sparkline (report metric cards, analytics, profile) */
-.spark { position: relative; display: block; width: 100%; overflow: visible; }
-.spark svg { display: block; width: 100%; height: 100%; }
-.spark--flat { width: 100%; border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
-.spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
-  white-space: nowrap; pointer-events: none; z-index: 4;
-  padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
-  color: var(--text-primary); background: var(--glass-elevated);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-  font-variant-numeric: tabular-nums; }
-.spark-tip b { font-weight: 700; }
+/* The shared trend sparkline's styles live in src/styles/sparkline.css, imported
+   by src/components/ui/sparkline.tsx. */

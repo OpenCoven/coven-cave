@@ -1,0 +1,36 @@
+{
+  "method": "Computer Use observations in alternate-ID packaged Release app; accessibility tree plus visual screenshot. Not human keyboard or VoiceOver acceptance.",
+  "receipts": [
+    {
+      "state": "live",
+      "rawAccessibilityTreeSha256": "f27b3ddaea64fe0d21aff296f6b08b6f3b6b895c3b3b5a9f749782da9277394a",
+      "observedLines": [
+        "67 text Activity qualification Stopped",
+        "72 button Copy partial response",
+        "74 summary REASONING SUMMARY 5 words, Value: on",
+        "75 text REASONING SUMMARY",
+        "77 text hermes · provider report",
+        "80 summary increment_counter · effect-invocations.jsonl Succeeded 35s, Value: off",
+        "84 text Succeeded",
+        "107 summary Complete: Succeeded 35s, Value: off",
+        "110 text Succeeded",
+        "112 container Error: Cancelled by user"
+      ],
+      "screenshotSha256": "6d01bcfc60f984edca01bae21f2b07c2f0c558e178ee5ce34e170f910592cdd3"
+    },
+    {
+      "state": "history",
+      "rawAccessibilityTreeSha256": "b4078d59a633c7e879b2e8ba263ce7120812b3e82a27ed69fd657b9b381f99fb",
+      "observedLines": [
+        "63 text Activity qualification Stopped",
+        "68 button Copy partial response",
+        "70 summary REASONING SUMMARY 5 words, Value: on",
+        "71 text REASONING SUMMARY",
+        "73 text hermes · provider report",
+        "76 summary increment_counter · effect-invocations.jsonl Succeeded 35s, Value: off",
+        "80 text Succeeded"
+      ],
+      "screenshotSha256": "d71739d4f3f54b7d4e72bf1102b9be83ee6d3813423aee659e0ab96955e4b21d"
+    }
+  ]
+}

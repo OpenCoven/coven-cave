@@ -201,7 +201,7 @@ struct ChatModelBar: View {
 
     private var label: String {
         guard let state = presentedState else { return "Model" }
-        let model = state.effectiveModel.isEmpty ? "Runtime default (unresolved)" : state.effectiveModel
+        let model = state.effectiveModel.isEmpty ? "Runtime default (not reported yet)" : state.effectiveModel
         return "\(state.harness) · \(model)"
     }
 
@@ -210,7 +210,7 @@ struct ChatModelBar: View {
         // show) so `.task` reliably runs the initial load.
         chip
             .task(id: requestLoadTarget) { await load() }
-            .sheet(isPresented: $showPicker) {
+            .caveSheet(isPresented: $showPicker) {
                 ModelPickerSheet(
                     options: presentedOptions,
                     current: presentedState?.effectiveModel ?? "",
@@ -219,6 +219,7 @@ struct ChatModelBar: View {
                     onSelect: { id in Task { await choose(id) } },
                     application: sessionId == nil ? .familiarDefault : .chat
                 )
+                .caveNavigationExitBlocked(busy)
             }
     }
 
@@ -406,7 +407,7 @@ struct ModelPickerSheet: View {
                     }
                 } else if allowsRuntimeDefault {
                     Section("Current") {
-                        Label("Runtime default (unresolved)", systemImage: "cpu")
+                        Label("Runtime default (not reported yet)", systemImage: "cpu")
                             .font(.body.weight(.semibold))
                             .accessibilityLabel("Current model: Runtime default")
                     }

@@ -3,10 +3,12 @@
 Use this procedure to bind each iOS distribution decision to the exact build,
 physical-device evidence, and a named maintainer's decision.
 
-**Status: preparation only.** This runbook implements the documentation slice
-of [#5319](https://github.com/OpenCoven/coven-cave/issues/5319). It records no
-completed device acceptance, cohort observation, recovery drill, or permission
-to publish. Keep the issue open until its execution evidence exists.
+**Status: preparation only.** This runbook was the documentation slice of
+[#5319](https://github.com/OpenCoven/coven-cave/issues/5319), which closed as not
+planned on 2026-10-18: its v0.4-era gate is obsolete, and every release tag now
+uploads the iOS build to TestFlight. The runbook records no completed device
+acceptance, cohort observation, recovery drill, or permission to publish. Open a
+new issue before using it for an external-tester cohort.
 
 Start a record by copying the template below into the release issue's evidence
 record. Keep private device and diagnostic material in approved private storage;
@@ -20,7 +22,7 @@ Distribution channel and cohort: pending
 Incident classification and baseline: pending (#5311)
 Device qualification: pending (#5317)
 Exact-artifact qualification: pending (#5318)
-Incident/release holds: pending (including #5339 where applicable)
+Incident/release holds: pending (each open hold that applies to this build)
 Cohort evidence: pending (usable sessions / attempts, devices, device-hours)
 Recovery drill: pending (target, compatibility, retained-data checks)
 Primary blocker: missing exact-artifact and physical-device receipts
@@ -64,7 +66,7 @@ Receipts covering earlier work must include a reviewed binding to this candidate
 | `recovery` | Non-destructive recovery drill and downgrade/forward-fix limits |
 | `diagnosticDrill` | Synthetic failure, redaction, bounded retention, build attribution, HOLD routing and absent/delayed-report handling |
 | `cohort` | Ratified thresholds, observations, denominators and device-hours for the claimed cohort |
-| `releaseHolds` | Reviewed disposition of every applicable hold, including #5339 |
+| `releaseHolds` | Reviewed disposition of every applicable hold |
 | `maintainerDecision` | Named accountability, on-call operator, timestamp and explicit build/cohort-specific decision |
 
 Set `result` to `pass` only after reviewing the receipt against the requirement;
@@ -101,9 +103,13 @@ are satisfied; a syntactically complete index cannot clear it.
    [#5317](https://github.com/OpenCoven/coven-cave/issues/5317) device
    results and [#5318](https://github.com/OpenCoven/coven-cave/issues/5318)
    artifact binding. A rebuild needs its own binding and qualification decision.
-5. Resolve applicable incident holds, including
-   [#5339](https://github.com/OpenCoven/coven-cave/issues/5339), for the actual
-   targets. A source dependency update or successful upload does not lift a hold.
+5. Resolve applicable incident holds for the actual targets. A source dependency
+   update or successful upload does not lift a hold. The Next.js hold
+   [#5339](https://github.com/OpenCoven/coven-cave/issues/5339) closed on
+   2026-10-18 ([closeout](https://github.com/OpenCoven/coven-cave/issues/5339#issuecomment-6249041955)). The iOS app bundles no Next server,
+   so that hold never covered an iOS build by itself. Qualify a cohort only
+   against a Cave desktop server at v0.4.2 or later; earlier releases bundle an
+   unpatched Next.
 6. Name the accountable maintainer, on-call operator, evidence location, and
    available channel controls before inviting or expanding a cohort.
 
@@ -251,8 +257,8 @@ separate authorization and receipt.
 
 ## Close the preparation and execution separately
 
-A reviewed runbook completes documentation preparation only. To complete #5319,
-attach the exact release manifest, upgrade/recovery and diagnostic-drill results,
+A reviewed runbook completes documentation preparation only. To complete a
+future cohort issue, attach the exact release manifest, upgrade/recovery and diagnostic-drill results,
 ratified cohort thresholds and observations, on-call/control ownership, and
 explicit build-specific go/no-go decision. Keep missing receipts named as
 blockers. Preserve any applicable physical-device or release hold until its

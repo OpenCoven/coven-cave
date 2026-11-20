@@ -277,7 +277,8 @@ export const StatBand = memo(function StatBand({
         front={
           <>
             <StatHead label="Activity" icon="ph:arrows-clockwise" />
-            <b className={`fa-stat__value${activeNow ? " is-good" : ""}`}>{activeNow ? "Active" : "Idle"}</b>
+            {/* Activity is a state, not a pass/fail: it stays neutral (issue 6357). */}
+            <b className="fa-stat__value">{activeNow ? "Active" : "Idle"}</b>
             <span className="fa-stat__sub">
               {sessions.length} session{sessions.length === 1 ? "" : "s"} in window
             </span>
@@ -425,7 +426,7 @@ export const StatBand = memo(function StatBand({
         front={
           <>
             <StatHead label="Self-heal" icon="ph:arrows-clockwise" />
-            <b className={`fa-stat__value${healRequests.length === 0 ? " is-good" : " is-warn"}`}>
+            <b className={`fa-stat__value${healRequests.length === 0 ? "" : " is-warn"}`}>
               {healRequests.length}
             </b>
             <span className="fa-stat__sub">open request{healRequests.length === 1 ? "" : "s"}</span>
@@ -800,19 +801,19 @@ export const PulseOverlay = memo(function PulseOverlay({
         selectedDayKey={selectedDayKey}
       />
       <div className="fa-pulse-panel__stats">
-        <span className="fa-pulse-stat fa-pulse-stat--good">
+        <span className="fa-pulse-stat fa-pulse-stat--neutral">
           <b>{peak?.count ?? 0}</b>
           <span>Peak day{peak && peak.count > 0 ? ` · ${peak.label}` : ""}</span>
           <small>
             {mean > 0 && peak ? `${(peak.count / mean).toFixed(1)}× the ${pulse.length}-day mean` : "no sessions yet"}
           </small>
         </span>
-        <span className="fa-pulse-stat fa-pulse-stat--accent">
+        <span className="fa-pulse-stat fa-pulse-stat--neutral">
           <b>{mean.toFixed(1)}</b>
           <span>Sessions per day</span>
           <small>{total} over {pulse.length} days</small>
         </span>
-        <span className="fa-pulse-stat fa-pulse-stat--warn">
+        <span className="fa-pulse-stat fa-pulse-stat--neutral">
           <b>{quiet?.count ?? 0}</b>
           <span>Quiet day{quiet ? ` · ${quiet.label}` : ""}</span>
           <small>{pulse.filter((day) => day.count === 0).length} empty days in the window</small>

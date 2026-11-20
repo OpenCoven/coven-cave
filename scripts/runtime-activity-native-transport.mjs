@@ -3,16 +3,17 @@
 // selected owned simulator. Only the external Hermes API is synthetic; the
 // built Cave server and Swift client use their production transport and stores.
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, writeFile, appendFile, readdir, rm, lstat, realpath } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startCave, stopCave, freePort } from './client-v1-conformance.mjs';
+import { lateWriteRecord, removeFixtureRoot } from './native-harness-teardown.mjs';
+import { runNativeCommand } from './native-harness-command.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function sourceFingerprint() {
@@ -37,10 +38,17 @@ const evidence = option('--evidence');
 const derived = option('--derived-data');
 const liveUISend = args.includes('--live-ui-send');
 const unitSuite = args.includes('--unit-suite');
+const transportOnly = args.includes('--transport-only');
+// Opt-in #6104 check on the live UI send: the turn picks marker.txt from the
+// `@` menu and also types an unpicked @notes.txt. Only the pick may reach the
+// provider, inside the "Referenced files" block Cave appends to the prompt.
+const mentionSend = args.includes('--mention-send');
+const selectedModes = [liveUISend, unitSuite, transportOnly].filter(Boolean).length;
 const fixtureId = randomUUID();
 if (process.platform !== 'darwin' || !args.includes('--execute') || !destination ||
-    !evidence || !derived || !path.isAbsolute(evidence) || !path.isAbsolute(derived) || (liveUISend && unitSuite) || args.length !== (liveUISend || unitSuite ? 8 : 7)) {
-  console.error('Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator-uuid> --derived-data <absolute-path> --evidence <new-absolute-directory> [--live-ui-send | --unit-suite]');
+    !evidence || !derived || !path.isAbsolute(evidence) || !path.isAbsolute(derived) || selectedModes > 1 || (mentionSend && !liveUISend) ||
+    args.length !== 7 + selectedModes + (mentionSend ? 1 : 0)) {
+  console.error('Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator-uuid> --derived-data <absolute-path> --evidence <new-absolute-directory> [--live-ui-send [--mention-send] | --unit-suite | --transport-only]');
   process.exitCode = 2;
 } else {
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -55,6 +63,11 @@ const native = (args) => execFileSync(covenBin, args, { env: process.env, cwd: p
 const ledger = path.join(evidence, 'invocations.jsonl');
 // Keep the byte-exact oracle neutral under both native and web Markdown.
 const marker = `CAVE-NATIVE-${randomUUID()}`;
+// Every string in a provider request, so a check reads the prompt whatever
+// shape the Responses input takes.
+const providerText = (value) => typeof value === 'string' ? value
+  : Array.isArray(value) ? value.map(providerText).join('\n')
+  : value && typeof value === 'object' ? Object.values(value).map(providerText).join('\n') : '';
 const mobileToken = `fixture-native-${randomUUID()}`;
 const providerToken = `fixture-provider-${randomUUID()}`;
 const releaseKey = randomUUID();
@@ -67,13 +80,14 @@ const runReport = {
   candidate: { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
     sourceBefore: await sourceFingerprint() },
   host: { node: process.version, xcode: execFileSync('xcodebuild', ['-version'], { encoding: 'utf8' }).trim() },
-  scenario: unitSuite ? 'full-unit-suite-with-native-tcp-recovery' : liveUISend ? 'hermes-live-native-send-termination-restart-hydration' : 'hermes-summary-tool-reconnect-restart-native-supervisor-history',
+  scenario: unitSuite ? 'full-unit-suite-with-native-tcp-recovery' : transportOnly ? 'native-tcp-recovery-only' : liveUISend ? (mentionSend ? 'hermes-live-native-mention-send-termination-restart-hydration' : 'hermes-live-native-send-termination-restart-hydration') : 'hermes-summary-tool-reconnect-restart-native-supervisor-history',
   classification: unitSuite
     ? 'full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider'
+    : transportOnly ? 'real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider'
     : 'real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider',
   passed: false, providerRequests: 0, toolInvocations: 0,
   limitations: ['Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.',
-    unitSuite ? 'Unit suite only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.' : liveUISend ? 'UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.' : 'UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.',
+    (unitSuite || transportOnly) ? 'Native tests only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.' : liveUISend ? 'UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.' : 'UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.',
     'The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt.'],
 };
 let caveServer;
@@ -85,7 +99,17 @@ let restartTask;
 let uiRestartTask;
 let release;
 const released = new Promise((resolve) => { release = resolve; });
-let currentChild;
+const commandAbort = new AbortController();
+let commandCleanupComplete = true;
+let interruptedSignal;
+const interrupt = (name) => {
+  interruptedSignal ??= name;
+  commandAbort.abort();
+};
+const onInterrupt = () => interrupt('SIGINT');
+const onTerminate = () => interrupt('SIGTERM');
+process.on('SIGINT', onInterrupt);
+process.on('SIGTERM', onTerminate);
 let phoneStoreRoot;
 let interruptedPhone;
 
@@ -164,28 +188,39 @@ async function verifyRecoveredPhone() {
 }
 
 async function run(label, command, commandArgs, timeoutMs = 10 * 60_000) {
-  const log = createWriteStream(path.join(evidence, `${label}.log`), { flags: 'wx', mode: 0o600 });
-  const startedAt = new Date().toISOString();
-  const child = spawn(command, commandArgs, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
-  currentChild = child;
-  child.stdout.pipe(log, { end: false });
-  child.stderr.pipe(log, { end: false });
-  let forceTimer;
-  const timeout = setTimeout(() => {
-    child.kill('SIGTERM');
-    forceTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-  }, timeoutMs);
-  let code;
-  try { [code] = await once(child, 'close'); }
-  finally {
-    clearTimeout(timeout); clearTimeout(forceTimer); currentChild = null;
-    await new Promise((resolve) => log.end(resolve));
+  const receiptPath = path.join(evidence, `${label}.json`);
+  const onLine = label === 'native-transport' ? (line) => {
+    const match = /CAVE_NATIVE_ACTIVITY_STAGE ([a-z0-9-]+) elapsed_ms=(\d+(?:\.\d+)?)/.exec(line);
+    if (!match) return;
+    const stage = { stage: match[1], elapsedMs: Number(match[2]) };
+    (runReport.testStages ??= []).push(stage);
+    console.log(JSON.stringify({ phase: 'native-test-stage', ...stage }));
+  } : undefined;
+  try {
+    const receipt = await runNativeCommand({ command, args: commandArgs, cwd: repo,
+      env: process.env, timeoutMs, signal: commandAbort.signal, onLine,
+      logPath: path.join(evidence, `${label}.log`), receiptPath });
+    (runReport.commands ??= []).push({ label, receiptPath, exitCode: receipt.exitCode,
+      outputComplete: receipt.outputComplete, cleanupComplete: receipt.cleanupComplete });
+  } catch (error) {
+    commandCleanupComplete &&= error.receipt?.cleanupComplete === true;
+    (runReport.commands ??= []).push({ label, receiptPath, exitCode: error.receipt?.exitCode ?? null,
+      outputComplete: error.receipt?.outputComplete === true,
+      cleanupComplete: error.receipt?.cleanupComplete === true,
+      timedOut: error.receipt?.timedOut ?? null,
+      elapsedMs: error.receipt?.elapsedMs ?? null,
+      cleanupReadError: error.receipt?.cleanupReadError ?? null,
+      ownerAcknowledged: error.receipt?.ownerAcknowledged ?? null,
+      ownerPhase: error.receipt?.owner?.phase ?? null,
+      ownerReason: error.receipt?.owner?.reason ?? null,
+      ownerError: error.receipt?.owner?.error ?? null,
+      rootExitCode: error.receipt?.owner?.rootExitCode ?? null,
+      killIssued: error.receipt?.owner?.killIssued ?? null,
+      remainingMembers: error.receipt?.owner?.members ?? null });
+    throw error;
   }
-  await writeFile(path.join(evidence, `${label}.json`), JSON.stringify({ command: [command, ...commandArgs], startedAt, finishedAt: new Date().toISOString(), exitCode: code }, null, 2));
-  assert.equal(code, 0, `${label} failed; see its retained log`);
   console.log(JSON.stringify({ phase: label, passed: true }));
 }
-
 function writeFrames(res, frames) {
   const bytes = Buffer.from(frames.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''));
   // Fragment across UTF-8 characters as well as JSON/SSE boundaries.
@@ -196,6 +231,8 @@ try {
   runReport.candidate.buildId = (await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim();
   for (const dir of [caveHome, projectRoot]) await mkdir(dir, { recursive: true, mode: 0o700 });
   await writeFile(path.join(projectRoot, 'marker.txt'), marker, { mode: 0o600 });
+  // A real file, so a client that sent typed paths would get it delivered.
+  if (mentionSend) await writeFile(path.join(projectRoot, 'notes.txt'), 'typed, never picked\n', { mode: 0o600 });
   await writeFile(ledger, '', { flag: 'wx', mode: 0o600 });
   const corpusBytes = await readFile(path.join(repo, 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-http-v1.json'));
   runReport.scenarioSha256 = createHash('sha256').update(corpusBytes).digest('hex');
@@ -261,10 +298,19 @@ try {
         assert.equal(runReport.providerRequests, 1);
         assert.equal(runReport.toolInvocations, 1, 'restart only after the controlled tool completes');
         restartTask = (async () => {
+          const restartStarted = performance.now();
+          const recordStage = (stage) => {
+            const value = { stage, elapsedMs: performance.now() - restartStarted };
+            (runReport.restartStages ??= []).push(value);
+            console.log(JSON.stringify({ phase: 'native-restart-stage', ...value }));
+          };
           const previous = caveServer;
+          recordStage('stop-wait');
           await stopCave(previous, previous.port);
+          recordStage('stopped');
           assert.ok(previous.child.exitCode !== null || previous.child.signalCode !== null);
           caveServer = await startCave(caveInput);
+          recordStage('ready');
           assert.notEqual(caveServer.child.pid, previous.child.pid);
           assert.equal(caveServer.origin, previous.origin);
           for (const credential of [null, 'fixture-invalid']) {
@@ -274,6 +320,7 @@ try {
             } });
             assert.equal(response.status, 401, 'restart preserves the real ingress gate');
           }
+          recordStage('ingress-verified');
           runReport.restart = { previousPid: previous.child.pid, newPid: caveServer.child.pid,
             previousStopped: true, sameOrigin: true, ingressRefusalsVerified: true };
           await appendFile(ledger, JSON.stringify({ kind: 'server_restart', ordinal: 1 }) + '\n');
@@ -287,6 +334,14 @@ try {
       let body = '';
       for await (const chunk of req) { body += chunk; assert.ok(body.length < 1024 * 1024); }
       assert.equal(JSON.parse(body).stream, true);
+      if (mentionSend) {
+        const prompt = providerText(JSON.parse(body));
+        assert.ok(prompt.includes(`Referenced files (open with the Read tool):\n- ${path.join(projectRoot, 'marker.txt')}`),
+          'the picked file reaches the turn as its absolute path');
+        assert.ok(!prompt.includes(path.join(projectRoot, 'notes.txt')), 'a typed, unpicked path never reaches the turn');
+        runReport.mentionDelivered = { picked: 'marker.txt', typedOmitted: 'notes.txt' };
+        await appendFile(ledger, JSON.stringify({ kind: 'mention_delivered', ordinal: 1 }) + '\n');
+      }
       runReport.providerRequests += 1;
       await appendFile(ledger, JSON.stringify({ kind: 'provider', ordinal: runReport.providerRequests }) + '\n');
       assert.equal(runReport.providerRequests, 1, 'reconnect must never dispatch the provider twice');
@@ -405,7 +460,7 @@ try {
     acceptedRunId = conversation?.turns.find((turn) => turn.role === 'user')?.attentionClearOperationId;
     assert.ok(acceptedRunId, 'the UI must reconcile the exact accepted delivery');
   }
-  if (!unitSuite) {
+  if (!unitSuite && !transportOnly) {
     const uiTarget = targets.find((entry) => entry?.BlueprintName === 'CovenCaveUITests' || entry?.TestBundlePath?.endsWith('/CovenCaveUITests.xctest'));
     assert.ok(uiTarget, 'the generated plan must contain the native UI target');
     uiTarget.OnlyTestIdentifiers = ['ActivityRecoveryUITests'];
@@ -413,6 +468,7 @@ try {
       origin: caveServer.origin, token: mobileToken, projectRoot, marker,
       sessionId: conversation?.sessionId ?? 'live-ui-creates-session', runId: acceptedRunId ?? fixtureId,
       ...(liveUISend ? { mode: 'live-send', snapshotURL: `${providerOrigin}/ui-snapshot/${uiSnapshotKey}` } : {}),
+      ...(mentionSend ? { mention: 'marker.txt', typedPath: 'notes.txt' } : {}),
       completionURL: `${providerOrigin}/ui-complete/${uiCompletionKey}`,
       restartURL: `${providerOrigin}/ui-restart/${uiRestartKey}`,
     }) };
@@ -444,16 +500,26 @@ try {
     runReport.renderedRecoveryVerified = true;
     runReport.sceneSupervisorRecoveryVerified = true;
     runReport.liveUISendTerminationHydrationVerified = liveUISend;
-  } else {
+    if (mentionSend) {
+      assert.deepEqual(runReport.mentionDelivered, { picked: 'marker.txt', typedOmitted: 'notes.txt' },
+        'the provider saw the picked file and not the typed one');
+    }
+  } else if (unitSuite) {
     runReport.fullUnitSuiteExecuted = true;
+  } else {
+    runReport.transportOnlyExecuted = true;
   }
+  assert.equal((await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim(), runReport.candidate.buildId,
+    'candidate build changed during qualification; serialize build-mutating suites');
+  if (interruptedSignal) throw new Error(`Native qualification interrupted (${interruptedSignal})`);
   runReport.passed = true;
 } catch (error) {
   runReport.failure = error instanceof Error ? error.message : 'native transport failed';
   process.exitCode = 1;
 } finally {
   release();
-  if (currentChild) currentChild.kill('SIGTERM');
+  commandAbort.abort();
+  runReport.commandCleanupComplete = commandCleanupComplete;
   if (restartTask) await restartTask.catch(() => { runReport.passed = false; process.exitCode = 1; });
   if (uiRestartTask) await uiRestartTask.catch(() => { runReport.passed = false; process.exitCode = 1; });
   if (caveServer) {
@@ -476,7 +542,16 @@ try {
     } catch { runReport.daemonStopped = false; }
     if (!runReport.daemonStopped) { runReport.passed = false; process.exitCode = 1; }
   }
-  if (fixturePlan) await rm(fixturePlan, { force: true });
+  // Nothing below may throw out of this finally: a crash here loses
+  // result.json for a run whose suite may have passed (#6340).
+  if (fixturePlan && commandCleanupComplete) {
+    try { await rm(fixturePlan, { force: true }); }
+    catch (error) {
+      runReport.fixturePlanRemoved = false;
+      runReport.failure ??= `fixture plan not removed: ${error?.code ?? 'UNKNOWN'} ${fixturePlan}`;
+      runReport.passed = false; process.exitCode = 1;
+    }
+  }
   // Preserve unexpected state rather than removing a home that a detached
   // process might still own, including a failed daemon shutdown.
   let unexpectedDaemonState = false;
@@ -485,17 +560,41 @@ try {
     catch (error) { if (error.code !== 'ENOENT') unexpectedDaemonState = true; }
   }
   runReport.noDaemonState = !unexpectedDaemonState;
-  if (!unexpectedDaemonState && runReport.serverStopped !== false && runReport.daemonStopped !== false) {
-    await rm(root, { recursive: true, force: true });
-    runReport.fixtureRootRemoved = true;
+  if (commandCleanupComplete && !unexpectedDaemonState && runReport.serverStopped !== false && runReport.daemonStopped !== false) {
+    // A late write under the Cave state directory after the acknowledged stops
+    // once threw ENOTEMPTY out of this finally and lost result.json for a run
+    // whose suite had passed (#6340). Retry; if the write persists, preserve
+    // the root, record what was written, and fail the run with that evidence.
+    const removal = await removeFixtureRoot(root);
+    runReport.fixtureRootRemoved = removal.removed;
+    if (!removal.removed) {
+      runReport.preservedRoot = root;
+      runReport.teardownLateWrite = lateWriteRecord(removal);
+      runReport.failure ??= `fixture root not removed: ${removal.code} at ${removal.path}`;
+      runReport.passed = false;
+      process.exitCode = 1;
+    }
   } else {
     runReport.preservedRoot = root;
     runReport.passed = false;
     process.exitCode = 1;
   }
-  runReport.candidate.sourceAfter = await sourceFingerprint();
-  runReport.sourceUnchanged = runReport.candidate.sourceBefore === runReport.candidate.sourceAfter;
+  try {
+    runReport.candidate.sourceAfter = await sourceFingerprint();
+    runReport.sourceUnchanged = runReport.candidate.sourceBefore === runReport.candidate.sourceAfter;
+  } catch (error) {
+    runReport.sourceUnchanged = false;
+    runReport.failure ??= `source fingerprint after the run failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
   if (!runReport.sourceUnchanged) { runReport.passed = false; process.exitCode = 1; }
+  if (!commandCleanupComplete && fixturePlan) runReport.preservedFixturePlan = fixturePlan;
+  if (interruptedSignal) {
+    runReport.interruptedSignal = interruptedSignal;
+    runReport.passed = false;
+    process.exitCode = interruptedSignal === 'SIGINT' ? 130 : 143;
+  }
+  process.off('SIGINT', onInterrupt);
+  process.off('SIGTERM', onTerminate);
   runReport.finishedAt = new Date().toISOString();
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(runReport, null, 2) + '\n');
   console.log(JSON.stringify(runReport));

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   MicrophoneAccessError,
   classifyMicrophoneCaptureError,
+  microphoneDeniedHint,
   openMicrophoneSettings,
   requestMicrophoneStream,
 } from "./microphone-access.ts";
@@ -160,4 +161,40 @@ test("desktop recovery opens the macOS microphone privacy pane", async () => {
     commands.push(command);
   });
   assert.deepEqual(commands, ["microphone_settings_open"]);
+});
+
+test("a Windows desktop denial points at Windows Settings, not a browser (#5970)", async () => {
+  const commands: string[] = [];
+  await assert.rejects(
+    requestMicrophoneStream({
+      desktopPlatform: "windows",
+      invoke: async (command) => {
+        commands.push(command);
+        return { status: "granted" };
+      },
+      getUserMedia: async () => {
+        throw new DOMException("denied", "NotAllowedError");
+      },
+    }),
+    (error) => {
+      assert.ok(error instanceof MicrophoneAccessError);
+      assert.equal(error.code, "microphone_denied");
+      assert.equal(error.canOpenSettings, false);
+      assert.match(error.hint, /Windows Settings → Privacy & security → Microphone/);
+      assert.doesNotMatch(error.hint, /browser|site|System Settings/);
+      return true;
+    },
+  );
+  assert.deepEqual(commands, [], "no macOS permission preflight runs on Windows");
+});
+
+test("the denial hint names the right place on every platform", () => {
+  assert.match(microphoneDeniedHint(true), /System Settings/);
+  assert.match(microphoneDeniedHint(false, "windows"), /Windows Settings/);
+  assert.match(microphoneDeniedHint(false, "linux"), /privacy or sound settings/);
+  assert.match(microphoneDeniedHint(false, null), /browser settings/);
+  assert.match(
+    classifyMicrophoneCaptureError(new DOMException("denied", "NotAllowedError"), false, "windows").hint,
+    /Windows Settings/,
+  );
 });

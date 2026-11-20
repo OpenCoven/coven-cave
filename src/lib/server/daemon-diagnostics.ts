@@ -592,6 +592,50 @@ function sanitizeEventForExport(event: DaemonDiagnosticEvent): DaemonDiagnosticE
   };
 }
 
+/**
+ * What the sidecar's own owners knew at export time (#6298): the lifecycle
+ * operation in progress and the mutation owner's in-flight and last-settled
+ * records. No probe runs to build this, so the export never changes the
+ * state it describes. Instants are exported as ISO strings or null; an
+ * unreadable instant must not be replaced by the export time.
+ */
+export type DaemonDiagnosticLifecycleInput = {
+  operation?: { kind: string; startedAt: string; phase?: string } | null;
+  mutation?: {
+    inFlight: { kind: string; startedAt: number } | null;
+    lastOutcome: { kind: string; code: string; settledAt: number } | null;
+  } | null;
+};
+
+function safeInstant(value: string | number | null | undefined): string | null {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function sanitizeLifecycleForExport(input: DaemonDiagnosticLifecycleInput | undefined) {
+  const operation = input?.operation
+    ? {
+      kind: safeToken(input.operation.kind, "unknown"),
+      startedAt: safeInstant(input.operation.startedAt),
+      ...(input.operation.phase ? { phase: safeToken(input.operation.phase, "unknown") } : {}),
+    }
+    : null;
+  const inFlight = input?.mutation?.inFlight
+    ? {
+      kind: safeToken(input.mutation.inFlight.kind, "unknown"),
+      startedAt: safeInstant(input.mutation.inFlight.startedAt),
+    }
+    : null;
+  const lastOutcome = input?.mutation?.lastOutcome
+    ? {
+      kind: safeToken(input.mutation.lastOutcome.kind, "unknown"),
+      code: safeToken(input.mutation.lastOutcome.code, "unknown"),
+      settledAt: safeInstant(input.mutation.lastOutcome.settledAt),
+    }
+    : null;
+  return { operation, mutation: { inFlight, lastOutcome } };
+}
+
 export function buildDaemonDiagnosticBundle(input: {
   events?: DaemonDiagnosticEvent[];
   generatedAt?: string;
@@ -601,6 +645,7 @@ export function buildDaemonDiagnosticBundle(input: {
     nodeVersion?: string | null;
     caveVersion?: string | null;
   };
+  lifecycle?: DaemonDiagnosticLifecycleInput;
 } = {}) {
   const events = (input.events ?? listDaemonDiagnosticEvents()).slice(
     -DAEMON_DIAGNOSTIC_MAX_EVENTS,
@@ -619,6 +664,7 @@ export function buildDaemonDiagnosticBundle(input: {
         "bounded daemon lifecycle events",
         "correlation and operation generations",
         "sanitized endpoint, version, duration, outcome, and OS error classifications",
+        "lifecycle operation and mutation-owner state at export time",
       ],
       excluded: [
         "credentials and secret values",
@@ -643,6 +689,7 @@ export function buildDaemonDiagnosticBundle(input: {
         ? sanitizeAboutDiagnosticText(input.runtime.caveVersion).slice(0, 64)
         : "unknown",
     },
+    lifecycle: sanitizeLifecycleForExport(input.lifecycle),
     events,
   };
 }

@@ -1,3 +1,4 @@
+import Network
 import XCTest
 @testable import CovenCave
 
@@ -18,6 +19,14 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
         XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 1, jitter: 9), 1.2)
         XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 7, jitter: 1.2), 60)
         XCTAssertEqual(ConnectionRetryPolicy.heartbeatSeconds, 60)
+    }
+
+    func testOnlyAnUnsatisfiedPathRefusesAConnectionAttempt() {
+        XCTAssertTrue(ConnectionPathPolicy.allowsAttempt(.satisfied))
+        // "A new connection may activate the path": refusing that attempt is
+        // what kept the phone offline.
+        XCTAssertTrue(ConnectionPathPolicy.allowsAttempt(.requiresConnection))
+        XCTAssertFalse(ConnectionPathPolicy.allowsAttempt(.unsatisfied))
     }
 
     // MARK: - Test plumbing

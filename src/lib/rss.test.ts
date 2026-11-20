@@ -1,7 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   parseFeed,
+  isFeedDocument,
   decodeEntities,
   cleanText,
   normalizeDate,
@@ -151,3 +153,36 @@ assert.equal(links[1].title, "Scoped memory & clear protocols", "entities decode
 assert.deepEqual(extractLinks(""), [], "no body → no links");
 
 console.log("rss.test.ts: ok");
+
+for (const valid of [
+  '<rss version="2.0"><channel><title>Empty</title></channel></rss>',
+  '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Empty</title></feed>',
+  '<feed xmlns="http://www.w3.org/2005/Atom"/>',
+]) assert.equal(isFeedDocument(valid), true, valid);
+for (const invalid of ['', '{}', '<html>gateway</html>', '<rss><channel>', '<rss><channel><item></channel></rss>']) {
+  assert.equal(isFeedDocument(invalid), false, invalid);
+}
+
+for (const valid of [
+  '<rss><channel/></rss>',
+  '<?xml version="1.0"?><!-- before --><rss><channel><item><title><![CDATA[<item>not a tag</item>]]></title><description data-example="a > b">body</description></item></channel></rss><!-- after -->',
+  '<!DOCTYPE rss [<!ENTITY sample "inert > text">]><rss><channel><title>&sample;</title></channel></rss>',
+  '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Atom</title><link href="https://example.test/a?x=1&amp;y=2"/></entry></feed>',
+]) assert.equal(isFeedDocument(valid), true, valid);
+for (const invalid of [
+  '<rss><channel><item></channel></rss>', '<rss><channel></channel></rss><rss><channel/></rss>',
+  '<feed><entry></feed>', '<rss><channel attribute="unterminated></channel></rss>',
+  '<!-- unterminated', '<feed><![CDATA[unterminated</feed>', '<!DOCTYPE rss [<rss><channel/></rss>',
+  '<<!--x-->rss><channel/></rss>', // Stripping the comment must not manufacture a valid root.
+]) assert.equal(isFeedDocument(invalid), false, invalid);
+
+// A malformed provider body must not pin the server in a backtracking regex.
+// The child deadline keeps a regression bounded even if the parser stalls.
+const envelopeStress = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', `
+  import assert from 'node:assert/strict';
+  import { isFeedDocument } from './src/lib/rss.ts';
+  assert.equal(isFeedDocument('<rss>' + '<channel>'.repeat(200000) + '</rss>'), false);
+  assert.equal(isFeedDocument('<!--'.repeat(200000)), false);
+`], { cwd: process.cwd(), encoding: 'utf8', timeout: 5000 });
+assert.equal(envelopeStress.error, undefined, String(envelopeStress.error));
+assert.equal(envelopeStress.status, 0, envelopeStress.stderr);

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { formatRuntime, responseMetadataModel } from "../lib/chat-response-metadata.ts";
+import { formatRuntime, responseMetadataModel, runtimeIdentityGaps } from "../lib/chat-response-metadata.ts";
 
 const legacyMetadata = { familiarId: "fixture", harness: "claude", model: "selected-old-model", confirmedModel: "legacy-inferred-model", runtime: "local:/fixture" };
 assert.equal(responseMetadataModel(legacyMetadata), null, "legacy model intent never confirms the model that answered");
@@ -11,6 +11,17 @@ assert.equal(responseMetadataModel(nativeMetadata), "claude-opus-5-5");
 assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, model: null } }), null);
 assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, schemaVersion: 99 } }), null);
 assert.equal(responseMetadataModel({ ...nativeMetadata, runtimeIdentity: { ...nativeMetadata.runtimeIdentity, harness: "copilot" } }), null);
+
+// The header compresses missing runtime identity into one "unverified" marker
+// and names what is missing on hover (#5953). The honest facts stay; only the
+// presentation is shorter.
+assert.deepEqual(runtimeIdentityGaps(undefined), ["Runtime not recorded"]);
+assert.deepEqual(
+  runtimeIdentityGaps({ schemaVersion: 1, harness: "codex", version: null, model: null }),
+  ["Runtime version not reported", "Model not reported"],
+);
+assert.deepEqual(runtimeIdentityGaps({ schemaVersion: 1, harness: "claude", version: "2.1.288", model: null }), ["Model not reported"]);
+assert.deepEqual(runtimeIdentityGaps({ schemaVersion: 1, harness: "claude", version: "2.1.288", model: "claude-opus-5-5" }), []);
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
@@ -145,20 +156,49 @@ assert.doesNotMatch(
   "The misleading 'model:'/'runtime:' label helpers should be gone — openclaw-local is not a model and the runtime is a cwd",
 );
 
+const runDetails = await readFile(new URL("../lib/chat-run-details.ts", import.meta.url), "utf8");
 assert.match(
-  chatView,
-  /<ResponseControlStatus metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows render labeled requested/applied/rejected control state",
+  runDetails,
+  /function controlLines\([\s\S]*?"Rejected"[\s\S]*?"Prompt guidance"[\s\S]*?"Applied"[\s\S]*?"Forwarded — not confirmed"[\s\S]*?"Requested — not confirmed"/,
+  "Run details carry labeled requested/applied/rejected control state",
 );
 assert.doesNotMatch(
   chatView,
   /showEmptySuccessfulFallback[\s\S]*responseModelStatusCount|showEmptySuccessfulFallback[\s\S]*responseControlStatusCount/,
   "Routine model/control provenance metadata must not suppress empty-response treatment",
 );
+for (const row of ['"Model"', '"Selected model"', '"Requested model"', '"Forwarded model"', '"Recorded model"']) {
+  assert.ok(runDetails.includes(row), `Run details carry the ${row} row through the shared builder`);
+}
+assert.match(runDetails, /"reported by the runtime"|reported by the runtime/, "a runtime-reported model is labeled as such on the one Model row (#6039)");
+const runDetailsComponent = await readFile(new URL("./response-run-details.tsx", import.meta.url), "utf8");
+const quickChatThread = await readFile(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
 assert.match(
-  chatView,
-  /function responseModelStatusLines\([\s\S]*?Requested model:[\s\S]*?Recorded model:[\s\S]*?function ResponseModelStatus\([\s\S]*?const lines = responseModelStatusLines\(metadata\);[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows render requested, forwarded, and effective model state through shared metadata lines",
+  runDetailsComponent,
+  /import "@\/styles\/response-run-details\.css";[\s\S]*?export function ResponseRunDetails\([\s\S]*?const details = responseRunDetails\(metadata\);[\s\S]*?<details\s+className="cave-run-details"/,
+  "the shared Run details component owns its stylesheet and renders one disclosure (#6026, #6034)",
+);
+assert.match(chatView, /<ResponseRunDetails metadata=\{turn\.responseMetadata\} \/>/, "assistant turn rows render the shared Run details disclosure");
+assert.match(quickChatThread, /<ResponseRunDetails metadata=\{message\.responseMetadata\} \/>/, "Quick Chat renders the same disclosure instead of its own chip row (#6034)");
+assert.doesNotMatch(quickChatThread, /quickChatResponseMetadataLines|QuickChatResponseMetadata|Response model and controls/, "Quick Chat's private metadata chip row is gone");
+assert.doesNotMatch(chatView, /ResponseModelStatus|ResponseControlStatus/, "the two chip rows are gone");
+
+// #6026: the trail is a muted disclosure, not pills. Closed, it is one line
+// that fits the reading column; open, long values wrap inside the column, so
+// the #6011 wrapping chip class has no caller.
+assert.doesNotMatch(chatView, /cave-response-status-chip/, "no status chip class remains in the chat view");
+const transcriptCss = await readFile(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
+assert.doesNotMatch(transcriptCss, /cave-response-status-chip|cave-run-details/, "the chip rule left with the chips; the disclosure's rules live with its component");
+const runDetailsCss = await readFile(new URL("../styles/response-run-details.css", import.meta.url), "utf8");
+assert.match(
+  runDetailsCss,
+  /\.cave-run-details > summary \{[^}]*max-width: 100%;[^}]*list-style: none;/,
+  "the closed Run details line stays inside the reading column with no native marker",
+);
+assert.match(
+  runDetailsCss,
+  /\.cave-run-details dd \{[^}]*min-width: 0;[^}]*overflow-wrap: anywhere;/,
+  "an open Run details value wraps inside the column",
 );
 
 assert.doesNotMatch(

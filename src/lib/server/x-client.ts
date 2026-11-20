@@ -12,6 +12,7 @@ import {
   type NormalizedXPost,
   type XScope,
 } from "../x-api.ts";
+import { upstreamFetch } from "./upstream-fetch.ts";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const X_SCOPES = new Set<XScope>([
@@ -281,7 +282,7 @@ export function createXClient(options: XClientOptions = {}): XClient {
     // created, so none of it may be reported as a definite failure.
     let accepted = false;
     try {
-      const response = await fetchImpl(url, { ...init, signal: controller.signal });
+      const response = await upstreamFetch("x", url, { ...init, signal: controller.signal }, { fetchImpl, timeoutMs: REQUEST_TIMEOUT_MS });
       if (!response.ok) {
         // A 4xx is X saying it refused the request, so nothing was created and
         // the caller may safely try again. A 5xx is X failing *after* the

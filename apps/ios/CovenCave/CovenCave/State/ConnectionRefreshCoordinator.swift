@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 /// Transport outcome of one endpoint probe, shared by every caller that
 /// joined it. Mirrors `AppModel.DiscoveryOutcome`, plus `.cancelled` so a
@@ -30,6 +31,22 @@ struct ConnectionRetryPolicy: Equatable, Sendable {
         let base = min(pow(2, Double(boundedFailure - 1)), 60)
         let boundedJitter = min(max(jitter, 0.8), 1.2)
         return min(base * boundedJitter, 60)
+    }
+}
+
+/// Whether a network path is worth a connection attempt. Only `.unsatisfied`
+/// means there is nothing to try. `.requiresConnection` is Apple's "establishing
+/// a new connection may activate the path": treating it as offline guarantees
+/// the attempt that would activate it never happens, so the phone declared
+/// itself offline and stayed there.
+enum ConnectionPathPolicy {
+    nonisolated static func allowsAttempt(_ status: NWPath.Status) -> Bool {
+        switch status {
+        case .satisfied, .requiresConnection: return true
+        case .unsatisfied: return false
+        // A probe is harmless; refusing one is what wedges recovery.
+        @unknown default: return true
+        }
     }
 }
 

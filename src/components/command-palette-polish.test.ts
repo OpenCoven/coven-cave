@@ -18,13 +18,15 @@ assert.match(
 // ── Right-edge affordance labels render on the active row only ──────────────
 // "memory" left with the canonical-vault row that carried it; the file-memory
 // row's affordance label is "file", which is still here.
-for (const label of ["switch", "card", "file", "open", "run", "create", "ask"]) {
+for (const label of ["switch", "card", "file", "open", "run", "create"]) {
   assert.match(
     source,
     new RegExp(`\\{active \\? <span className="text-\\[length:var\\(--text-2xs\\)\\] text-\\[var\\(--text-muted\\)\\]">${label}</span> : null\\}`),
     `'${label}' affordance label renders only on the active row (Raycast idiom)`,
   );
 }
+assert.doesNotMatch(source, /salem-answer|askSalem/, "retired Salem has no answer row or ask affordance");
+
 // Data-bearing right edges (session age, match counts) must NOT be gated.
 assert.match(
   source,

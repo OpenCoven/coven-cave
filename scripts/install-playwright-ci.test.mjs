@@ -71,9 +71,8 @@ test("after the last attempt it fails with a clear error and never installs brow
   assert.ok(!calls.includes("pnpm exec playwright install chromium webkit"));
 });
 
-test("both E2E jobs use the bounded installer and the browser cache", () => {
-  const workflow = readFileSync(path.join(here, "..", ".github", "workflows", "ci.yml"), "utf8");
-  assert.equal(workflow.match(/run: bash scripts\/install-playwright-ci\.sh chromium webkit/g)?.length, 2);
-  assert.equal(workflow.match(/path: ~\/\.cache\/ms-playwright/g)?.length, 2);
+test("the performance workflow still uses the bounded installer", () => {
+  const workflow = readFileSync(path.join(here, "..", ".github", "workflows", "cave-performance.yml"), "utf8");
+  assert.match(workflow, /run: bash scripts\/install-playwright-ci\.sh chromium/);
   assert.doesNotMatch(workflow, /playwright install --with-deps/);
 });

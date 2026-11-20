@@ -8,9 +8,16 @@ const surface = read("./chat-surface.tsx");
 const router = read("./chat-router.tsx");
 const sidebar = read("./workspace-sidebar.tsx");
 assert.match(workspace, /selection: selectedWorkspaceProjectId \?\? "all"/);
-assert.match(workspace, /const ready = workspaceContextHydrated &&/);
-assert.match(workspace, /loading: !ready && projectsError === null && \(!workspaceContextHydrated \|\| projectsLoading \|\| !projectsLoadedSuccessfully\)/,
-  "the workspace scope reports hydration and project loading apart from failure (#5585)");
+assert.match(workspace, /useState<string \| null>\(null\)/);
+assert.match(workspace, /familiarIds: \[\.\.\.scopeIds\]/);
+assert.match(workspace, /ready: selectedWorkspaceProjectId === null/,
+  "All projects remains an explicit overview");
+assert.match(workspace, /projectCrew: resolvedProjectCrew/,
+  "Chat uses the same project crew as every other page");
+assert.doesNotMatch(workspace, /setChatFilterProjectId|setChatFilterFamiliarIds/,
+  "Chat does not retain a second unsynchronized selection");
+assert.match(workspace, /preserveSurface: modeRef\.current === "chat"/,
+  "shared Chat browsing preserves the open conversation");
 assert.match(workspace, /<ChatSurface[\s\S]*?browseScope=\{chatBrowseScope\}/);
 assert.match(workspace, /composeProjectRoot=\{selectedWorkspaceProject\?\.root \?\? null\}/);
 assert.match(surface, /<SidebarChatsSection[\s\S]*?sessions=\{browseSessions\}/);
@@ -19,8 +26,8 @@ assert.match(surface, /<ChatThreadsSheet[\s\S]*?sessions=\{browseSessions\}/,
 assert.match(surface, /<ChatRouter[\s\S]*?sessions=\{sessions\}[\s\S]*?browseScope=\{effectiveBrowseScope\}/,
   "Router retains full session identity while browse context is separate");
 assert.match(surface, /<ChatRouter[\s\S]*?composeProjectRoot=\{composeProjectRoot\}/);
-assert.match(router, /view\.sessionId === null && !view\.started\s*\? blankChatProjectRoot[\s\S]*?: view\.projectRoot/,
-  "the workspace root only updates a sessionless compose");
+assert.match(router, /view\.sessionId === null && !view\.started[\s\S]*?browseScope\?\.familiarIds !== undefined[\s\S]*?view\.projectRoot \?\? composeProjectRoot \?\? undefined[\s\S]*?blankChatProjectRoot[\s\S]*?: view\.projectRoot/,
+  "local browse filters never change the compose target; legacy workspace scopes retain their behavior");
 const chatList = read("./chat-list.tsx");
 assert.match(router, /<ChatList[\s\S]*?browseScope=\{browseScope\}/);
 assert.match(chatList, /return scopeChatBrowseSessions\(visible, projects, projectOverrides, browseScope\)/,
@@ -30,7 +37,7 @@ assert.match(chatList, /browseScope \? "all" : normalizeSelection/,
 assert.match(router, /const activeSession = retainOpenChatSession\(retainedSessionRef\.current, sessions, activeSessionId\)/);
 assert.match(router, /if \(browseScope !== undefined\) return;\s*const nextFamiliarId/,
   "async familiar hydration and restored project crew cannot navigate a workspace chat");
-assert.match(router, /key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+assert.match(router, /key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}/,
   "project browse changes are not part of ChatView's mount identity");
 const paletteSwitch = workspace.slice(workspace.indexOf('if (intent.kind === "switch-familiar")'), workspace.indexOf('if (intent.kind === "open-session")'));
 assert.match(paletteSwitch, /selectFamiliarScope\(intent\.familiarId\)/);
@@ -45,8 +52,10 @@ assert.match(sidebar, /if \(!selectMode\) hoverPrefetchConversation\(sessionId\)
 assert.match(sidebar, /onPointerLeave: cancelHoverPrefetch,[\s\S]*?onPointerDown: prefetch,[\s\S]*?onFocus: prefetch,[\s\S]*?onBlur: cancelHoverPrefetch/);
 assert.match(sidebar, /if \(selectMode\) cancelHoverPrefetch\(\);\s*return cancelHoverPrefetch;/,
   "selection transitions and unmount cancel pending hover intent");
-assert.equal((sidebar.match(/\{\.\.\.prefetchHandlers\}/g) ?? []).length, 2,
-  "both actual thread buttons, including pinned rows, receive prefetch handlers");
+// Pinned and ordinary rows now share ThreadRow. Their actual event behavior is
+// exercised for both placements in chat-sidebar-wiring.behavior.test.ts.
+assert.match(sidebar, /function ThreadRow\([\s\S]*?\{\.\.\.prefetchHandlers\}/,
+  "the shared thread button receives prefetch handlers");
 assert.match(sidebar, /if \(selectMode\) return;\s*if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\)/,
   "keyboard split navigation remains unchanged outside select mode");
 // #5584: the inline card's Switch takes the same eligibility-gated path as

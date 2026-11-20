@@ -61,7 +61,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const familiarsToml = path.join(homedir(), ".coven", "familiars.toml");
+  const familiarsToml = path.join(/* turbopackIgnore: true */ homedir(), ".coven", "familiars.toml");
   let existing = "";
   try {
     existing = await readFile(familiarsToml, "utf8");

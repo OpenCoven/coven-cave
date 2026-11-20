@@ -47,6 +47,7 @@ import { createPortal } from "react-dom";
 
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
+import { projectUiBlocksToReadable } from "@/lib/ui-block-readable";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -176,6 +177,9 @@ export function MessageReader({
   // reading. A condensed answer usually has no headings at all, which closes
   // the rail — correct, rather than a rail pointing at nothing.
   const shown = lens === "full" ? text : (rewrites[lens] ?? text);
+  // Copy and Export hand back what the reader shows: a coven:ui block as its
+  // readable lines, not its markup (#6060).
+  const portable = useMemo(() => projectUiBlocksToReadable(shown), [shown]);
   const outline = useMemo(() => readerOutline(shown), [shown]);
   const stats = useMemo(() => readingStats(shown), [shown]);
   const baseLevel = useMemo(() => outlineBaseLevel(outline), [outline]);
@@ -298,12 +302,12 @@ export function MessageReader({
   const copy = useCallback(async () => {
     // What you see is what you take. Copying the original while a rewrite is
     // displayed hands back text the reader never showed.
-    if (!(await copyText(shown))) return;
+    if (!(await copyText(portable))) return;
     setCopied(true);
     announce("Answer copied");
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
-  }, [shown, announce]);
+  }, [portable, announce]);
 
   const canRewrite =
     !!familiarId && !rewriteUnavailable && text.trim().length > 0 && text.length <= REWRITE_MAX_CHARS;
@@ -353,7 +357,7 @@ export function MessageReader({
 
   const exportMarkdown = useCallback(() => {
     setExportOpen(false);
-    const blob = new Blob([shown], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([portable], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -363,7 +367,7 @@ export function MessageReader({
     // in-flight download when the object URL disappears from under it.
     requestAnimationFrame(() => URL.revokeObjectURL(url));
     announce("Answer exported as Markdown");
-  }, [shown, label, announce]);
+  }, [portable, label, announce]);
 
   const exportPdf = useCallback(() => {
     setExportOpen(false);

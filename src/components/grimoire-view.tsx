@@ -40,6 +40,7 @@ import "@/styles/journal.css";
 import "@/styles/grimoire-launcher.css";
 import "@/styles/memory-exploration.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
+import type { GraphNavigation } from "@/components/grimoire-graph-view";
 import { GrimoireDocReader, JournalDocReader, MemoryDocReader } from "@/components/grimoire-doc-reader";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
@@ -794,6 +795,11 @@ export function GrimoireView({
     () => selectedFamiliarId ? new Set([selectedFamiliarId]) : shellScope,
     [selectedFamiliarId, shellScope],
   );
+  const graphScopeKey = JSON.stringify([...memoryScope].sort());
+  const [graphNavigation, setGraphNavigation] = useState<{ scope: string; navigation: GraphNavigation } | null>(null);
+  const rememberGraphNavigation = useCallback((navigation: GraphNavigation) => {
+    setGraphNavigation({ scope: graphScopeKey, navigation });
+  }, [graphScopeKey]);
   const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan(memoryScope);
   const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
     readCollapsedSections,
@@ -950,6 +956,7 @@ export function GrimoireView({
   // (grimoire-audit cave-vv2h) Per-tab unsaved-edits flags, reported by each
   // editor via onDirtyChange — they drive the tab dot and the close confirm.
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({});
+  const [tabOpenError, setTabOpenError] = useState<string | null>(null);
   const [knowledgeDrafts, setKnowledgeDrafts] = useState<Record<string, string>>({});
   useEffect(() => {
     setKnowledgeDrafts((previous) => {
@@ -971,6 +978,16 @@ export function GrimoireView({
   }, []);
 
   const openDoc = useCallback((sel: GrimoireSelection) => {
+    const requestedKey = selectionKey(sel);
+    if (!openTabs.some((tab) => selectionKey(tab) === requestedKey)
+      && openTabs.length >= MAX_OPEN_TABS
+      && openTabs.every((tab) => dirtyTabs[selectionKey(tab)])) {
+      const message = "Save or close an unsaved document before opening another.";
+      setTabOpenError(message);
+      announce(message, "polite");
+      return;
+    }
+    setTabOpenError(null);
     setTabState((prev) => {
       const key = selectionKey(sel);
       if (prev.openTabs.some((t) => selectionKey(t) === key)) {
@@ -978,15 +995,18 @@ export function GrimoireView({
       }
       let tabs = [...prev.openTabs, sel];
       if (tabs.length > MAX_OPEN_TABS) {
-        // Evict the oldest non-active tab to stay within the mount budget.
+        // Preserve drafts while staying within the mount budget. Prefer an
+        // inactive clean tab; a clean active tab is also safe to replace.
         const activeKey = prev.selection ? selectionKey(prev.selection) : null;
-        const evictIndex = tabs.findIndex((t) => selectionKey(t) !== activeKey);
+        let evictIndex = prev.openTabs.findIndex((t) => selectionKey(t) !== activeKey && !dirtyTabs[selectionKey(t)]);
+        if (evictIndex < 0) evictIndex = prev.openTabs.findIndex((t) => !dirtyTabs[selectionKey(t)]);
+        if (evictIndex < 0) return prev;
         evictedRef.current = tabs[evictIndex] ?? null;
         tabs = tabs.filter((_, i) => i !== evictIndex);
       }
       return { openTabs: tabs, selection: sel };
     });
-  }, []);
+  }, [announce, dirtyTabs, openTabs]);
 
   // Launcher-driven stitch prefill (URL capture / template row): bumping the
   // nonce re-keys the StitchIntake mount so its mount-time initial state takes.
@@ -1832,7 +1852,7 @@ export function GrimoireView({
     }
     if (tab.kind !== "knowledge") return null;
     if (knowledge === null) {
-      return <GrimoireDocReader {...shared} markdown={null} fallbackTitle={tabTitle(tab)} />;
+      return <GrimoireDocReader {...shared} markdown={null} loadError={loadError} errorLive={false} onRetry={() => void load(true)} fallbackTitle={tabTitle(tab)} />;
     }
     const entry = knowledge.find((e) => sameKnowledgeDoc(e, tab));
     if (!entry) {
@@ -1938,6 +1958,10 @@ export function GrimoireView({
       // No open tabs → Continue / Recall / Weave, driven only by the loaded
       // library, familiar-memory, journal, and relation data.
       <GrimoireLauncher
+        loading={loading}
+        loadError={loadError}
+        errorLive={false}
+        onRetry={() => void load(true)}
         knowledge={launcherKnowledge}
         memory={scopedMemory}
         journal={(journal ?? []).filter((day) => !day.reflectedBy || familiarInScope(memoryScope, day.reflectedBy))}
@@ -2048,6 +2072,9 @@ export function GrimoireView({
 
   return (
     <div className={`grimoire-view flex h-full min-h-0 flex-col @container/grimoire${focusMode ? " grimoire-view--reader" : ""}`}>
+      {/* Announce shared inventory failures once, outside panels hidden by the
+          narrow layout or reader focus mode. Each visible copy retains Retry. */}
+      {loadError ? <p role="alert" className="sr-only">Couldn&apos;t load memories. {loadError}</p> : null}
       {/* Compact band: title left, the Library/Journal/
           Relations segmented tabs centered, contextual verbs right (the dashed
           "New stitch" control only makes sense in Library). */}
@@ -2281,7 +2308,7 @@ export function GrimoireView({
         ) : (
         <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
-            <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />
+            <ErrorState compact headline="Couldn't load documents" subtitle={loadError} live={false} actions={<Button size="sm" onClick={() => void load(true)}>Retry</Button>} />
           ) : loading ? (
             <div className="space-y-2 p-2" aria-label="Loading documents" aria-busy="true">
               {["90%", "75%", "85%", "70%"].map((w, i) => (
@@ -2465,6 +2492,9 @@ export function GrimoireView({
                 onRetry={refreshGraph}
                 meta={scan?.meta ?? null}
                 scopeLabel={memoryScopeLabel}
+                key={graphScopeKey}
+                initialNavigation={graphNavigation?.scope === graphScopeKey ? graphNavigation.navigation : undefined}
+                onNavigationChange={rememberGraphNavigation}
                 scopedMemoryTotal={memoryScoped ? scopedMemory.length : null}
                 scanning={scanning}
                 scanError={scanError}
@@ -2475,9 +2505,11 @@ export function GrimoireView({
               />
             </div>
           </div>
-        ) : selection ? (
-          <div className="flex h-full min-h-0 flex-col">
-            {!focusMode ? (
+        ) : null}
+          {/* Keep document editors mounted across Memories views: memory files
+              require explicit saves, so unmounting would discard their drafts. */}
+          <div className={view === "docs" ? "flex h-full min-h-0 flex-col" : "hidden"}>
+            {selection && !focusMode ? (
               <div className="grimoire-mobile-back shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1">
               <button
                 type="button"
@@ -2491,6 +2523,11 @@ export function GrimoireView({
               <span className="min-w-0 flex-1" />
               </div>
             ) : null}
+            {tabOpenError ? (
+              <div role="alert" className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
+                {tabOpenError}
+              </div>
+            ) : null}
             {deleteError ? (
               <div role="alert" className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
                 {deleteError}
@@ -2498,9 +2535,6 @@ export function GrimoireView({
             ) : null}
             <div className="min-h-0 flex-1">{detail}</div>
           </div>
-        ) : (
-          detail
-        )}
       </main>
       </div>
     </div>

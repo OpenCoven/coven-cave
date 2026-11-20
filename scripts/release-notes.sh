@@ -98,6 +98,10 @@ fi
 # (CovenCave-vX.Y.Z-<arch>.dmg); AppImage/MSI assets use the bare version
 # number (CovenCave_X.Y.Z_...). Keep these in sync with release.yml's uploads.
 DL="https://github.com/$REPO/releases/download/$VERSION"
+ASSETS_FILE="${COVEN_RELEASE_ASSETS_FILE:-}"
+has_asset() {
+  [ -z "$ASSETS_FILE" ] || grep -Fxq -- "$1" "$ASSETS_FILE"
+}
 
 cat <<INSTALL
 
@@ -106,20 +110,36 @@ cat <<INSTALL
 INSTALL
 
 if [ "$arch_split" = "true" ]; then
-  cat <<INSTALL_NEW
-- **macOS (Homebrew):** \`brew install --cask opencoven/tap/coven-cave\` (installs the latest release)
+  if [ -z "$ASSETS_FILE" ]; then
+    echo '- **macOS (Homebrew):** `brew install --cask opencoven/tap/coven-cave` (installs the latest release)'
+  fi
+  if has_asset "CovenCave-$VERSION-aarch64.dmg"; then cat <<INSTALL_NEW
 - **macOS (Apple Silicon):** download [\`CovenCave-$VERSION-aarch64.dmg\`]($DL/CovenCave-$VERSION-aarch64.dmg), open it, drag CovenCave.app to Applications.
+INSTALL_NEW
+  fi
+  if has_asset "CovenCave-$VERSION-x86_64.dmg"; then cat <<INSTALL_NEW
 - **macOS (Intel):** download [\`CovenCave-$VERSION-x86_64.dmg\`]($DL/CovenCave-$VERSION-x86_64.dmg), open it, drag CovenCave.app to Applications.
 INSTALL_NEW
+  fi
 else
-  cat <<INSTALL_LEGACY
+  if has_asset "CovenCave-$VERSION.dmg"; then cat <<INSTALL_LEGACY
 - **macOS:** download [\`CovenCave-$VERSION.dmg\`]($DL/CovenCave-$VERSION.dmg), open it, drag CovenCave.app to Applications.
 INSTALL_LEGACY
+  fi
 fi
 
-cat <<INSTALL_REST
+if has_asset "CovenCave_${VER_NUM}_amd64.AppImage"; then cat <<INSTALL_LINUX
 - **Linux:** download the [AppImage asset]($DL/CovenCave_${VER_NUM}_amd64.AppImage), \`chmod +x CovenCave_*.AppImage\`, then run it.
+INSTALL_LINUX
+fi
+if has_asset "CovenCave_${VER_NUM}_x64_en-US.msi"; then cat <<INSTALL_WINDOWS
 - **Windows:** download the [\`.msi\`]($DL/CovenCave_${VER_NUM}_x64_en-US.msi) and double-click to install.
+INSTALL_WINDOWS
+elif [ -n "$ASSETS_FILE" ]; then
+  echo '- **Windows:** no MSI was published for this release. See the [release history](https://github.com/'"$REPO"'/releases) for a release with a Windows installer.'
+fi
+
+if has_asset SHA256SUMS; then cat <<INSTALL_CHECKSUMS
 
 ## Verify checksums
 
@@ -127,7 +147,10 @@ cat <<INSTALL_REST
 shasum -a 256 -c SHA256SUMS
 \`\`\`
 
-INSTALL_REST
+INSTALL_CHECKSUMS
+elif [ -n "$ASSETS_FILE" ]; then
+  printf '\nNo `SHA256SUMS` was published for this release.\n\n'
+fi
 
 # Build provenance for explicit manual-release recovery hatches. Tag pushes
 # remain fail-closed; when a maintainer uses a manual override, the permanent

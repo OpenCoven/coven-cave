@@ -75,9 +75,10 @@ export function stageById(id) {
  * produces. `scripts/release-rollback-readiness.mjs` resolves to
  *
  *   { tag, version, baseline: { tag, version, publishedAt, url } | null,
- *     baselineWaived, platforms, ready }
+ *     baselineWaived, platforms, ready,
+ *     baselineFloor: { clear, versions, problems } | null }
  *
- * and there are three traps in it worth naming, because reading it loosely
+ * and there are four traps in it worth naming, because reading it loosely
  * yields a rollback decision that does not say what to roll back to:
  *
  *   - `version` is the *target's* version — the release being rolled out. The
@@ -88,6 +89,11 @@ export function stageById(id) {
  *   - `baselineWaived: true` with `baseline: null` is a real, ready verdict:
  *     the `--allow-missing-baseline` waiver a repository's genuine first
  *     release needs. See the waiver note in evaluateRolloutGate().
+ *   - `baselineFloor.clear: false` is also a real, ready verdict: the baseline
+ *     pins a dependency below the #5339 floor, so restoring it would reinstall
+ *     what the incident replaced. A named baseline is a restore target only
+ *     when `clear` is exactly true; `floorRecorded` separates "below the
+ *     floor" from a verdict written before the gate checked it.
  */
 export function readRollbackReadiness(raw) {
   const verdict = isPlainObject(raw) ? raw : null;
@@ -97,12 +103,23 @@ export function readRollbackReadiness(raw) {
   // reads the same two fields in the other order for the printed drill, and the
   // two must stay non-null on exactly the same baselines — see its comment.
   const target = firstNonEmptyString(baseline?.version, baseline?.tag);
+  const floor = isPlainObject(verdict?.baselineFloor) ? verdict.baselineFloor : null;
   return {
     ready: verdict?.ready === true,
     waived: verdict?.baselineWaived === true,
     target,
+    floorRecorded: typeof floor?.clear === "boolean",
+    floorClear: floor?.clear === true,
+    floorProblems: Array.isArray(floor?.problems)
+      ? floor.problems.filter((problem) => typeof problem === "string" && problem.trim())
+      : [],
     error: firstNonEmptyString(verdict?.error),
   };
+}
+
+/** A named baseline the readiness gate recorded as below the floor, else null. */
+function unsafeBaseline(readiness) {
+  return readiness.target && readiness.floorRecorded && !readiness.floorClear ? readiness.target : null;
 }
 
 function firstNonEmptyString(...values) {
@@ -244,7 +261,20 @@ export function evaluateRolloutGate(state) {
       `rollback readiness waives the baseline yet names '${readiness.target}'; a waiver and a target are two answers ` +
         "to one question and this file gives both, so correct it before rolling out on either",
     );
+  } else if (readiness.target && !readiness.floorRecorded) {
+    // Written before the readiness gate checked the baseline's pins (#6076),
+    // or hand-copied without `baselineFloor`. Re-running the gate answers it;
+    // assuming the answer could start a rollout whose only way back reinstalls
+    // an unpatched dependency.
+    hold(
+      `rollback readiness does not record whether '${readiness.target}' clears the bundled-dependency floor; ` +
+        "re-run the rollback-readiness gate and record its baselineFloor",
+    );
   }
+  // A baseline below the floor is, like the waiver below, NOT a hold. The
+  // release being rolled out is the patched one; holding it because the only
+  // way back is unpatched would keep users on the unpatched release instead.
+  // It is carried on every report, and `restore-plan` refuses it.
   // The waiver is deliberately NOT a hold. `--allow-missing-baseline` is
   // already an explicit, attributed decision taken upstream for a repository's
   // genuine first release, and re-litigating it here would make that release
@@ -326,9 +356,11 @@ export function evaluateRolloutGate(state) {
     stage: stage.id,
     percentage: stage.percentage,
     nextStage: decision === "advance" ? nextStageId(stage.id) : stage.id,
-    rollbackTarget: decision === "rollback" ? readiness.target : null,
+    rollbackTarget: decision === "rollback" && !unsafeBaseline(readiness) ? readiness.target : null,
     rollbackReady: readiness.ready,
     rollbackBaselineWaived: readiness.waived,
+    rollbackBaselineBelowFloor: unsafeBaseline(readiness),
+    rollbackFloorRecorded: readiness.floorRecorded,
     reasons,
   };
 }
@@ -453,6 +485,12 @@ export function formatGateReport(result) {
   if (result.rollbackBaselineWaived && result.decision !== "rollback") {
     lines.push("rollback target: none — baseline waived upstream; the only remedy is patching forward");
   }
+  if (result.rollbackBaselineBelowFloor && result.decision !== "rollback") {
+    lines.push(
+      `rollback target: none — ${result.rollbackBaselineBelowFloor} is below the bundled-dependency floor (#5339); ` +
+        "the only remedy is patching forward",
+    );
+  }
   for (const reason of result.reasons) {
     lines.push(`  ${reason.severity === "rollback" ? "✗" : "!"} ${reason.detail}`);
   }
@@ -460,8 +498,18 @@ export function formatGateReport(result) {
 }
 
 function describeRollbackTarget(result) {
-  if (result.rollbackTarget) return `${result.rollbackTarget} (ready: ${result.rollbackReady})`;
+  if (result.rollbackTarget) {
+    // Named, but never as a plain restore target while its floor is unknown:
+    // this line is read under incident pressure, and restore-plan refuses it.
+    const floor = result.rollbackFloorRecorded
+      ? ""
+      : "; bundled-dependency floor not recorded — re-run rollback readiness before restoring it";
+    return `${result.rollbackTarget} (ready: ${result.rollbackReady}${floor})`;
+  }
   if (result.rollbackBaselineWaived) return "none — baseline waived; do not ship, and patch forward";
+  if (result.rollbackBaselineBelowFloor) {
+    return `none — ${result.rollbackBaselineBelowFloor} is below the bundled-dependency floor (#5339); do not restore it, patch forward`;
+  }
   // Not a lookup failure: it means nothing upstream proved a way back. Saying
   // "unknown" would read as one, and send the operator hunting for a version.
   return "not established — rollback readiness was never proven";
@@ -512,6 +560,22 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
           "rollout state names no rollback baseline, so this drill would rehearse restoring '<baseline-tag>'; record " +
             "rollbackReadiness.baseline from the rollback-readiness gate first" +
             (readiness.error ? ` (it reported: ${readiness.error})` : ""),
+        );
+      }
+      // A drill rehearses the restore an incident would run, so it is refused on
+      // the same rule as the restore: never put back a release below the floor.
+      if (!readiness.floorRecorded) {
+        throw new Error(
+          `rollout state does not record whether '${readiness.target}' clears the bundled-dependency floor; re-run ` +
+            "the rollback-readiness gate and record its baselineFloor before rehearsing a restore",
+        );
+      }
+      if (!readiness.floorClear) {
+        throw new Error(
+          `'${readiness.target}' is below the bundled-dependency floor (#5339)` +
+            (readiness.floorProblems.length ? `: ${readiness.floorProblems.join("; ")}` : "") +
+            "; restoring it would reinstall what the incident replaced, so the remedy is a patch-forward version, " +
+            "not a drill",
         );
       }
       for (const operation of assertBoundedRestore(planRollbackRestore(state?.rollbackReadiness?.baseline))) {

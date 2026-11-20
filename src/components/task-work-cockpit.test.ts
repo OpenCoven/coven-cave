@@ -106,10 +106,7 @@ assert.match(
   "the code rail Panel mounts from the shared descriptor, not the resumed branch",
 );
 
-// The collapsed code rail is an in-flow flex child sized against a flex ROW
-// (28px wide, full height). The cockpit root is a flex COLUMN, so hosting it
-// there docked it as a stub in the bottom-left corner under the composer.
-// It belongs inside the body row, before the body closes.
+// The body anchors the small Code edge tab beside the full-width chat.
 const bodyStart = source.indexOf('<div className="task-work-cockpit__body">');
 const railStart = source.indexOf("<CodeRailReopen");
 const sheetStart = source.indexOf("<WorkspaceRailSheet");
@@ -121,7 +118,7 @@ assert.ok(bodyEnd > bodyStart, "the cockpit body row closes before the rail shee
 assert.ok(railStart < bodyEnd, "the reopen rail renders inside the cockpit body row, not as a column child");
 assert.match(
   cockpitCss,
-  /\.task-work-cockpit__body > \.workspace-rail-reopen \{[\s\S]{0,200}?flex: 0 0 calc\(var\(--space-6\) \+ var\(--space-1\)\);[\s\S]{0,200}?align-self: stretch;/,
-  "the reopen pull tab reserves a 28px full-height edge beside the conversation",
+  /\.task-work-cockpit__body \{[^}]*position: relative;/,
+  "the body anchors the small edge tab without reserving a gutter",
 );
 assert.match(source, /changeNonce=\{railController\.changeNonce\}/, "the cockpit shares Chat's new-change cue");

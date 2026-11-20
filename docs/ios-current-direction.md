@@ -2,12 +2,14 @@
 
 Status: **canonical active direction**
 
-Last reconciled: 2026-09-12
+Last reconciled: 2026-10-25
 
-This page is the only iOS priority queue. Dated specifications, implementation
-plans, audits, handoff exports, and rebuild notes remain useful historical
-evidence, but they do not authorize new work unless this page links them under
-Current authorities or Current priorities.
+GitHub Issues hold the iOS work queue, as for the rest of the repository (see
+`AGENTS.md`). This page holds the canonical product shape and the standing
+priorities that iOS issues follow. Dated specifications, implementation plans,
+audits, handoff exports, and rebuild notes remain useful historical evidence,
+but they do not authorize new work unless this page links them under Current
+authorities or Current priorities.
 
 ## Current authorities
 
@@ -35,14 +37,7 @@ until intentionally migrated by the active program.
 
 - Native iOS is **chat-only**: conversations, chat search, familiar selection
   within chat, permissions, and configuration that enables or customizes chat.
-- Chats opens to global conversations, including direct and group chats and
-  sessions started on other devices. Hydrated sessions appear once, not once
-  as a local thread and again as a server row. Pins, archive visibility,
-  title/familiar search, and the familiar and project filters organize the
-  list without a global project filter. The project strip appears when chats
-  span more than one project, as one menu at accessibility text sizes; it
-  narrows only the visible list and never changes a chat's binding or the
-  application's scope.
+- Chats opens to global conversations, including direct and group chats and sessions started on other devices. Hydrated sessions appear once, not once as a local thread and again as a server row. Pins, archive visibility, title/familiar search, and the familiar and project filters organize the list without a global project filter. Status, project, familiar, and archive visibility filters share one horizontally scrolling row of menus at every text size. The project menu appears when chats span more than one project; it narrows only the visible list and never changes a chat's binding or the application's scope.
 - The drawer contains Chats, recent conversations, New chat, Search chats, and
   Settings. There is no Tasks, Automations, Projects, Needs You, standalone
   Familiar hub, workspace browser, global search, or terminal destination.
@@ -79,6 +74,7 @@ until intentionally migrated by the active program.
 - Settings contains appearance, permissions, connection, security, chat
   notifications/export, and legal information. Promotional/community browsing
   is outside the mobile chat surface.
+- A shared navigation rail stays available in wide and landscape windows across Chats, Settings, and app-owned chat presentations, including the response reader, New chat, permissions, model/session selection, scheduled replies, content zoom, and calls. The rail appears when the presentation spans at least 600 points including horizontal safe areas; genuinely narrow windows retain the drawer. Keyboard height does not change that choice. Presentation navigation waits for each sheet or cover to dismiss before routing through the persistent shell, and honors existing launch/save guards and keeps navigation disabled during an active call. System pickers and locked or unconfigured authentication screens retain their protected flows.
 - The open drawer preserves spatial context by presenting the live destination
   as a rounded, offset page.
 - Theme values come from `ChromePalette`; Dynamic Type, VoiceOver, Reduce
@@ -87,7 +83,8 @@ until intentionally migrated by the active program.
 
 ## Active program
 
-`cave-iusli` owns this chat-only implementation. The maintainer explicitly
+The chat-only implementation shipped in #5379 (2026-09-12). Its retired Bead,
+`cave-iusli`, no longer owns work. The maintainer explicitly
 approved replacing the workspace roadmap, recorded on
 [#5290](https://github.com/OpenCoven/coven-cave/issues/5290#issuecomment-5644986219).
 This supersedes the product expansion in #5290, including project workspaces,
@@ -102,8 +99,9 @@ passing its device baselines, authorization exercises, or release gates.
 
 ## Current priorities
 
-1. Complete the chat-only shell and conversation list on `cave-iusli`, retiring
-   non-chat navigation and external entrypoints rather than hiding them.
+1. Shipped (#5379): the chat-only shell and conversation list retired non-chat
+   navigation and external entrypoints rather than hiding them. Keep them
+   retired.
 2. Preserve reliability, pairing, honest failure states, draft durability,
    queued-target immutability, and exact chat/project authorization contracts.
 3. Use one disposable list projection for local/server deduplication, counts,

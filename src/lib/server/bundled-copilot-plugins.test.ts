@@ -49,12 +49,11 @@ test("resolves generated marketplace skill-only bundles", async () => {
   const root = path.join(process.cwd(), "marketplace", "plugins");
   assert.deepEqual(
     await resolveBundledCopilotPluginDirs(
-      ["coven-memory", "tweet-thread-lab"],
+      ["coven-memory"],
       { pluginsRoot: root },
     ),
     [
       await realpath(path.join(root, "coven-memory")),
-      await realpath(path.join(root, "tweet-thread-lab")),
     ],
   );
 });

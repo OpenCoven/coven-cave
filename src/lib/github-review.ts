@@ -1,4 +1,4 @@
-import { sanitizeGithubObjectSha } from "./research-github-repo.ts";
+import { sanitizeGithubObjectSha } from "./github-object-sha.ts";
 
 export type GitHubPullRevision = {
   repo: string;

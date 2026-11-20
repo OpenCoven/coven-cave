@@ -1,7 +1,7 @@
 # Coven Automations v1 operational roadmap
 
 **Status:** Approved for execution  
-**Last live-state audit:** 2026-09-04
+**Last live-state audit:** 2026-10-20 (plans audit, coven-cave#6111)
 
 **Seed reconciliation:** 2026-09-01
 **Program outcome:** `OpenCoven/coven#854` (Bead `cave-hlv.9`)  
@@ -28,6 +28,8 @@ That foundation is not yet a certified automation protocol. The remaining releas
 8. Cave still needs complete authority, approval, attempt, recovery, retry/cancel, stale-state, and compatibility-retirement oversight.
 
 **Decision:** treat the implementation as **foundation-ready, not v1-certified**. Broad unattended external side effects remain disabled or approval-gated until the identity/authority and conformance gates pass.
+
+> **2026-10-20 status:** blockers 1 and 4 have bounded deliveries (`coven#855` closed 2026-09-10, `coven#856` closed 2026-09-09, executable command parity `coven#1054` closed 2026-10-18). `spec/coven-automations/v1/conformance-manifest.json` in OpenCoven/coven still reports `releaseState: "proposed"` and `productionReady: false`, and the 2026-10-18 checkpoint on `coven#854` is NO-GO. The list above is the 2026-09-04 baseline.
 
 ## 2. Canonical ownership
 
@@ -58,6 +60,7 @@ That foundation is not yet a certified automation protocol. The remaining releas
 | Priority | Outcome | GitHub | Bead | Dependencies |
 | --- | --- | --- | --- | --- |
 | P0 | `coven.automations.v1` schemas, state machines, command adoption/idempotency, typed errors, and changefeed | `OpenCoven/coven#855` | `cave-tm1y0` | Foundation |
+| P0 | Executable command, rich-definition, and lifecycle-event parity deferred from the protocol outcome | `OpenCoven/coven#1054` | — | Protocol |
 | P0 | Deterministic time, IANA timezone/DST, retries, cancellation, scheduler leadership/fencing, crash recovery, backpressure | `OpenCoven/coven#856` | `cave-1sh6p` | Foundation; protocol states/errors where required |
 | P0 | Universal familiar embodiment binding | `OpenCoven/familiar-contract#17` | `cave-6jswi` | Foundation |
 | P0 | Automation authority, approval, risk/capability, and degrade-to-proposal profile | `OpenCoven/coven-threads#29` | `cave-m9tw3` | Familiar embodiment profile for exact binding |
@@ -69,7 +72,7 @@ That foundation is not yet a certified automation protocol. The remaining releas
 | Priority | Outcome | GitHub | Bead | Dependencies |
 | --- | --- | --- | --- | --- |
 | P1 | SDK types, read/verify/subscribe, then authority-bearing adopted commands | `OpenCoven/sdk#80` | `cave-90hwl` | Conformance |
-| P1 | Cave oversight, approvals, recovery, and Codex compatibility retirement | `OpenCoven/coven-cave#5217` | `cave-e52qp` | Conformance |
+| P1 | Cave oversight, approvals, recovery, and Codex compatibility retirement | `OpenCoven/coven-cave#5217` | `cave-e52qp` | Conformance; approval, receipt, and authority-bearing run controls also wait on `coven#857` and `sdk#80` |
 | P1 | Psyche invocation adapter without schedule ownership | `OpenCoven/psyche#18` | `cave-yaul2` | Conformance |
 | P1 | Protocol/operator/migration/security/troubleshooting documentation | `OpenCoven/coven-docs#76` | `cave-qwnxq` | Conformance |
 | P1 | Reusable contract, conformance, evidence, and roadmap-drift workflows | `OpenCoven/.github#2` | `cave-xqbs4` | Conformance and program control |
@@ -115,10 +118,10 @@ all required P0 + supported P1 canaries
 
 ### Execution order
 
-1. **Preserve the completed control plane.** `coven#859`, `coven#816`, `familiar-contract#17`, and `coven-threads#29` are closed-verified; do not reopen them absent evidence of new drift.
-2. **Continue the active public protocol work.** `coven#855` / `cave-tm1y0` is claimed and in progress. Complete it before clients harden hand-authored JSON shapes.
-3. **Advance scheduler reliability when its protocol dependency clears.** `coven#856` remains open and dependency-blocked while protocol work continues.
-4. **Integrate trust at dispatch.** Complete `coven#857`; its embodiment and authority prerequisites are closed, while protocol remains open.
+1. **Preserve the completed control plane.** `coven#859`, `coven#816`, `familiar-contract#17`, and `coven-threads#29` are closed-verified, and `coven#855`, `coven#856`, and the protocol follow-on `coven#1054` are closed; do not reopen them absent evidence of new drift.
+2. **Public protocol work is delivered.** `coven#855` closed 2026-09-10 with the independent `spec/coven-automations/v1/` schemas, state machines, and vectors; its executable-parity follow-on `coven#1054` closed 2026-10-18. The conformance manifest remains `proposed` and not production-ready.
+3. **Scheduler reliability is delivered as bounded slices.** `coven#856` closed 2026-09-09; remaining crash, fault, diagnostics, and load proof is tracked under `coven#858`.
+4. **Integrate trust at dispatch.** Complete `coven#857` (reopened 2026-09-07). Its embodiment, authority, and protocol prerequisites are closed; no trusted production adapter is constructed yet.
 5. **Certify the core.** Complete `coven#858` against packed/exact artifacts under deterministic, crash, duplicate, security, privacy, and load tests.
 6. **Graduate clients and orchestration.** Land SDK read/verify/subscribe, Cave oversight, and the Psyche adapter against immutable canaries.
 7. **Publish and enforce.** Complete Docs and organization workflows, then produce one exact-release go/no-go evidence packet under `coven#854`.

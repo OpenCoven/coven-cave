@@ -205,3 +205,32 @@ test("renderFontsModule refuses a manifest missing a catalog family", () => {
   manifest.families = manifest.families.filter((family) => family.id !== "inter");
   assert.throws(() => renderFontsModule(manifest), /no entry for inter/);
 });
+
+test("refresh shares identical font bytes while retaining each face's weight", async () => {
+  const sandbox = mkdtempSync(path.join(tmpdir(), "vendor-fonts-dedupe-"));
+  try {
+    const next = stubbedHelpers();
+    const fetchCss = next.fetchCSSFromGoogleFonts;
+    next.fetchCSSFromGoogleFonts = async (...args) => {
+      const css = await fetchCss(...args);
+      const latin = css.slice(css.indexOf("/* latin */"));
+      return css + "\n" + latin.replace("font-weight: 400", "font-weight: 700") +
+        "\n" + latin.replace("font-weight: 400", "font-weight: 800").replace(".woff2", "-different.woff2");
+    };
+    const fontDir = path.join(sandbox, "fonts");
+    await refresh({ fontDir, fontsModulePath: path.join(sandbox, "fonts.ts"), next });
+    const manifest = JSON.parse(readFileSync(path.join(fontDir, "manifest.json"), "utf8"));
+    for (const family of manifest.families) {
+      const [regular, bold, different] = family.files;
+      assert.deepEqual(family.files.map((face) => face.weight), ["400", "700", "800"]);
+      assert.equal(bold.file, regular.file, "equal payloads share a path");
+      assert.equal(bold.sha256, regular.sha256);
+      assert.notEqual(different.file, regular.file, "distinct payloads keep their own path");
+      assert.notEqual(different.sha256, regular.sha256);
+    }
+    assert.equal(readdirSync(fontDir).filter((file) => file.endsWith(".woff2")).length,
+      FAMILIES.length * 3, "each family writes one other subset and two distinct latin payloads");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});

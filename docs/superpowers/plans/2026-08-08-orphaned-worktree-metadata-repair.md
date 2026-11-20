@@ -1,5 +1,7 @@
 # Orphaned Worktree Metadata Repair Implementation Plan
 
+**Status: Historical; retired with Beads and lifecycle tooling in #5566.** The metadata fields, managed creator and repair commands below are not current procedures. Use [GitHub work tracking](../../workflows/github-work-tracking.md) and [branch-curator](../../../.agents/skills/branch-curator/SKILL.md); preserve unknown ownership and recovery state rather than manufacturing lifecycle metadata.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Make lifecycle patrol discover and safely repair non-closed Beads whose structured worktree record points at a missing local branch and missing path.

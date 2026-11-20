@@ -1,5 +1,14 @@
 # Chat v1 Phase 7 — Packaging, Compatibility, Publishing, and Rollout: Verified Program Status
 
+> **#5339 closed — 2026-10-18.** Val lifted the Next.js security hold for its
+> one verified target, the Apple Silicon Mac running Cave v0.5.14
+> ([closeout](https://github.com/OpenCoven/coven-cave/issues/5339#issuecomment-6249041955)). The hold no longer
+> blocks this program. Its rollback rule still applies: a rollback target must
+> bundle Next 16.3.3 or later, which means Cave v0.4.2 or later. The v0.4.1
+> baseline and restore plan in the 2026-09-21 *Pilot and rollback* rows predate
+> that rule and must not be used. Lines below that call #5339 open are
+> historical.
+
 > **Decision — 2026-10-02:** Val deferred the seven `cli-*` acceptance steps.
 > The SDK keeps `@opencoven/dev-cli` private
 > ([sdk#37](https://github.com/OpenCoven/sdk/issues/37)), so they cannot run

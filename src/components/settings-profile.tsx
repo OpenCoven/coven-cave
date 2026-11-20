@@ -63,6 +63,7 @@ import {
   type UserProfilePatch,
 } from "@/lib/user-profile-shared";
 import "@/styles/settings-profile.css";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 const PROFILE_IMAGE_ACCEPT = FAMILIAR_IMAGE_ACCEPT
   .split(",")
@@ -259,6 +260,7 @@ function isMbtiType(value: string): value is MbtiType {
 }
 
 export function ProfileSection() {
+  const keys = useKeySymbols();
   const snapshot = useUserProfile();
   const { announce } = useAnnouncer();
   const baseId = useId();
@@ -1409,7 +1411,7 @@ export function ProfileSection() {
       </div>
 
       <footer className="settings-profile__actions">
-        <span className="settings-profile__shortcut">⌘S save</span>
+        <span className="settings-profile__shortcut">{platformizeHint("⌘S save", keys)}</span>
         <span className="settings-profile__action-meta">
           {[currentZone, effectiveType, `${liveLinks.length} links`].filter(Boolean).join(" · ")}
         </span>

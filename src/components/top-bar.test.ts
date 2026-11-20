@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /const SEARCH_LABEL = "Search anything or ask Salem, the docs familiar"/,
+  /const SEARCH_LABEL = "Search Cave"/,
   "mobile search keeps its scoped accessible name",
 );
 assert.match(source, /aria-label=\{SEARCH_LABEL\}/, "mobile search uses the scoped label constant");
@@ -79,7 +79,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const searchShortcut = platformizeHint\("⌘K", keys\);[\s\S]*title=\{`Search everything — or ask Salem, the familiar trained on the OpenCoven docs \(\$\{searchShortcut\}\)`\}/,
+  /const searchShortcut = platformizeHint\("⌘K", keys\);[\s\S]*title=\{`Search Cave \(\$\{searchShortcut\}\)`\}/,
   "Top bar platformizes the Search shortcut hint",
 );
 

@@ -77,8 +77,8 @@ function familiarAllowedRootPath(fullPath: string, classification: MemoryFileCla
   const familiarRoot = classification.rootPath;
   const rel = path.relative(familiarRoot, path.resolve(/* turbopackIgnore: true */ fullPath));
   const parts = rel.split(path.sep);
-  if (parts.length === 1 && parts[0] === "MEMORY.md") return path.join(familiarRoot, "MEMORY.md");
-  if (parts.length >= 2 && parts[0] === "memory") return path.join(familiarRoot, "memory");
+  if (parts.length === 1 && parts[0] === "MEMORY.md") return path.join(/* turbopackIgnore: true */ familiarRoot, "MEMORY.md");
+  if (parts.length >= 2 && parts[0] === "memory") return path.join(/* turbopackIgnore: true */ familiarRoot, "memory");
   return null;
 }
 
@@ -97,13 +97,13 @@ function sourceKindLabel(kind: MemorySourceKind): string {
 }
 
 export function memoryFileSourcesForHome(home = homedir()): MemoryFileSource[] {
-  const openclawWorkspace = path.join(home, ".openclaw", "workspace");
+  const openclawWorkspace = path.join(/* turbopackIgnore: true */ home, ".openclaw", "workspace");
   return [
     {
       id: "openclaw-workspace",
       kind: "external-harness",
       label: "OpenClaw runtime memory",
-      rootPath: path.join(openclawWorkspace, "memory"),
+      rootPath: path.join(/* turbopackIgnore: true */ openclawWorkspace, "memory"),
       root: "workspace",
       rootLabel: "OpenClaw runtime memory",
       harnessId: "openclaw",
@@ -112,7 +112,7 @@ export function memoryFileSourcesForHome(home = homedir()): MemoryFileSource[] {
       id: "openclaw-index",
       kind: "external-harness",
       label: "OpenClaw workspace index",
-      rootPath: path.join(openclawWorkspace, "MEMORY.md"),
+      rootPath: path.join(/* turbopackIgnore: true */ openclawWorkspace, "MEMORY.md"),
       root: "index",
       rootLabel: "OpenClaw workspace index",
       harnessId: "openclaw",
@@ -121,7 +121,7 @@ export function memoryFileSourcesForHome(home = homedir()): MemoryFileSource[] {
       id: "codex-runtime",
       kind: "runtime",
       label: "Codex runtime memory",
-      rootPath: path.join(home, ".codex", "memories"),
+      rootPath: path.join(/* turbopackIgnore: true */ home, ".codex", "memories"),
       root: "codex-runtime",
       rootLabel: "Codex runtime memory",
       runtimeId: "codex",
@@ -149,7 +149,7 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
   }
 
   const openclawWorkspace = path.resolve(
-    /* turbopackIgnore: true */ path.join(home, ".openclaw", "workspace"),
+    /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ home, ".openclaw", "workspace"),
   );
   if (isWithinRoot(resolved, openclawWorkspace)) {
     const rel = path.relative(openclawWorkspace, resolved);
@@ -166,7 +166,7 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
           kind: "external-harness",
           root: `familiar:${familiarId}`,
           rootLabel: `${displayId(familiarId)} runtime memory`,
-          rootPath: path.join(openclawWorkspace, familiarId),
+          rootPath: path.join(/* turbopackIgnore: true */ openclawWorkspace, familiarId),
           harnessId: "openclaw",
           familiarId,
         };
@@ -175,7 +175,7 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
   }
 
   const covenFamiliars = path.resolve(
-    /* turbopackIgnore: true */ path.join(home, ".coven", "workspaces", "familiars"),
+    /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ home, ".coven", "workspaces", "familiars"),
   );
   if (isWithinRoot(resolved, covenFamiliars)) {
     const rel = path.relative(covenFamiliars, resolved);
@@ -191,7 +191,7 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
         kind: "coven-origin",
         root: `coven-familiar:${familiarId}`,
         rootLabel: "Coven workspace files",
-        rootPath: path.join(covenFamiliars, familiarId),
+        rootPath: path.join(/* turbopackIgnore: true */ covenFamiliars, familiarId),
         origin: "coven",
         familiarId,
       };

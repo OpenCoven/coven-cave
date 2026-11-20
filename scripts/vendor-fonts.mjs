@@ -193,13 +193,21 @@ async function downloadInto(directory, next) {
       const ranges = new Set(subsetFaces.map((face) => face.unicodeRange));
       if (ranges.size !== 1) throw new Error(`${options.fontFamily}: ${subset} faces disagree on unicode-range`);
       const files = [];
+      const payloads = new Map();
       for (const face of subsetFaces) {
         // Latin keeps its original name; other subsets are prefixed with theirs.
         const prefix = subset === PRIMARY_SUBSET ? "" : `${subset}-`;
-        const file = `${slug(options.fontFamily)}-${prefix}${face.style}-${face.weight.replace(/\s+/g, "-")}.woff2`;
+        let file = `${slug(options.fontFamily)}-${prefix}${face.style}-${face.weight.replace(/\s+/g, "-")}.woff2`;
         const buffer = await fetchFontFile(face.url, false);
-        writeFileSync(path.join(directory, file), buffer);
-        files.push({ file, weight: face.weight, style: face.style, sha256: sha256(buffer) });
+        const digest = sha256(buffer);
+        // A variable font can serve several explicit weights with identical bytes.
+        // Preserve each face declaration, but store its payload only once per subset.
+        if (payloads.has(digest)) file = payloads.get(digest);
+        else {
+          payloads.set(digest, file);
+          writeFileSync(path.join(directory, file), buffer);
+        }
+        files.push({ file, weight: face.weight, style: face.style, sha256: digest });
         console.log(`  ${file} (${buffer.length} bytes)`);
       }
       subsets.push({ subset, unicodeRange: [...ranges][0], files });

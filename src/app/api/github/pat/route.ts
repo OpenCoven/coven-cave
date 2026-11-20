@@ -13,21 +13,20 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { resetUpstreamHealth, upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import {
   commitLocalEncryptedSecretBatch,
   getLocalEncryptedSecret,
-  hasLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
-import { resolveGitHubToken } from "@/lib/github-token";
 import {
   loadVaultMapForMutation,
-  resolveSecret,
   saveVaultMap,
   type VaultMap,
 } from "@/lib/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
+import { readGitHubPatStatus } from "@/lib/server/pat-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,6 +34,7 @@ export const runtime = "nodejs";
 const PAT_KEY = "GITHUB_PAT";
 const LOGIN_KEY = "GITHUB_USERNAME";
 const GITHUB_USERNAME_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
+const VALIDATE_TIMEOUT_MS = 10_000;
 
 function isValidGitHubUsername(username: string): boolean {
   return (
@@ -67,19 +67,36 @@ function mutationError(error: unknown) {
   );
 }
 
-async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
+type PatValidation = {
+  valid: boolean;
+  login: string | null;
+  /** GitHub was unreachable. */
+  network?: boolean;
+  /** GitHub answered but could not judge the token (an outage or a rate limit). */
+  unavailable?: number;
+};
+
+async function validatePat(pat: string): Promise<PatValidation> {
   try {
-    const res = await fetch("https://api.github.com/user", {
+    const res = await upstreamFetch("github", "https://api.github.com/user", {
       headers: {
         Authorization: `Bearer ${pat}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
       cache: "no-store",
-    });
-    if (!res.ok) return { valid: false, login: null };
+      signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
+      // A cooldown belongs to the old token. A new one has its own budget (#6371).
+    }, { honorCooldown: false });
+    // Only GitHub's own verdict on the credential rejects it. A primary rate
+    // limit also arrives as 403, with the remaining budget at zero, and says
+    // nothing about the token — the same way a 5xx or a 429 says nothing
+    // (#6359, the HTTP-shaped sibling of cave-cjgg's offline case).
+    const rateLimited = res.status === 429 || (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0");
+    if (!rateLimited && (res.status === 401 || res.status === 403)) return { valid: false, login: null };
+    if (!res.ok) return { valid: false, login: null, unavailable: res.status };
     const data = await res.json().catch(() => null);
-    return { valid: true, login: data?.login ?? null };
+    return { valid: true, login: typeof data?.login === "string" ? data.login : null };
   } catch {
     // GitHub unreachable — NOT evidence the token is bad. Telling an offline
     // user their good token "is invalid" sent them token-regenerating for a
@@ -94,7 +111,7 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
  *  public view (cave-cjgg). */
 async function usernameExists(username: string): Promise<boolean> {
   try {
-    const res = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
+    const res = await upstreamFetch("github", `https://api.github.com/users/${encodeURIComponent(username)}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -109,33 +126,7 @@ async function usernameExists(username: string): Promise<boolean> {
 
 // GET — just reports presence, never exposes the value
 export async function GET() {
-  // Resolve from env, encrypted local vault, 1Password, or legacy .env.local.
-  const localEnvPat = readEnvLocalValue(PAT_KEY);
-  const hasEncryptedPat = hasLocalEncryptedSecret(PAT_KEY);
-  const patFromVault = resolveSecret("GITHUB_PAT");
-  const loginFromVault = resolveSecret("GITHUB_USERNAME");
-
-  // The activity and action routes also accept credentials supplied by the
-  // launcher (for example GH_TOKEN from a CLI/harness environment). Reflect
-  // that here so an already-authenticated installation is not prompted to add
-  // a duplicate Cave PAT.
-  const hasPat = !!resolveGitHubToken();
-  // Only storage Cave can actually delete is removable from this UI. A
-  // launcher GITHUB_PAT or a vault reference can resolve through
-  // resolveSecret(), but deleting it here would only disable it until restart.
-  const canRemoveStoredPat = hasEncryptedPat || !!localEnvPat;
-  const login  = loginFromVault ?? process.env.GITHUB_USERNAME?.trim() ?? null;
-  const source: "encrypted" | "vault" | "env" | "none" = hasEncryptedPat
-    ? "encrypted"
-    : localEnvPat
-      ? "env"
-      : patFromVault
-      ? "vault"
-      : hasPat
-        ? "env"
-        : "none";
-
-  return NextResponse.json({ hasPat, login, source, canRemoveStoredPat });
+  return NextResponse.json(readGitHubPatStatus());
 }
 
 // POST — validate + save
@@ -161,6 +152,12 @@ export async function POST(req: NextRequest) {
       if (result.network) {
         return NextResponse.json(
           { ok: false, error: "Couldn't reach GitHub to verify the token — check your connection and try again." },
+          { status: 503 },
+        );
+      }
+      if (result.unavailable) {
+        return NextResponse.json(
+          { ok: false, error: `GitHub couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.` },
           { status: 503 },
         );
       }
@@ -207,6 +204,7 @@ export async function POST(req: NextRequest) {
   // Inject into current process so next request picks it up without restart
   if (pat) process.env[PAT_KEY] = pat;
   if (login) process.env[LOGIN_KEY] = login;
+  if (pat) resetUpstreamHealth("github");
 
   return NextResponse.json({ ok: true, login, patStoredIn: pat ? "encrypted" : undefined });
 }

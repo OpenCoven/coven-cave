@@ -1062,21 +1062,24 @@ button:active > .edge-rail-chip {
   pointer-events: none;
 }
 
-/* Desktop count badges overlap compact controls so every 28px square stays
-   uniform. The bg-base ring separates each badge from its icon. */
+/* Desktop count badges sit off each 28px square's top-right corner so the
+   squares stay uniform without the count covering its glyph (#5956: a "99+"
+   at 15px and -4px hid a third of the icon). The menu bar leaves ~3px above
+   the buttons, so the badge moves sideways, not up. The bg-base ring
+   separates each badge from its icon. */
 .menu-bar__badge,
 .menu-bar .notification-bell__badge {
-  min-width: 15px;
-  height: 15px;
+  min-width: 13px;
+  height: 13px;
   border-radius: var(--radius-control);
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: -3px;
+  right: -12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
-  font-size: var(--text-2xs);
+  padding: 0 3px;
+  font-size: calc(var(--text-2xs) * 0.9);
   font-weight: 600;
   line-height: 1;
   box-shadow: 0 0 0 2px var(--bg-base);

@@ -8,6 +8,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { asCount, asMebibytes, headroomOf } from "./budget-headroom.mjs";
+import { BUILD_GATE_EXIT_CODE } from "./build-gate-exit.mjs";
+
+/** A measured breach: the same build output fails it every time, so CI does not retry it (#6087). */
+export class StandaloneBudgetBreach extends Error {}
 
 export const STANDALONE_BUDGETS = Object.freeze({
   // Clean Linux baseline (2026-07-16): 6,416 entries / 351,017,052 bytes.
@@ -52,15 +56,26 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
   ".next/dev",
   ".tmp",
   ".worktrees",
+  // Checkout content no runtime path reads (#6086). next.config.ts excludes
+  // each of these from tracing; seeing one here means a new glob bypassed it.
+  "apps",
   "artifacts",
+  "assets",
+  "config",
+  "docs",
+  "fixtures",
+  "output",
   "release",
+  "screenshots",
+  "skills-lock.json",
   "src-tauri",
   "target",
   "target-windows",
   "test-results",
+  "tsconfig.json",
 ]);
 
-const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-"]);
+export const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-", "playwright."]);
 const IOS_BUILD_ROOT_PATTERN = /^(apps\/ios\/(?:[^/]+\/)*build(?:-[^/]+)?)(?:\/|$)/;
 
 function portable(relativePath) {
@@ -93,7 +108,7 @@ export async function standaloneMetrics(root) {
       const relativePath = path.relative(root, entryPath);
       const forbiddenRoot = forbiddenStandaloneRoot(relativePath);
       if (forbiddenRoot) {
-        throw new Error(`forbidden root leaked into Next standalone output: ${forbiddenRoot}`);
+        throw new StandaloneBudgetBreach(`forbidden root leaked into Next standalone output: ${forbiddenRoot}`);
       }
 
       const metadata = await lstat(entryPath);
@@ -104,7 +119,7 @@ export async function standaloneMetrics(root) {
         metrics.fileCount += 1;
         metrics.unpackedBytes += metadata.size;
       } else {
-        throw new Error(`unsupported entry in Next standalone output: ${relativePath}`);
+        throw new StandaloneBudgetBreach(`unsupported entry in Next standalone output: ${relativePath}`);
       }
     }
   }
@@ -115,7 +130,7 @@ export async function verifyStandaloneArtifact(root, budgets = STANDALONE_BUDGET
   const metrics = await standaloneMetrics(root);
   for (const [metric, budget] of Object.entries(budgets)) {
     if (metrics[metric] > budget) {
-      throw new Error(`Next standalone ${metric} ${metrics[metric]} exceeds target ${budget}`);
+      throw new StandaloneBudgetBreach(`Next standalone ${metric} ${metrics[metric]} exceeds target ${budget}`);
     }
   }
   return metrics;
@@ -155,6 +170,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log("✓ standalone-budget: within budget and free of local build roots.");
   } catch (error) {
     console.error(`✗ standalone-budget: ${error instanceof Error ? error.message : error}`);
-    process.exit(1);
+    // A breach fails every retry; an unreadable output (a flaky build) may not.
+    process.exit(error instanceof StandaloneBudgetBreach ? BUILD_GATE_EXIT_CODE : 1);
   }
 }

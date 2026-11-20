@@ -13,8 +13,13 @@ assert.match(
 );
 assert.match(
   source,
-  /composerDraftKey=\{`cave:right-chat-composer-draft:v1:\$\{activeFamiliar\.id\}`\}/,
-  "each familiar keeps an auxiliary-only draft",
+  /const RIGHT_CHAT_DRAFT_KEY_PREFIX = "cave:right-chat-composer-draft:v1:";/,
+  "the in-app panel keeps its own auxiliary-only draft namespace",
+);
+assert.match(
+  source,
+  /composerDraftKey=\{`\$\{props\.composerDraftKeyPrefix \?\? RIGHT_CHAT_DRAFT_KEY_PREFIX\}\$\{activeFamiliar\.id\}`\}/,
+  "each familiar keeps an auxiliary-only draft, in the panel's namespace unless a host supplies its own",
 );
 assert.match(
   source,
@@ -405,7 +410,7 @@ assert.match(
   "the shared frame applies truthful aria-hidden/inert to its own root",
 );
 assert.equal(
-  (source.match(/<RightChatPanelFrame onClose=\{props\.onClose\} open=\{open\}>/g) ?? []).length,
+  (source.match(/<RightChatPanelFrame\s+onClose=\{props\.onClose\}\s+open=\{open\}/g) ?? []).length,
   4,
   "every one of the four shared-frame call sites forwards the panel's own open prop",
 );
@@ -664,4 +669,116 @@ assert.doesNotMatch(
   "list must not adopt Escape ownership through the trap — Escape stays the legacy listener's job",
 );
 
+// #6052: the chat header inside the narrow panel is one row — title and
+// overflow menu — with the rest revealed on hover/focus or left to the wide
+// surface. The rules live in a component-imported sheet (CLAUDE.md, "New
+// surface CSS"), never in globals.
+const headerCss = await readFile(new URL("../styles/right-chat-header.css", import.meta.url), "utf8");
+assert.match(source, /import "@\/styles\/right-chat-header\.css";/, "the panel imports its own header sheet");
+assert.doesNotMatch(shellCss, /cave-chat-header-status|cave-chat-header-avatar/, "panel header rules stay out of the global sheet");
+for (const selector of [
+  ".right-chat .cave-chat-header-row .cave-chat-header-avatar",
+  '.right-chat .cave-chat-header-row .ui-session-pill[data-state="completed"]',
+  ".right-chat .cave-chat-meta-line--complete .cave-chat-meta-line__meta",
+  ".right-chat .cave-chat-header-status",
+]) {
+  assert.match(
+    headerCss,
+    new RegExp(`${selector.replace(/[.[\]"]/g, (c) => `\\${c}`)} \\{\\s*display: none;`),
+    `${selector} is hidden in the panel`,
+  );
+}
+assert.doesNotMatch(
+  headerCss,
+  /cave-chat-session-actions[^{]*\{[^}]*display: none/,
+  "actions are never display:none — they stay in the accessibility tree and tab order",
+);
+assert.match(
+  headerCss,
+  /\.right-chat \.cave-chat-session-actions > \.focus-ring:not\(:last-child\) \{[^}]*width: 0;[^}]*opacity: 0;/,
+  "non-overflow actions rest collapsed (width and opacity) so the title gets the room",
+);
+assert.match(
+  headerCss,
+  /\.right-chat \.cave-chat-linear-header:focus-within \.cave-chat-session-actions > \.focus-ring \{[^}]*opacity: 1;/,
+  "keyboard focus inside the header reveals the whole action cluster",
+);
+assert.match(
+  headerCss,
+  /@media \(hover: none\) and \(pointer: coarse\) \{[\s\S]*\.right-chat \.cave-chat-session-actions > \.focus-ring[\s\S]*opacity: 1;/,
+  "touch devices cannot hover: actions stay visible there",
+);
+assert.doesNotMatch(
+  headerCss,
+  /\.ui-session-pill\[data-state="(running|queued|failed|paused)"\]/,
+  "live session states keep their pill; only the settled state hides",
+);
+
 console.log("right-chat-panel.test.ts OK");
+
+// ── Pop-out into the detached Chat window (#6477) ───────────────────────────
+assert.match(
+  source,
+  /\{props\.onPopOut \? \([\s\S]{0,260}aria-label="Open Chat in its own window"[\s\S]{0,260}props\.onPopOut\?\.\(\{ familiarId: activeFamiliar\.id, sessionId: selectedSessionId \}\)/,
+  "the rail offers pop-out only where a host supplies it, and carries the familiar and thread it is showing",
+);
+assert.match(
+  source,
+  /onPopOut=\{popOut \? \(\) => popOut\(\{ familiarId: null, sessionId: null \}\) : undefined\}/,
+  "pop-out is offered before a familiar is chosen: the Chat window has its own roster",
+);
+assert.match(
+  workspaceSource,
+  /const canPopOutChat =\s*!useIsMobile\(\) && \(tauriPlatform === "desktop" \|\| tauriPlatform === "browser"\);[\s\S]*onPopOut=\{canPopOutChat \? popOutRightChat : undefined\}/,
+  "Workspace offers pop-out only where a second window exists: not a phone's Chat drawer, not the Tauri mobile shells",
+);
+assert.match(
+  workspaceSource,
+  /sessionId: target\.familiarId && !target\.sessionId \? CHAT_WINDOW_NEW_CHAT : target\.sessionId,/,
+  "a pop-out made while composing a new chat opens a new chat in the window, not the familiar's latest",
+);
+assert.match(
+  source,
+  /props\.startWithNewChat\s*\? \{ kind: "new" \}\s*: props\.initialSessionId/,
+  "the panel's first resolve honors a new-chat landing ahead of a named session",
+);
+assert.match(
+  workspaceSource,
+  /const opened = await openChatWindow\(\{[\s\S]{0,400}?\}\);\s*if \(!opened\) \{[\s\S]{0,320}return;\s*\}\s*shellRef\.current\?\.closeRightChat\(\);/,
+  "the docked panel closes only once the Chat window actually opened",
+);
+// The thread switcher, the New chat button and a host's controller must be
+// the same two actions, or a host list could select a thread the router
+// never opened.
+assert.match(
+  source,
+  /useImperativeHandle\(props\.controllerRef, \(\) => \(\{ openSession: selectSession, newChat: startNewChat \}\)\);/,
+  "a host conversation list drives the same actions as the rail",
+);
+assert.match(
+  source,
+  /if \(nextId === "__new__"\) startNewChat\(\);\s*else selectSession\(nextId\);/,
+  "the thread switcher uses the shared actions",
+);
+assert.match(source, /aria-label="New Chat panel chat"[\s\S]{0,120}onClick=\{startNewChat\}/, "New chat uses the shared action");
+// A request made before the familiar's first resolve is held, then consumed
+// by that resolve: never dropped, never overridden by "latest" a moment later.
+for (const action of ["startNewChat", "selectSession"]) {
+  assert.match(
+    source,
+    new RegExp(
+      `const ${action} = [\\s\\S]{0,160}if \\(resolvedFamiliarRef\\.current !== activeFamiliar\\.id\\) \\{\\s*pendingThreadRef\\.current = \\{ kind: "(?:new|session)"[^}]*\\};\\s*return;`,
+    ),
+    `${action} holds an early request for the first resolve`,
+  );
+}
+assert.match(
+  source,
+  /const pending = pendingThreadRef\.current;\s*pendingThreadRef\.current = null;[\s\S]{0,420}eligibleSessions\.some\(\(session\) => session\.id === pending\.id\)[\s\S]{0,260}resolveLatestRightChatSessionId\(sessions, activeFamiliar\.id\)/,
+  "the first resolve consumes a held request once, honoring a named thread only while it is still eligible",
+);
+assert.match(
+  source,
+  /if \(trackedFamiliarIdRef\.current !== null\) pendingThreadRef\.current = null;/,
+  "a request held for one familiar never picks another familiar's thread",
+);

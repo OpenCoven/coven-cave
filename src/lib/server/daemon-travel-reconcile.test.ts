@@ -4,6 +4,7 @@ import type { CaveConfig, CaveState, CaveTravelState } from "../cave-config.ts";
 import type { DaemonTarget } from "../coven-daemon.ts";
 import { deriveTravelClientStatus } from "../travel-client-state.ts";
 import type { TravelOfflineReplayResult } from "../travel-offline-replay.ts";
+import { projectDaemonLifecycle } from "../daemon-lifecycle.ts";
 import type { DaemonConnectionSnapshot } from "./daemon-connection-snapshot.ts";
 import {
   type DaemonTravelReconcileInput,
@@ -92,7 +93,29 @@ function hubSnapshot(
     availability: "online",
     checkedAt: "2026-08-01T00:00:00.000Z",
     target: { mode: "hub", label: "Server hub", url: "https://cave.tailnet.example.ts.net:8787" },
+    lifecycle: snapshotLifecycle("hub", "online"),
     ...overrides,
+  };
+}
+
+// Travel reconciliation reads the target and availability; the lifecycle
+// field is carried through untouched.
+function snapshotLifecycle(
+  targetMode: "local" | "hub",
+  availability: DaemonConnectionSnapshot["availability"],
+): DaemonConnectionSnapshot["lifecycle"] {
+  return {
+    ...projectDaemonLifecycle({
+      targetMode,
+      availability,
+      runtime: "unknown",
+      serviceConflict: null,
+      operation: null,
+      previouslyReady: false,
+      reason: null,
+    }),
+    generation: 0,
+    observedAt: "2026-08-01T00:00:00.000Z",
   };
 }
 
@@ -106,6 +129,7 @@ test("heartbeat reconciliation skips local snapshots without loading travel stat
       availability: "online",
       checkedAt: "2026-08-01T00:00:00.000Z",
       target: { mode: "local", label: "Local daemon", socket: "/Users/test/.coven/coven.sock" },
+      lifecycle: snapshotLifecycle("local", "online"),
     },
     {
       loadDaemonStatusSnapshot: async () => {

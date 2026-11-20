@@ -21,13 +21,32 @@ that a dependency layer would avoid enough transfer or preparation work to
 offset that complexity. The current schema therefore keeps one atomic layer
 and reuses it across app versions whenever its payload digest is unchanged.
 
-Startup cleanup holds the shared cache lock and removes only incomplete
-generations and stale extraction staging directories. It retains every
-structurally complete content-addressed generation because, without explicit
-process leases, an older concurrently running app may still be loading files
-from any one of them. Explicit uninstall owns complete-cache reclamation; this
-trades bounded cache growth between uninstalls for safe rollback and concurrent
-upgrade behavior.
+## Generation retention
+
+Each running app leases the generation it serves (#5981). Preparation and the
+lease happen in one scope that holds the shared cache lock. The app holds an
+exclusive advisory lock on its own file under
+`sidecar-runtime/.leases/<generation>/` until it exits, and it records the
+generation's last activation time in `last-active`. The OS releases the lock
+when the process exits or crashes. The sidecar `node.exe` runs in the app's
+kill-on-close job object, so the app's lease covers it as well.
+
+Startup cleanup runs after the sidecar is ready and holds the same cache lock.
+It removes incomplete generations and stale extraction staging. For complete
+generations it applies the rule Val approved on #5981:
+
+- keep the current generation;
+- keep the most recently activated other generation as the rollback copy
+  (generations from before leases fall back to their completion marker's age);
+- retire any other complete generation only when every lease file in it can be
+  locked, which proves no live process holds it. A held lease, an unreadable
+  lease directory or an unexpected lock error retains the generation.
+
+After two updates, two generations remain unless a running copy still holds a
+third. Explicit uninstall still removes the whole cache; major upgrades skip
+that action so the rollback copy survives. `sidecar_archive::tests` and
+`sidecar_runtime_retention::tests` run in the Windows startup PR lane with
+exact counts.
 
 Revisit the split only after consecutive production candidates measure stable
 dependency bytes separately from changed application bytes. A split must keep

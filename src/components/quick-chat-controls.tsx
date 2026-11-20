@@ -3,11 +3,15 @@
 import "@/styles/cave-composer.css";
 import { ModelInventoryFeedback } from "@/components/model-inventory-feedback";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
 import "@/styles/home-composer.css";
+// Quick Chat's own composer details (send-blocked reason, project attention,
+// fine-pointer Enhance sizing). Imported after cave-composer.css so its
+// overrides land later in the cascade; only /quick-chat loads it.
+import "@/styles/quick-chat.css";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import { Icon, type IconName } from "@/lib/icon";
@@ -67,6 +71,12 @@ export { QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 // every render.
 const EMPTY_MESSAGES: QuickChatMessage[] = [];
 
+/** id of the composer's send-blocked reason. The host derives the same id to
+ *  describe the project picker with it, so the two never drift. */
+export function quickChatSendHintId(inputId: string): string {
+  return `${inputId}-send-hint`;
+}
+
 // ── Controls row ─────────────────────────────────────────────────────────────
 // Familiar/project selection is identical in the in-app dropdown and tray.
 
@@ -81,6 +91,8 @@ export function QuickChatControlsRow({
   selectedProjectRoot,
   onPickProjectRoot,
   showFamiliarPicker = false,
+  projectAttention = false,
+  projectHintId,
 }: {
   loading: boolean;
   familiars: Familiar[];
@@ -92,6 +104,11 @@ export function QuickChatControlsRow({
   selectedProjectRoot: string | null;
   onPickProjectRoot: (root: string | null) => void;
   showFamiliarPicker?: boolean;
+  /** A draft is waiting on this choice — the picker is the next step, so it
+   *  is marked (with the composer's visible reason, never color alone). */
+  projectAttention?: boolean;
+  /** id of the composer's "why can't I send" text, described on the picker. */
+  projectHintId?: string;
 }) {
   // Once a project is picked the thread is locked to that context (switching
   // would reset the conversation), so the menu collapses into a read-only
@@ -149,7 +166,9 @@ export function QuickChatControlsRow({
             if (next !== "__choose__") onPickProjectRoot(next);
           }}
           disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}
-          className="flex-1"
+          className={projectAttention ? "flex-1 quick-chat-select--attention" : "flex-1"}
+          ariaDescribedBy={projectAttention ? projectHintId : undefined}
+          triggerIcon="ph:folder"
           options={
             projectsLoading && projects.length === 0
               ? [{ value: "__choose__", label: "Loading projects…", disabled: true }]
@@ -219,6 +238,8 @@ export function QuickChatComposer({
   sending,
   disabled,
   launchReady = true,
+  launchBlockedReason,
+  onSendBlockedChange,
   familiar,
   inputId,
   composerRef,
@@ -243,13 +264,21 @@ export function QuickChatComposer({
   draft: string;
   onDraftChange: (value: string) => void;
   /** Send the trimmed draft with the staged files (already id-stripped). */
-  onSend: (attachments: ChatAttachment[]) => void;
+  onSend: (attachments: ChatAttachment[], onAccepted: () => void) => void;
   sending: boolean;
   /** Blocks sending while true (e.g. the roster is still loading). */
   disabled?: boolean;
   /** Ordinary messages require a freshly authorized project. Local slash
    *  commands stay available so setup/model help is never trapped. */
   launchReady?: boolean;
+  /** Why an ordinary message can't launch while `launchReady` is false. Shown
+   *  beside Send once there is something to send, so a disabled Send (and an
+   *  Enter that does nothing) is never left unexplained. */
+  launchBlockedReason?: string | null;
+  /** Reports whether that reason is showing — text or staged files held by the
+   *  launch gate — so the project picker can point at the same hint without
+   *  re-deriving the composer's send predicate (attachments, reading, disabled). */
+  onSendBlockedChange?: (blocked: boolean) => void;
   familiar: Familiar | null;
   inputId: string;
   composerRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -269,7 +298,7 @@ export function QuickChatComposer({
   /** Append a local assistant-styled note (slash output like /help). */
   onLocalNote?: (text: string) => void;
   /** Send an explicit text through the quick-chat pipeline (skill runs). */
-  onSendText?: (text: string) => void;
+  onSendText?: (text: string, onAccepted: () => void) => void;
   /** Current /model override (for the bare `/model` listing). */
   modelOverride?: string | null;
   /** /model pick — set the thread's model override. */
@@ -288,6 +317,8 @@ export function QuickChatComposer({
   // internally so every quick-chat surface (dropdown, tray tab, standalone
   // window) gets Enhance with zero consumer wiring.
   const { announce } = useAnnouncer();
+  const latestDraftRef = useRef(draft);
+  latestDraftRef.current = draft;
   const promptEnhance = usePromptEnhance({
     draft,
     setDraft: onDraftChange,
@@ -315,11 +346,10 @@ export function QuickChatComposer({
 
   // Attachment staging (shared hook — same capture behavior as the home/chat
   // composers): drag-and-drop anywhere on the composer footer, paste-to-attach
-  // on the textarea, paperclip-free (drop/paste only) at 10 files max.
+  // on the textarea, paperclip-free (drop/paste only) at 50 total, 10 non-images.
   const {
     attachments,
     removeAttachment,
-    clearAttachments,
     handlePaste,
     dropActive,
     dropHandlers,
@@ -415,8 +445,9 @@ export function QuickChatComposer({
         return;
       }
       if (!launchReady) return;
-      onDraftChange("");
-      onSendText?.(buildComposerSkillPrompt(skill, draft, args));
+      onSendText?.(buildComposerSkillPrompt(skill, draft, args), () => {
+        if (latestDraftRef.current === draft) onDraftChange("");
+      });
     },
     [draft, launchReady, onDraftChange, composerRef, onSendText],
   );
@@ -545,12 +576,13 @@ export function QuickChatComposer({
     promptEnhance.reset();
     // ComposerAttachment carries a local `id` for the chip row — strip it from
     // the outgoing payload (mirrors the chat composer's send).
-    onSend(attachments.map(({ id: _id, ...attachment }) => attachment));
-    clearAttachments();
+    onSend(attachments.map(({ id: _id, ...attachment }) => attachment), () => {
+      for (const attachment of attachments) removeAttachment(attachment.id);
+    });
   }, [
     attachments,
     attachmentsReading,
-    clearAttachments,
+    removeAttachment,
     draft,
     launchReady,
     onSend,
@@ -561,8 +593,26 @@ export function QuickChatComposer({
   // Sendable = something to say (text or files). While a reply streams the
   // same action QUEUES — the hook parks it and auto-sends on settle.
   const canSend = !attachmentsReading && Boolean(draft.trim() || attachments.length > 0);
-  const canDispatch =
-    canSend && (launchReady || (slashEnabled && draft.trim().startsWith("/")));
+  const slashDraft = slashEnabled && draft.trim().startsWith("/");
+  const canDispatch = canSend && (launchReady || slashDraft);
+  // Something is ready to say but the launch gate (no project yet, access
+  // still loading…) holds it: name the reason instead of a silent no-op.
+  const sendBlockedReason =
+    canSend && !launchReady && !slashDraft && !disabled ? launchBlockedReason || null : null;
+  const sendHintId = quickChatSendHintId(inputId);
+  // Announce the reason once when it appears (typing the first character
+  // without a project), not on every keystroke after it.
+  const announcedBlockRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sendBlockedReason && announcedBlockRef.current !== sendBlockedReason) {
+      announce(sendBlockedReason);
+    }
+    announcedBlockRef.current = sendBlockedReason;
+  }, [announce, sendBlockedReason]);
+  const sendBlocked = sendBlockedReason !== null;
+  useEffect(() => {
+    onSendBlockedChange?.(sendBlocked);
+  }, [onSendBlockedChange, sendBlocked]);
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // The inline slash menus (Esc-dismiss, ↑↓/Tab/Enter across the pickers)
@@ -593,17 +643,21 @@ export function QuickChatComposer({
       if (cmdEnter || plainEnter) {
         event.preventDefault();
         // Enter while a reply streams queues the message (the hook parks it);
-        // `disabled` (roster loading) still blocks.
+        // `disabled` (roster loading) still blocks. A held launch repeats its
+        // visible reason for anyone who pressed Enter without seeing it.
         if (!disabled && canDispatch) send();
+        else if (sendBlockedReason) announce(sendBlockedReason);
       }
     },
     [
       acceptRecommendation,
+      announce,
       canDispatch,
       disabled,
       draft,
       recommendation.suggestion,
       send,
+      sendBlockedReason,
       slashEnabled,
       menu.handleKeyDown,
     ],
@@ -764,6 +818,7 @@ export function QuickChatComposer({
         onKeyUp={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
         onKeyDown={onKeyDown}
         onPaste={handlePaste}
+        aria-describedby={sendBlockedReason ? sendHintId : undefined}
         placeholder={familiar ? `Message @${familiar.id}…` : "@sage summarize what needs attention"}
         className="quick-chat-overlay__input"
       />
@@ -842,8 +897,15 @@ export function QuickChatComposer({
         onDismiss={promptEnhance.dismiss}
         onRevert={promptEnhance.revert}
         onCancel={promptEnhance.cancel}
+        onRetry={promptEnhance.retry}
         onFocusComposer={() => composerRef?.current?.focus()}
       />
+      {sendBlockedReason ? (
+        <p id={sendHintId} className="quick-chat-send-hint">
+          <Icon name="ph:folder" width={12} aria-hidden />
+          {sendBlockedReason}
+        </p>
+      ) : null}
       <div className="quick-chat-overlay__actions">
         {leading}
         <div className="flex items-center gap-2">
@@ -852,6 +914,7 @@ export function QuickChatComposer({
             onEnhance={promptEnhance.enhance}
             onCancel={promptEnhance.cancel}
             disabled={sending || !draft.trim()}
+            unavailableReason={promptEnhance.unavailableReason}
             size="sm"
           />
           <Button
@@ -860,7 +923,8 @@ export function QuickChatComposer({
             leadingIcon="ph:sparkle"
             onClick={send}
             disabled={disabled || !canDispatch}
-            title={sending ? "Queues — sends when the reply finishes" : undefined}
+            aria-describedby={sendBlockedReason ? sendHintId : undefined}
+            title={sending ? "Queues — sends when the reply finishes" : sendBlockedReason ?? undefined}
           >
             {sending ? "Queue" : "Send"}
           </Button>

@@ -1,4 +1,5 @@
 import { isArxivPaperId } from "@/lib/hf-papers";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export type HfPaperMetadata = {
   title: string;
@@ -65,9 +66,9 @@ export async function fetchHfPaperMetadata(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const response = await fetchImpl(`https://huggingface.co/api/papers/${arxivId}`, {
+    const response = await upstreamFetch("huggingface", `https://huggingface.co/api/papers/${arxivId}`, {
       signal: controller.signal,
-    });
+    }, { fetchImpl, timeoutMs: TIMEOUT_MS });
     if (!response.ok) return null;
     const body = await readBoundedJson(response, MAX_RESPONSE_BYTES);
     if (!body) return null;

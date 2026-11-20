@@ -255,24 +255,24 @@ export type ResearchContextBindingV1 = {
   topicProposalId?: string;
 } & UnknownFields;
 
-function childPath(path: string, key: string): string {
+export function childPath(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
     : `${path}[${JSON.stringify(key)}]`;
 }
 
-function hasOwn(record: Record<string, unknown>, key: string): boolean {
+export function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
-function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
+export function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
   if (!isRecord(value)) {
     return fail("invalid_type", path, "Expected an object");
   }
   return pass(value);
 }
 
-function parseRequiredField(
+export function parseRequiredField(
   record: Record<string, unknown>,
   key: string,
   path: string,
@@ -283,7 +283,7 @@ function parseRequiredField(
   return pass(record[key]);
 }
 
-function parseOpaqueIdentifier(
+export function parseOpaqueIdentifier(
   value: unknown,
   prefix: string,
   path: string,
@@ -298,12 +298,112 @@ function parseOpaqueIdentifier(
   return pass(value);
 }
 
-function parseSha256(value: unknown, path: string, label: string): ProtocolParseResult<string> {
+export function parseSha256(value: unknown, path: string, label: string): ProtocolParseResult<string> {
   if (typeof value !== "string") {
     return fail("invalid_type", path, `${label} must be a string`);
   }
   if (!isSha256(value)) {
     return fail("invalid_value", path, `${label} must be a lowercase SHA-256 digest`);
+  }
+  return pass(value);
+}
+
+export function indexPath(path: string, index: number): string {
+  return `${path}[${index}]`;
+}
+
+export function parseEnumValue<const T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+  path: string,
+  label: string,
+): ProtocolParseResult<T[number]> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, `${label} must be a string`);
+  }
+  if (!allowed.includes(value as T[number])) {
+    return fail("invalid_value", path, `${label} must be one of ${allowed.join(", ")}`);
+  }
+  return pass(value as T[number]);
+}
+
+export function parseBoolean(value: unknown, path: string, label: string): ProtocolParseResult<boolean> {
+  if (typeof value !== "boolean") {
+    return fail("invalid_type", path, `${label} must be a boolean`);
+  }
+  return pass(value);
+}
+
+export function parseUtc(value: unknown, path: string, label: string): ProtocolParseResult<string> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, `${label} must be a string`);
+  }
+  if (!isUtcTimestamp(value)) {
+    return fail("invalid_value", path, `${label} must be a UTC RFC 3339 timestamp`);
+  }
+  return pass(value);
+}
+
+export function parseString(value: unknown, path: string, label: string): ProtocolParseResult<string> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, `${label} must be a string`);
+  }
+  return pass(value);
+}
+
+export function parseSchema<const T extends string>(
+  value: unknown,
+  exact: T,
+  re: RegExp,
+  path: string,
+  label: string,
+): ProtocolParseResult<T> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, `${label} must be a string`);
+  }
+  if (value === exact) {
+    return pass(exact);
+  }
+  const match = re.exec(value);
+  if (match) {
+    return fail("unknown_major", path, `Unsupported ${label} major v${match[1]}`);
+  }
+  return fail("invalid_value", path, `${label} must equal ${exact}`);
+}
+
+export function parseSafeIntegerInRange(
+  value: unknown,
+  path: string,
+  label: string,
+  minimum: number,
+  maximum: number,
+): ProtocolParseResult<number> {
+  if (typeof value !== "number") {
+    return fail("invalid_type", path, `${label} must be a number`);
+  }
+  if (!Number.isSafeInteger(value)) {
+    return fail("invalid_value", path, `${label} must be a safe integer`);
+  }
+  if (value < minimum || value > maximum) {
+    return fail("invalid_value", path, `${label} must be between ${minimum} and ${maximum}`);
+  }
+  return pass(value);
+}
+
+export function parsePositiveSafeInteger(value: unknown, path: string, label: string): ProtocolParseResult<number> {
+  return parseSafeIntegerInRange(value, path, label, 1, Number.MAX_SAFE_INTEGER);
+}
+
+export function parseNonNegativeFiniteNumber(
+  value: unknown,
+  path: string,
+  label: string,
+): ProtocolParseResult<number> {
+  if (typeof value !== "number") {
+    return fail("invalid_type", path, `${label} must be a number`);
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    return fail("invalid_value", path, `${label} must be a finite number >= 0`);
   }
   return pass(value);
 }

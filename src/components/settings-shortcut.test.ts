@@ -93,11 +93,11 @@ assert.deepEqual(
     settings: platformizeHint("⌘,", pcKeys),
   },
   {
-    search: "CtrlK",
-    sidebar: "CtrlB",
-    list: "Ctrl\\",
-    newChat: "CtrlJ",
-    settings: "Ctrl,",
+    search: "Ctrl+K",
+    sidebar: "Ctrl+B",
+    list: "Ctrl+\\",
+    newChat: "Ctrl+J",
+    settings: "Ctrl+,",
   },
   "desktop shell shortcut hints should render Ctrl-based labels off macOS",
 );

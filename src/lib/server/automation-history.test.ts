@@ -49,7 +49,8 @@ test("invalid, duplicate and conflicting cursor input never dispatches", async (
 });
 
 test("cursor expiry and unavailable reads remain failures with no reset or raw detail", async () => {
-  for (const [code, expected] of [["CURSOR_EXPIRED", "expired"], ["capability_unsupported", "unsupported"], ["unavailable", "unavailable"]]) {
+  // Coven deletes expired checkpoints, so a pruned one answers NOT_FOUND.
+  for (const [code, expected] of [["CURSOR_EXPIRED", "expired"], ["NOT_FOUND", "expired"], ["capability_unsupported", "unsupported"], ["unavailable", "unavailable"]]) {
     let calls = 0;
     const result = await readAutomationHistory("daily", new URLSearchParams("checkpoint=prior"), new AbortController().signal, {
       events: async query => { calls++; assert.equal(query.checkpoint, "prior"); throw Object.assign(new Error("private error"), { code }); },

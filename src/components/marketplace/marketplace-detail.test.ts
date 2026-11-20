@@ -75,7 +75,7 @@ assert.match(
 // ── Route reuses the shared catalog resolver ─────────────────────────────────
 const route = await readFile(new URL("../../app/api/marketplace/pack-prompts/route.ts", import.meta.url), "utf8");
 assert.match(route, /resolveCatalogName\(id\)/, "the route resolves the id against the catalog allowlist");
-assert.match(route, /pluginDir\(name\)/, "the scan path is built from the resolved name, not the request id");
+assert.match(route, /ensureMarketplacePlugin\(name\)/, "the scan path is built from the resolved name, not the request id");
 
 // The install route now shares that resolver instead of its own copy.
 const install = await readFile(new URL("../../app/api/marketplace/install/route.ts", import.meta.url), "utf8");

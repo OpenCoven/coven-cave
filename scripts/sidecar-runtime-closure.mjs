@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkBundledDependencyFloor, describeBundledVersions } from "./bundled-dependency-floor.mjs";
 
 /** The one place the file-count budget is written down. */
 export const SIDECAR_RUNTIME_BUDGET_FILE = fileURLToPath(
@@ -41,6 +42,7 @@ function readSidecarFileCountBudget() {
 export const SIDECAR_RUNTIME_ROOTS = Object.freeze([
   ".agents/skills",
   "marketplace/catalog.json",
+  "marketplace/payloads.json",
   "marketplace/exports",
   "marketplace/marketplace.json",
   "marketplace/plugins",
@@ -315,6 +317,27 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // dependency/native subtrees and first-party runtime-root counts did not
   // change. Restore the established 150-file headroom from the observed
   // Windows maximum without relaxing the expanded-byte ceiling.
+  //
+  // 2026-10-15 (v0.5.14-rc.2, #6023): CI observed 8,734 files on Windows and
+  // 8,730 on Linux; macOS measured 8,726 locally at the same commit. That is
+  // exactly +1,198 over v0.5.13-rc.1 on each. Most of it is #6025: Turbopack
+  // compiles the optional @opencoven/research package into server chunks.
+  // #5996's on-demand imports add more, smaller chunks, and its marketplace
+  // extraction removes 785 plugin files. An inventory diff accounts for all of
+  // it: server chunks +1,694, static chunks +267, server app +20,
+  // instrumentation +1, marketplace plugins -785, payload index +1. Traced
+  // packages and native subtrees are unchanged. Keep the 150-file headroom
+  // over the observed Windows count; the byte ceiling is unchanged.
+  //
+  // 2026-10-25 (v0.5.15-rc.1, #6225): CI observed 8,895 files on Windows,
+  // 8,887 on Linux and 8,889 on macOS, +159, +155 and +161 over the v0.5.14
+  // release run. A same-machine macOS inventory diff accounts for its +161:
+  // server chunks +107, server app +40, static chunks +13, and #6030's
+  // marketplace logo +1. Nine new routes (seven for #5217's Automations, the
+  // Research automation import, and #6049's local models) less #6203's
+  // removed prompt-enhance route are the 368 -> 376 trace increase. The
+  // bundled node_modules set is unchanged. Keep the 150-file headroom over the
+  // observed Windows count; the byte ceiling is unchanged (147.9 MB on macOS).
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
@@ -771,6 +794,7 @@ export async function verifySidecarRuntime(root) {
     ".next/BUILD_ID",
     ".next/required-server-files.json",
     "marketplace/catalog.json",
+  "marketplace/payloads.json",
     "marketplace/marketplace.json",
     "node_modules/@hpke/common/esm/mod.js",
     "node_modules/@hpke/common/package.json",
@@ -821,13 +845,18 @@ export async function verifySidecarRuntime(root) {
     }
   }
 
+  // #5339: the bundled Next and sharp must be at or above their patched
+  // minimums. This is the release build's last stop before Tauri packages the
+  // sidecar, so an unpatched copy fails here instead of shipping.
+  const bundledVersions = await checkBundledDependencyFloor(root);
+
   const metrics = await sidecarRuntimeMetrics(root);
   for (const [metric, budget] of Object.entries(SIDECAR_RUNTIME_BUDGETS)) {
     if (metrics[metric] > budget) {
       throw new Error(`sidecar runtime ${metric} ${metrics[metric]} exceeds target ${budget}`);
     }
   }
-  return metrics;
+  return { ...metrics, bundledVersions };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -838,6 +867,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(
       `==> sidecar runtime closure: ${metrics.fileCount} files, ${metrics.directoryCount} directories, ${metrics.unpackedBytes} bytes`,
     );
+    console.log(`==> bundled dependency floor: ${describeBundledVersions(metrics.bundledVersions)}`);
   } else {
     const [projectRoot, standaloneRoot, dependencyRoot, destination] = process.argv.slice(2);
     if (!projectRoot || !standaloneRoot || !dependencyRoot || !destination) {

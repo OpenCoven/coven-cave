@@ -1,0 +1,12 @@
+{
+  "goldens": [
+    "5767-golden-09",
+    "5767-golden-10"
+  ],
+  "signOff": {
+    "body": "Val sign-off recorded from this issue's authorized execution session (`01a14deb-0c40-7783-b956-c47e4a50f26a`), 2026-10-18:\n\n> Sign off on this bounded deferral\n\nThis approves deferral of **5767-golden-09 and 5767-golden-10** for the controlled Hermes runtime-report path. That path supplies no authoritative approval/commit producer. Approval/change controls remain unavailable; no protected-action support claim is made. A future supported approval path still needs producer-backed Permit/Degrade/Reject, denied/expired/revoked/revised/replayed authorization and at-most-one admitted-action evidence.\n\nThis sign-off does not authorize real-provider canaries, change disclosure/authentication policy, or certify other unqualified runtime/native paths. The exact-candidate packet is still being assembled; this is not issue completion. Original issue body preserved.",
+    "html_url": "https://github.com/OpenCoven/coven-cave/issues/5767#issuecomment-6247610128",
+    "id": 6247610128
+  },
+  "boundary": "Approval/change controls unavailable; no protected-action support claim. No real-provider authorization."
+}

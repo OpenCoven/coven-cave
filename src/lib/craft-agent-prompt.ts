@@ -95,7 +95,7 @@ export function buildCraftPublishPrompt(input: CraftDraftBriefInput): string {
     "",
     "Craft publication is a HUMAN-REVIEWED PR (docs/marketplace.md § Human-Reviewed Upstream Updates) — your job is to produce the PR, never to write the catalog directly:",
     "1. Read the draft: `GET /api/marketplace/crafts/drafts` → its bundled resources and provenance stubs.",
-    "2. Vendor real source content under `marketplace/craft-sources/<craft>/` — draft resources are references, not publishable content; resolve each to its actual file and record `sourcePath` + `contentHash` (`sha256:`) pins.",
+    "2. In the dedicated OpenCoven/marketplace repository, vendor real source content under `marketplace/craft-sources/<craft>/` — draft resources are references, not publishable content; resolve each to its actual file and record `sourcePath` + `contentHash` (`sha256:`) pins.",
     "3. Add a `kind: \"craft\"` entry to `marketplace/catalog.json` with the craft specification (`schemaVersion: \"opencoven.craft.v1\"`), components, bundled resources, `requiredCapabilities`, `recommendedRoles`, and a complete `provenance` block (source, commit, license, licensePath, modifications).",
     "4. Regenerate + check: `python3 scripts/sync-marketplace.py` then `python3 scripts/sync-marketplace.py --check`, and run `node --test scripts/crafts-audited-content.test.mjs`.",
     "5. Open a pull request with the change for human review, and summarize: catalog entry, vendored files, hashes, and check results.",

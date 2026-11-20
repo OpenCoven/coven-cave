@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /let ownSend = thread\.messages\.last\?\.role == \.user\s*\n\s*guard scrollState\.isFollowingLatest \|\| ownSend else \{ return \}/,
-  "a new message auto-reveals only while following latest, or when it's the user's own send",
+  /let ownSend = ChatOwnSend\.isOwnSend\(from: old, to: new, messages: thread\.messages\)\s*\n\s*guard scrollState\.isFollowingLatest \|\| ownSend else \{ return \}/,
+  "a new message auto-reveals only while following latest, or when it's the user's own send (#5933: decided from the appended messages, since the reply placeholder is last)",
 );
 assert.match(
   chatView,
@@ -70,9 +70,12 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /ForEach\(thread\.transcriptRows\.dropLast\(\)\)[\s\S]{0,400}?if let row = thread\.transcriptRows\.last \{[\s\S]{0,300}?\.onGeometryChange\(for: ChatScrollGeometry\?\.self\)[\s\S]{0,120}?geometry\.bounds\(of: \.scrollView\)/,
-  "bottom arrival must use the actual latest row, not the lazy stack's estimated content height",
+  /ForEach\(rows\) \{ row in[\s\S]{0,500}?\.onGeometryChange\(for: ChatScrollGeometry\?\.self\)[\s\S]{0,200}?row\.id == rows\.last\?\.id[\s\S]{0,180}?geometry\.bounds\(of: \.scrollView\)/,
+  "one stable row collection must retain history geometry across sends and observe the actual latest row (#6090)",
 );
+assert.doesNotMatch(chatView.slice(chatView.indexOf("private var messageScroll"), chatView.indexOf("private func transcriptRow")),
+  /LazyVStack|rows\[\.\.<|rows\[turnStart/,
+  "the transcript must not re-estimate history height or move a row between layout branches");
 assert.match(
   chatView,
   /viewportRecovery\.noteLatestRow\(id: row\.id, height: geometry\.contentHeight\)/,

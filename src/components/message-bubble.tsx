@@ -82,6 +82,8 @@ const MessageReader = dynamic(
 );
 import type { BatchTool } from "@/lib/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
+import { projectUiBlocksToReadable, sliceReadableUiBlocks } from "@/lib/ui-block-readable";
+import { UiBlockReadable } from "./ui-block-readable";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { stripAutoloadingContent } from "@/lib/html-sanitize";
 import { decorateResponseHtml } from "@/lib/response-status-tokens";
@@ -954,6 +956,33 @@ function useStableAssistantMarkdownRenderContext(
   return valueRef.current;
 }
 
+/**
+ * Gives assistant prose rendered outside a MessageBubble the same treatment
+ * MessageBubble gives Main Chat's `assistantBody`: response decoration,
+ * footnote citations, and a non-text placeholder until a block's markdown
+ * lands. Quick Chat wraps its StreamingTurnResponse in this (#5840). Without
+ * it, a newly committed block painted its raw source in a fallback span that
+ * the rendered markdown then replaced, dropping any selection inside it.
+ */
+export function AssistantMarkdownRenderProvider({
+  content,
+  onOpenUrl,
+  children,
+}: {
+  /** The reply's visible text, parsed for footnote citations. */
+  content: string;
+  onOpenUrl?: (url: string) => void;
+  children: ReactNode;
+}) {
+  const parsedCitations = useMemo(() => parseCitations(content), [content]);
+  const value = useStableAssistantMarkdownRenderContext(onOpenUrl, parsedCitations);
+  return (
+    <AssistantMarkdownRenderContext.Provider value={value}>
+      {children}
+    </AssistantMarkdownRenderContext.Provider>
+  );
+}
+
 function MarkdownContent({
   text,
   pending,
@@ -1166,11 +1195,12 @@ function CopyBubble({ text, response = false }: { text: string; response?: boole
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(async () => {
-    if (!(await copyText(text))) return;
+    // A response's coven:ui blocks copy as their readable lines (#6060).
+    if (!(await copyText(response ? projectUiBlocksToReadable(text) : text))) return;
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 2000);
-  }, [text]);
+  }, [text, response]);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -1618,6 +1648,32 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
 // ExpandBubble — opens the message in the reader (message-reader.tsx)
 // ---------------------------------------------------------------------------
 
+/**
+ * The reader's body: prose through the markdown pipeline, and each coven:ui
+ * block as its readable lines (#6060). The reader has no native UI tier, and
+ * a block's markup is never the only thing a reader shows.
+ */
+function ReaderBody({ body, citations }: { body: string; citations: readonly Citation[] }) {
+  const pieces = useMemo(() => sliceReadableUiBlocks(body), [body]);
+  return (
+    <>
+      {pieces.map((piece, index) =>
+        piece.kind === "ui" ? (
+          <UiBlockReadable key={`ui-${index}`} lines={piece.lines} />
+        ) : (
+          <MarkdownContent
+            key={`md-${index}`}
+            text={piece.text}
+            citations={citations}
+            className="cave-md--expanded cave-md--reader"
+            decorateResponse
+          />
+        ),
+      )}
+    </>
+  );
+}
+
 function ExpandBubble({
   open,
   onClose,
@@ -1671,12 +1727,7 @@ function ExpandBubble({
               The reader's own reading scale (.cave-md--reader in
               cave-md/prose.css): the transcript's dense 14px is right in the
               stream, wrong for a full-screen reading surface. */}
-          <MarkdownContent
-            text={readerCited.body}
-            citations={readerCited.citations}
-            className="cave-md--expanded cave-md--reader"
-            decorateResponse
-          />
+          <ReaderBody body={readerCited.body} citations={readerCited.citations} />
         </MessageReader>
       ) : null}
     </>

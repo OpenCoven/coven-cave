@@ -6,6 +6,7 @@ import {
   type ReleaseAsset,
   type UpdateStatus,
 } from "@/lib/app-update";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function GET() {
   };
 
   try {
-    const res = await fetch(RELEASES_API, {
+    const res = await upstreamFetch("github", RELEASES_API, {
       headers: { Accept: "application/vnd.github+json", "User-Agent": "coven-cave" },
       cache: "no-store",
       signal: AbortSignal.timeout(4000),
@@ -42,6 +43,7 @@ export async function GET() {
     }
     const data = (await res.json()) as {
       tag_name?: string;
+      body?: unknown;
       html_url?: string;
       assets?: ReleaseAsset[];
     };
@@ -51,6 +53,7 @@ export async function GET() {
       latest,
       available: latest ? isUpdateAvailable(latest, APP_VERSION) : false,
       url: data.html_url || RELEASE_PAGE,
+      ...(typeof data.body === "string" && data.body.trim() ? { notes: data.body } : {}),
       downloads: resolveDownloadUrls(data.assets ?? []),
     };
     cache = { at: now, body };

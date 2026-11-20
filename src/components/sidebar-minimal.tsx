@@ -6,7 +6,7 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector and New chat CTA
  *   2. Navigation  — the daily destinations, Chat directly under Home
- *   3. Explore     — the registry's `quiet` destinations (Marketplace, Memories)
+ *   3. Explore     — the registry's `quiet` destinations (Canvas, Memories)
  *   4. Rooms       — registry-driven role surfaces
  *   5. Footer: Dashboard, Settings
  *
@@ -45,6 +45,7 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { type WorkspaceNavMode } from "@/lib/workspace-navigation";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
    *  interprets it, only round-trips it through navigation callbacks. */
@@ -144,6 +145,7 @@ function FolderRow({
   quietLead?: boolean;
   onClick: () => void;
 }) {
+  const keys = useKeySymbols();
   const active = state === "active";
   const split = state === "split";
   // Splittable pages can be dragged into the main area to open beside the
@@ -156,7 +158,7 @@ function FolderRow({
   const splitHint = split ? " · open in split" : "";
   const title = description
     ? kbd
-      ? `${label} — ${description} (${kbd})${dragHint}${splitHint}`
+      ? `${label} — ${description} (${platformizeHint(kbd, keys)})${dragHint}${splitHint}`
       : `${label} — ${description}${dragHint}${splitHint}`
     : undefined;
   return (
@@ -204,6 +206,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     sessions,
     responseNeeded,
   } = props;
+  const keys = useKeySymbols();
 
   // Arrow-key navigation across the flat nav rows: one tab stop, Up/Down moves
   // focus, Home/End jumps. Uses the shared roving-tabindex hook.
@@ -270,8 +273,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         // header is gone with the swap (cave-fh9so), and the shortcut is not —
         // so it moves onto the one rail that is now always mounted, rather
         // than disappearing with the component that happened to host it.
-        newChatTitle="New chat (⌘N)"
-        newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
+        newChatTitle={platformizeHint("New chat (⌘N)", keys)}
+        newChatTrailing={<kbd className="rail-header__new-kbd">{platformizeHint("⌘N", keys)}</kbd>}
         projects={props.projects}
         projectId={props.projectId}
         project={props.project}
@@ -290,7 +293,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         // put the same two controls on screen twice, one above the other. Below
         // 1024px the title bar context is display:none, so the rail keeps its
         // own copy and nothing is lost there.
-        contextMode="mobile"
+        contextMode={mode === "chat" ? "hidden" : "mobile"}
       />
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
@@ -298,7 +301,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             {primaryDestinations.map((destination) => renderDestination(destination))}
           </SidebarSection>
 
-          {/* Marketplace and Memories are their own category rather than a
+          {/* Canvas and Memories are their own category rather than a
             silent gap at the end of Navigation. They were already marked
             `quiet` in the registry — the visual step that separated them was
             carrying the meaning a heading should carry, and a step with no

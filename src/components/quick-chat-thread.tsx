@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { GitHubCard } from "@/components/github-card";
-import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
+import {
+  AssistantMarkdownRenderProvider,
+  ProgressiveMarkdownBlock,
+} from "@/components/message-bubble";
 import { ResearchRunInlineCard } from "@/components/research-run-surface";
+import { ResponseRunDetails } from "@/components/response-run-details";
 import { SkillRunSummary } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
+import { UiBlockReadable } from "@/components/ui-block-readable";
 import { Button } from "@/components/ui/button";
 import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
 import { copyText } from "@/lib/clipboard";
@@ -17,63 +22,6 @@ import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
 import { FamiliarMark, QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 import { lastRegenerableQuickChatMessageId } from "@/lib/quick-chat-thread-state";
-
-function quickChatResponseMetadataLines(
-  metadata?: QuickChatMessage["responseMetadata"],
-): string[] {
-  if (!metadata) return [];
-  const lines: string[] = [];
-  if (metadata.requestedModel !== undefined) {
-    lines.push(`Requested model: ${metadata.requestedModel || "Runtime default"}`);
-  }
-  if (metadata.desiredModel) lines.push(`Effective model: ${metadata.desiredModel}`);
-  if (metadata.forwardedModel && metadata.forwardedModel !== metadata.desiredModel) {
-    lines.push(`Forwarded model: ${metadata.forwardedModel}`);
-  }
-  if (metadata.confirmedModel) lines.push(`Applied model: ${metadata.confirmedModel}`);
-  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
-  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
-  if (metadata.modelApplicationReason && !metadata.confirmedModel) {
-    lines.push(metadata.modelApplicationReason);
-  }
-  const promptOnly = new Set(Object.keys(metadata.promptGuidanceControls ?? {}));
-  const forwarded = new Set(Object.keys(metadata.forwardedControls ?? {}));
-  const applied = new Set(Object.keys(metadata.appliedControls ?? {}));
-  const rejected = new Set(metadata.rejectedControlFamilies ?? []);
-  for (const [family, value] of Object.entries(metadata.requestedControls ?? {})) {
-    const status = rejected.has(family)
-      ? "Rejected"
-      : promptOnly.has(family)
-        ? "Prompt guidance"
-        : applied.has(family)
-          ? "Applied"
-          : forwarded.has(family)
-            ? "Forwarded — not confirmed"
-            : "Requested — not confirmed";
-    lines.push(`${status}: ${family} ${value}`);
-  }
-  return lines;
-}
-
-function QuickChatResponseMetadata({ lines }: { lines: string[] }) {
-  if (lines.length === 0) return null;
-  return (
-    <div
-      className="mt-2 flex flex-wrap gap-1.5"
-      role="group"
-      aria-label={`Response model and controls: ${lines.join(". ")}`}
-    >
-      {lines.map((line) => (
-        <span
-          key={line}
-          className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--fg-muted)]"
-        >
-          {line}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function QuickChatBubble({
   message,
@@ -131,7 +79,6 @@ function QuickChatBubble({
   const suggestions = typedSuggestions
     .filter((path) => path.kind === "reply")
     .map((path) => path.prompt);
-  const responseMetadataLines = quickChatResponseMetadataLines(message.responseMetadata);
   const streamingModel = createStreamingTurnViewModel({
     turnId: message.id,
     visibleText: presentedVisible,
@@ -161,6 +108,9 @@ function QuickChatBubble({
                 text={piece.text}
               />
             );
+          }
+          if (piece.kind === "ui") {
+            return <UiBlockReadable key={`ui-${index}`} lines={piece.lines} />;
           }
           if (piece.kind === "action") {
             return (
@@ -193,7 +143,8 @@ function QuickChatBubble({
 
       {message.error ? <p className="quick-chat-turn__error">{message.error}</p> : null}
 
-      <QuickChatResponseMetadata lines={responseMetadataLines} />
+      {/* The same Run details disclosure as the main chat (#6034). */}
+      <ResponseRunDetails metadata={message.responseMetadata} />
 
       {canAct && isLastAssistant && onRegenerate && !message.error ? (
         <div className="quick-chat-turn__actions">
@@ -235,28 +186,57 @@ function QuickChatBubble({
             {quickChatSupplementaryContent}
           </>
         ) : (
-          <StreamingTurnResponse
-            turnId={message.id}
-            familiarName={familiar?.display_name ?? "Unknown familiar"}
-            model={streamingModel}
-            density="compact"
-            announceLifecycle={announceLifecycle}
-            startedAt={message.startedAt}
-            durationMs={message.durationMs}
-            proseContent={orderedProseContent}
-            onStop={streaming ? onStop : undefined}
-            onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
-            canContinue={false}
-            onCopyCompleted={
-              streamingModel.committedText
-                ? () => copyText(streamingModel.committedText)
-                : undefined
-            }
-            supplementaryContent={quickChatSupplementaryContent}
-          />
+          // Same assistant markdown context MessageBubble gives Main Chat's
+          // StreamingTurnResponse: a committed block shows text only in the
+          // rendered node that stays, so a selection survives new tokens
+          // (#5840), and status tokens and citations render as they do there.
+          <AssistantMarkdownRenderProvider content={visible}>
+            <StreamingTurnResponse
+              turnId={message.id}
+              familiarName={familiar?.display_name ?? "Unknown familiar"}
+              model={streamingModel}
+              density="compact"
+              announceLifecycle={announceLifecycle}
+              startedAt={message.startedAt}
+              durationMs={message.durationMs}
+              proseContent={orderedProseContent}
+              onStop={streaming ? onStop : undefined}
+              onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
+              canContinue={false}
+              onCopyCompleted={
+                streamingModel.committedText
+                  ? () => copyText(streamingModel.committedText)
+                  : undefined
+              }
+              supplementaryContent={quickChatSupplementaryContent}
+            />
+          </AssistantMarkdownRenderProvider>
         )}
       </div>
     </div>
+  );
+}
+
+// The cold thread's keyboard grammar as keycap hints. Each hint is one
+// unbreakable unit, so a narrow window wraps between hints — never inside one
+// (the old run-on sentence orphaned "send" on its own line) — and `/`
+// commands, otherwise invisible until typed, are named alongside @ and Enter.
+const QUICK_CHAT_KEY_HINTS: ReadonlyArray<{ key: string; action: string }> = [
+  { key: "@", action: "switch familiar" },
+  { key: "/", action: "commands" },
+  { key: "Enter", action: "send" },
+];
+
+function QuickChatKeyHints() {
+  return (
+    <p className="quick-chat-empty__hint quick-chat-empty__keys">
+      {QUICK_CHAT_KEY_HINTS.map(({ key, action }) => (
+        <span key={key} className="quick-chat-empty__key">
+          <kbd className="quick-chat-reco__kbd">{key}</kbd>
+          {action}
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -265,7 +245,7 @@ export function QuickChatThread({
   familiar,
   emptyIcon = "ph:chat-circle-dots",
   emptyTitle = familiar ? `Ask ${familiar.display_name} anything` : "Ask a familiar anything",
-  emptyHint = "Replies stream right here · @name to switch familiar · Enter to send",
+  emptyHint,
   suggestions = QUICK_CHAT_SUGGESTIONS,
   onSuggestion,
   onRegenerate,
@@ -275,7 +255,8 @@ export function QuickChatThread({
   familiar: Familiar | null;
   emptyIcon?: IconName;
   emptyTitle?: string;
-  emptyHint?: string;
+  /** Replaces the default keycap hints (@, /, Enter). */
+  emptyHint?: ReactNode;
   suggestions?: string[];
   onSuggestion?: (value: string) => void;
   onRegenerate?: () => void;
@@ -310,6 +291,19 @@ export function QuickChatThread({
   useEffect(() => {
     schedulePin();
   }, [messages.length, latestAssistantSource, schedulePin]);
+
+  // Buffered prose and async Markdown can grow after the source-driven pin.
+  // Observe the turns themselves: the capped scroller need not change size.
+  // schedulePin respects released user intent, so late layout never resumes
+  // following while someone is reading older output.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(schedulePin);
+    observer.observe(scroller);
+    for (const turn of scroller.children) observer.observe(turn);
+    return () => observer.disconnect();
+  }, [messages.length, schedulePin]);
 
   useEffect(() => {
     const userMessageChanged = observedUserMessageIdRef.current !== lastUserMessageId;
@@ -348,7 +342,7 @@ export function QuickChatThread({
         <div className="quick-chat-empty">
           <span className="quick-chat-empty__glyph" aria-hidden><Icon name={emptyIcon} width={22} /></span>
           <p className="quick-chat-empty__title">{emptyTitle}</p>
-          <p className="quick-chat-empty__hint">{emptyHint}</p>
+          {emptyHint === undefined ? <QuickChatKeyHints /> : <p className="quick-chat-empty__hint">{emptyHint}</p>}
           {suggestions.length > 0 ? <div className="quick-chat-empty__chips">
             {suggestions.map((suggestion) => <Button key={suggestion} size="xs" variant="secondary" className="quick-chat-chip" onClick={() => onSuggestion?.(suggestion)}>{suggestion}</Button>)}
           </div> : null}

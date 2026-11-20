@@ -3,7 +3,7 @@ import test from "node:test";
 import { createServer } from "node:http";
 import { callDaemonTargetBytes } from "../coven-daemon.ts";
 import type { DaemonByteRequest, DaemonResponse } from "../coven-daemon.ts";
-import { createAutomationReadClient } from "./coven-automations-sdk.ts";
+import { createAutomationCommandClient, createAutomationReadClient } from "./coven-automations-sdk.ts";
 
 const action = "coven.automations.events.subscribe.v1";
 const stream = { kind: "occurrence" as const, id: "synthetic-occurrence" };
@@ -165,4 +165,98 @@ test("real Cave HTTP byte transport preserves canonical replies and malformed JS
   } finally {
     await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
   }
+});
+
+// ── Lifecycle commands (#5217) ───────────────────────────────────────────────
+const commandActions = ["coven.automations.command.v1", "coven.automations.definition.pause.v1",
+  "coven.automations.definition.activate.v1", "coven.automations.definition.get.v1"];
+const commandCapabilities = { capabilities: [{ ...capabilities.capabilities[0], actions: commandActions }] };
+const adoptionKey = "cave-0b4d3a2e-6f3c-4d9e-9a51-2c8f0f1e7d42";
+const commandContext = { adoptionKey, intent: "Pause from Cave", principalId: "cave" };
+const committed = {
+  ok: true, accepted: true, action: "coven.automations.command.v1", status: "completed",
+  result: {
+    schemaVersion: "coven.automations.v1", command: "definition.pause.v1", adoptionKey, outcome: "committed",
+    revision: 5, result: { id: "nightly", revision: 5, status: "PAUSED", reason: null },
+    eventRef: { stream: "automation/nightly", sequence: 4 },
+  },
+};
+
+function commandSetup(answer: (request: DaemonByteRequest) => DaemonResponse<Uint8Array>) {
+  const requests: DaemonByteRequest[] = [];
+  const client = createAutomationCommandClient(async (request) => {
+    requests.push(request);
+    if (request.method === "GET") return { ok: true, status: 200, data: Buffer.from(JSON.stringify(commandCapabilities)) };
+    return answer(request);
+  });
+  return { client, requests };
+}
+
+test("a lifecycle command is one bounded, unretried POST carrying the expected revision", async () => {
+  const { client, requests } = commandSetup(() => ({ ok: true, status: 200, data: Buffer.from(JSON.stringify(committed)) }));
+  const result = await client.pause("nightly", 4, commandContext);
+  assert.equal(result.outcome, "committed");
+  assert.equal(result.outcome === "committed" && result.revision, 5);
+  const posts = requests.filter((request) => request.method === "POST");
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].path, "/api/v1/actions");
+  assert.equal(posts[0].maxResponseBytes, 16_384);
+  assert.equal(posts[0].retryTransportFailure, false);
+  const body = posts[0].body as { action: string; envelope: Record<string, unknown> };
+  assert.equal(body.action, "coven.automations.command.v1");
+  assert.equal(body.envelope.command, "definition.pause.v1");
+  assert.equal(body.envelope.expectedRevision, 4);
+  assert.equal(body.envelope.adoptionKey, adoptionKey);
+  assert.deepEqual(body.envelope.payload, { automationId: "nightly" });
+  assert.deepEqual(body.envelope.origin, { principal: { principalId: "cave" }, channel: "sdk" });
+});
+
+test("a stale revision comes back as Coven's typed conflict, not an exception", async () => {
+  const { client } = commandSetup(() => ({
+    ok: false, status: 409, data: Buffer.from(JSON.stringify({
+      ok: false, accepted: false, action: "coven.automations.command.v1", status: "rejected", reason: "revision conflict",
+      result: {
+        schemaVersion: "coven.automations.v1", command: "definition.pause.v1", adoptionKey, outcome: "rejected",
+        error: { code: "REVISION_CONFLICT", httpStatus: 409, message: "moved", retryable: false, currentRevision: 6 },
+      },
+    })),
+  }));
+  assert.deepEqual(await client.pause("nightly", 4, commandContext), {
+    outcome: "rejected", command: "definition.pause.v1", adoptionKey,
+    error: { code: "REVISION_CONFLICT", retryable: false, currentRevision: 6 },
+  });
+});
+
+test("a command whose answer is lost is outcome_unknown and is not resent by the transport", async () => {
+  const { client, requests } = commandSetup(() => ({ ok: false, status: 0, data: null, error: "socket closed" }));
+  await assert.rejects(client.pause("nightly", 4, commandContext), { code: "outcome_unknown" });
+  assert.equal(requests.filter((request) => request.method === "POST").length, 1);
+  const garbled = commandSetup(() => ({ ok: true, status: 200, data: Buffer.from("{\"half\":") }));
+  await assert.rejects(garbled.client.activate("nightly", 4, commandContext), { code: "outcome_unknown" });
+});
+
+test("a daemon that does not advertise the command is refused before anything is sent", async () => {
+  const requests: DaemonByteRequest[] = [];
+  const client = createAutomationCommandClient(async (request) => {
+    requests.push(request);
+    return { ok: true, status: 200, data: Buffer.from(JSON.stringify(capabilities)) };
+  });
+  await assert.rejects(client.pause("nightly", 4, commandContext), { code: "capability_unsupported" });
+  assert.ok(requests.every((request) => request.method === "GET"));
+});
+
+test("the read client can share one capabilities answer across a projection", async () => {
+  const listed = { ok: true, accepted: true, action: "coven.automations.definition.get.v1", status: "completed",
+    event: { kind: "automations.changed", action: "coven.automations.definition.get.v1", payload: { routine: null } } };
+  let capabilityReads = 0;
+  const client = createAutomationReadClient(async (request) => {
+    if (request.method === "GET") {
+      capabilityReads++;
+      return { ok: true, status: 200, data: Buffer.from(JSON.stringify(commandCapabilities)) };
+    }
+    return { ok: true, status: 200, data: Buffer.from(JSON.stringify(listed)) };
+  }, { shareCapabilities: true });
+  assert.deepEqual(await client.get("a"), { routine: null });
+  assert.deepEqual(await client.get("b"), { routine: null });
+  assert.equal(capabilityReads, 1);
 });

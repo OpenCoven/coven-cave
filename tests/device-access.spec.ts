@@ -27,6 +27,12 @@ test("browser requests approval, survives reload, and displays denial without gr
     await route.fulfill({ status: 201, json: { ok: true, device: current } });
   });
   await page.goto("/connect");
+  // The label is server-rendered and controlled. Typing before React hydrates
+  // it is reset by hydration, so the request would carry the default label (#6517).
+  await page.waitForFunction(() => {
+    const input = document.querySelector("#device-label");
+    return Boolean(input && Object.keys(input).some((key) => key.startsWith("__reactFiber$")));
+  });
   await page.getByLabel("Device label").fill("My phone");
   await page.getByRole("button", { name: "Request access", exact: true }).click();
   await expect(page.getByText("abcdef01", { exact: true })).toBeVisible();
@@ -74,6 +80,9 @@ test("desktop requires migration consent, then offers Allow, Deny and Revoke", a
   await expect(panel.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Allow", exact: true }).click();
   await panel.getByRole("button", { name: "Revoke access", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "Revoke access for My phone?" });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Revoke access", exact: true }).click();
   await expect(panel.getByText(/My phone.*revoked/)).toBeVisible();
   await expect(panel.getByRole("button", { name: "Revoke access", exact: true })).toHaveCount(0);
 });

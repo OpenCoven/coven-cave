@@ -3,34 +3,32 @@ import { parse } from "yaml";
 
 export const RECOVERY_GRACE_MS = 15 * 60 * 1000;
 export const RECOVERY_COOLDOWN_MS = 60 * 60 * 1000;
-
-/** That head's ci.yml cannot be dispatched by anyone. Routine; not an alarm. */
-export const NOT_DISPATCHABLE = "workflow_not_dispatchable";
-
-/** That head's guard contract is ambiguous, so it is never dispatched. Alarm. */
-export const CONTRACT_PARTIAL = "workflow_contract_partial";
-
-const WORKFLOW_FILE = "ci.yml";
-const MAX_PULL_PAGES = 10;
-const EXPECTED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
-const EXPECTED_CONCURRENCY_GROUP =
-  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}";
-const PREVIOUS_CONCURRENCY_GROUP =
-  "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
-const EXPECTED_JOB_GUARD =
-  "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const EXPECTED_SUBORDINATE_JOB_GUARDS = {
-  paths: EXPECTED_JOB_GUARD,
-  ios: `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})`,
+const SHA = /^[0-9a-f]{40}$/i;
+const WORKFLOW = "ci.yml";
+const MAX_PAGES = 10;
+const NEXT_STEPS = {
+  missing_eligible_pr_run:
+    "Trigger a fresh pull_request event with an authorized maintainer credential, then verify its exact head, live base and merge snapshot.",
+  approval_required:
+    "Have an authorized maintainer approve the pending workflow; recovery does not grant approval.",
+  startup_failure:
+    "Inspect the workflow startup failure before requesting a new eligible run.",
+  unknown_run_conclusion:
+    "Inspect the incomplete run verdict before requesting recovery.",
+  ci_waiting:
+    "Inspect the runner queue and concurrency holder; do not dispatch or cancel over a waiting run.",
+  recovery_already_attempted:
+    "Inspect the previous full-run retry before requesting another attempt.",
+  base_changed:
+    "Trigger a fresh pull_request event against the current base; do not rerun a stale event snapshot.",
+  merge_snapshot_stale:
+    "Wait for GitHub to refresh the PR merge snapshot and verify its parents before retrying.",
+  workflow_contract_partial:
+    "Update the PR workflow through reviewed source changes to include the current merge-freshness guards.",
 };
-const EXPECTED_REQUIRED_JOB_IFS = {
-  "pr-checks": undefined,
-  build: "always()",
-};
-const EXPECTED_SHA_MISMATCH_STEP = "Refuse recovery SHA mismatch";
-const EXPECTED_SHA_MISMATCH_CONDITION =
-  'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then';
 
+/** Requesting a rerun is not merge readiness. GitHub must still accept all
+ * required contexts from the new complete attempt on the exact current head. */
 export async function runCiRecovery({
   apply = false,
   env = process.env,
@@ -38,723 +36,498 @@ export async function runCiRecovery({
   now = Date.now(),
   log = console.log,
 } = {}) {
-  if (typeof fetchImpl !== "function") throw new Error("fetch implementation is required");
-  if (!Number.isFinite(now)) throw new Error("now must be a finite timestamp");
-
-  const token = requiredEnv(env, "GITHUB_TOKEN");
-  const repository = requiredRepository(env.GITHUB_REPOSITORY);
-  const apiUrl = (env.GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, "");
-  const repositoryPath = repository
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  const headers = {
-    accept: "application/vnd.github+json",
-    authorization: `Bearer ${token}`,
-    "x-github-api-version": "2022-11-28",
+  if (typeof fetchImpl !== "function" || !Number.isFinite(now))
+    throw new Error("fetch implementation and finite timestamp required");
+  const repository = env.GITHUB_REPOSITORY?.trim();
+  if (!repository || !/^[^/\s]+\/[^/\s]+$/.test(repository))
+    throw new Error("GITHUB_REPOSITORY must use OWNER/REPO form");
+  const token = env.GITHUB_TOKEN?.trim();
+  if (!token) throw new Error("GITHUB_TOKEN is required");
+  const api = (env.GITHUB_API_URL || "https://api.github.com").replace(
+    /\/+$/,
+    "",
+  );
+  const context = {
+    root: `${api}/repos/${repository.split("/").map(encodeURIComponent).join("/")}`,
+    fetchImpl,
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${token}`,
+      "x-github-api-version": "2022-11-28",
+    },
   };
-  const context = { apiUrl, repositoryPath, headers, fetchImpl };
-  const pulls = await listOpenPulls(context);
-  const eligible = [];
-  const skipped = [];
-  // Two different kinds of "not routine", deliberately kept apart.
-  //
-  // `faults` are candidates dropped because something BROKE — a REST read or a
-  // dispatch failed. That is a repository or API problem, it will not fix
-  // itself, and it is worth failing the run over.
-  //
-  // `attention` is a candidate whose workflow guard contract is PARTIAL. That
-  // is a property of a stale branch: its `ci.yml` predates the current guard
-  // and is not cleanly legacy either. Skipping it is correct and safe (the
-  // abort-before-mutation rule), but nothing in THIS repository is broken, and
-  // failing the run for it reds a check on `main` that has nothing to do with
-  // `main`. Observed: twelve consecutive failures from 2026-09-13 to 09-15,
-  // unread the whole time, cleared only when the two PRs happened to close.
-  // A signal nobody reads is not a signal.
-  const faults = [];
-  const attention = [];
-
-  for (const rawPull of pulls) {
-    const pull = parsePull(rawPull);
-    const skip = baseSkipReason(pull, repository, now);
-    if (skip) {
-      skipped.push({ number: pull.number, reason: skip });
-      continue;
-    }
-
-    let decision;
-    try {
-      const runs = await listWorkflowRuns(context, pull.sha);
-      decision = await decideRecovery(context, runs, now);
-    } catch (cause) {
-      // One unreadable pull request is one unreadable pull request. Letting it
-      // propagate ended the whole scan, so every OTHER open PR with missing CI
-      // stayed missing until someone noticed by hand.
-      skipped.push({ number: pull.number, reason: failureReason(cause) });
-      faults.push(pull.number);
-      continue;
-    }
-    if (!decision.recover) {
-      skipped.push({ number: pull.number, reason: decision.reason });
-      continue;
-    }
-
-    eligible.push({
-      number: pull.number,
-      reason: decision.reason,
-      ref: pull.ref,
-      sha: pull.sha,
-      url: pull.url,
-    });
-  }
-
-  const dispatchable = [];
-  if (apply) {
-    // Complete every candidate read before the first mutation. A later REST
-    // failure must never leave the repository with a partially applied scan.
-    for (const recovery of eligible) {
-      let contract;
-      try {
-        const current = await getPull(context, recovery.number);
-        const drift = dispatchSkipReason(current, recovery, repository, now);
-        if (drift) {
-          skipped.push({ number: recovery.number, reason: drift });
-          continue;
-        }
-        contract = await inspectRecoveryDispatch(context, recovery.sha);
-      } catch (cause) {
-        skipped.push({ number: recovery.number, reason: failureReason(cause) });
-        faults.push(recovery.number);
-        continue;
-      }
-      if (!contract.dispatchable) {
-        skipped.push({ number: recovery.number, reason: contract.reason });
-        if (contract.reason === CONTRACT_PARTIAL) attention.push(recovery.number);
-        continue;
-      }
-      dispatchable.push({ recovery, ...contract });
-    }
-  }
-
-  const recoveries = apply ? [] : eligible.map((recovery) => ({ ...recovery, dispatched: false }));
-  for (const { recovery, supportsExpectedSha, supportsExpectedPrNumber } of dispatchable) {
-    try {
-      await dispatchWorkflow(
-        context,
-        recovery.ref,
-        recovery.sha,
-        recovery.number,
-        supportsExpectedSha,
-        supportsExpectedPrNumber,
-      );
-    } catch (cause) {
-      // A refused dispatch is that PR's problem. Throwing here abandoned every
-      // dispatch still queued behind it.
-      skipped.push({ number: recovery.number, reason: failureReason(cause) });
-      faults.push(recovery.number);
-      continue;
-    }
-    recoveries.push({ ...recovery, dispatched: true });
-  }
-
-  const degraded = faults.length > 0;
+  const pulls = (
+    await pages(context, `${context.root}/pulls?state=open&per_page=100`)
+  ).map(parsePull);
   const result = {
     mode: apply ? "apply" : "report-only",
     scanned: pulls.length,
-    recoveries,
-    skipped,
-    degraded,
-    faults,
-    attention,
+    recoveries: [],
+    skipped: [],
+    degraded: false,
+    faults: [],
+    attention: [],
   };
-  for (const recovery of recoveries) {
-    log(
-      `#${recovery.number} ${recovery.reason} ` +
-        `${recovery.dispatched ? "dispatched" : "eligible"} ${recovery.ref} ${recovery.sha.slice(0, 12)}`,
+  const skip = (number, reason, attention = false) => {
+    result.skipped.push({
+      number,
+      reason,
+      ...(NEXT_STEPS[reason] ? { nextStep: NEXT_STEPS[reason] } : {}),
+    });
+    if (attention) result.attention.push(number);
+  };
+  const fault = (number, error) => {
+    skip(
+      number,
+      `error: ${String(error instanceof Error ? error.message : error).replace(/\s+/g, " ")}`,
     );
+    result.faults.push(number);
+    result.degraded = true;
+  };
+  const eligible = [];
+  // Complete the bounded inventory before the first write; individual read
+  // failures cannot authorize a mutation for that candidate.
+  for (const pull of pulls) {
+    const reason = baseSkipReason(pull, repository, now);
+    if (reason) {
+      skip(pull.number, reason);
+      continue;
+    }
+    try {
+      const decision = decideRecovery(
+        await listRuns(context, pull.sha),
+        pull,
+        now,
+      );
+      if (!decision.run) {
+        skip(pull.number, decision.reason, decision.attention);
+        continue;
+      }
+      eligible.push({ pull, run: decision.run });
+    } catch (error) {
+      fault(pull.number, error);
+    }
   }
-  // Say what was dropped. `skipped` was collected and never printed, so a run
-  // that recovered only some of its candidates read exactly like one that
-  // recovered all of them.
-  for (const entry of skipped) {
-    log(`#${entry.number} skipped ${entry.reason}`);
+  for (const candidate of eligible) {
+    const { pull, run } = candidate;
+    try {
+      if (apply) {
+        const reason = await preflight(context, candidate, repository, now);
+        if (reason) {
+          skip(pull.number, reason, Boolean(NEXT_STEPS[reason]));
+          continue;
+        }
+        // Full rerun, never rerun-failed-jobs: the required aggregate binds all
+        // upstream evidence to the same run_attempt. No new PR/source events.
+        const response = await fetchImpl(
+          `${context.root}/actions/runs/${run.id}/rerun`,
+          {
+            method: "POST",
+            headers: context.headers,
+          },
+        );
+        if (!response.ok)
+          throw new Error(
+            `failed to request full PR rerun (HTTP ${response.status})`,
+          );
+      }
+      result.recoveries.push({
+        number: pull.number,
+        reason: "cancelled_latest_pr_run",
+        ref: pull.ref,
+        sha: pull.sha,
+        url: pull.url,
+        runId: run.id,
+        previousAttempt: run.attempt,
+        rerunRequested: apply,
+      });
+    } catch (error) {
+      fault(pull.number, error);
+    }
   }
-  // Name what needs a human. The old summary said "needs attention" without
-  // saying WHICH candidate or why, so the one line a reader actually sees
-  // carried none of the information needed to act on it — the per-PR verdicts
-  // were above it in the log, which is exactly where nobody looked.
-  const list = (numbers) => numbers.map((number) => `#${number}`).join(", ");
-  if (attention.length > 0) {
-    // A warning annotation rather than a failure: surfaced in the run's
-    // summary without reddening a check on `main`.
+  for (const item of result.recoveries)
     log(
-      `::warning::CI recovery skipped ${list(attention)} — partial workflow guard contract. ` +
-        `Recovery cannot dispatch these safely; rebase the branch onto a current ci.yml.`,
+      `#${item.number} ${apply ? "full rerun requested" : "full rerun candidate"} run ${item.runId} head ${item.sha}; required checks remain unverified`,
     );
-  }
+  for (const item of result.skipped)
+    log(
+      `#${item.number} skipped ${item.reason}${item.nextStep ? `; ${item.nextStep}` : ""}`,
+    );
+  if (result.attention.length)
+    log(
+      `::warning::CI recovery needs maintainer action: ${result.attention.map((n) => `#${n}`).join(", ")}`,
+    );
   log(
-    `CI recovery: ${result.scanned} open PR${result.scanned === 1 ? "" : "s"} scanned; ` +
-      `${recoveries.length} ${apply ? "dispatched" : "eligible"}` +
-      `${skipped.length > 0 ? `; ${skipped.length} skipped` : ""}` +
-      `${attention.length > 0 ? `; ${attention.length} awaiting a workflow-contract fix (${list(attention)})` : ""}` +
-      `${degraded ? `; needs attention (${list(faults)})` : ""}.`,
+    `CI recovery: ${pulls.length} open PRs scanned; ${result.recoveries.length} ${apply ? "full reruns requested" : "full rerun candidates"}; ${result.attention.length} need maintainer action; ${result.faults.length} API/evidence faults.`,
   );
   return result;
 }
 
-async function listOpenPulls(context) {
-  const pulls = [];
-  let url = `${context.apiUrl}/repos/${context.repositoryPath}/pulls?state=open&per_page=100`;
-  for (let page = 0; page < MAX_PULL_PAGES && url; page += 1) {
-    const response = await context.fetchImpl(url, { headers: context.headers });
-    if (!response.ok) {
-      throw new Error(`failed to list open pull requests (HTTP ${response.status})`);
-    }
-    const payload = await response.json();
-    if (!Array.isArray(payload)) throw new Error("open pull request response was not an array");
-    pulls.push(...payload);
-    const next = nextLink(response.headers.get("link"));
-    if (next && !isPullInventoryUrl(next, context)) {
-      throw new Error("pull request pagination URL escaped the GitHub API repository endpoint");
-    }
-    url = next;
-  }
-  if (url) throw new Error(`open pull request inventory exceeded ${MAX_PULL_PAGES} pages`);
-  return pulls;
-}
-
-async function listWorkflowRuns(context, sha) {
-  const url =
-    `${context.apiUrl}/repos/${context.repositoryPath}/actions/workflows/${WORKFLOW_FILE}/runs` +
-    `?head_sha=${encodeURIComponent(sha)}&per_page=100`;
-  const response = await context.fetchImpl(url, { headers: context.headers });
-  if (!response.ok) {
-    throw new Error(`failed to list CI runs for a pull request head (HTTP ${response.status})`);
-  }
-  const payload = await response.json();
-  if (!payload || !Array.isArray(payload.workflow_runs)) {
-    throw new Error("CI workflow run response was malformed");
-  }
-  return payload.workflow_runs
-    .map(parseRun)
-    .filter(
-      (run) =>
-        !run.hasInvalidExpectedShaStamp &&
-        (run.expectedSha === null ||
-          run.expectedSha.toLowerCase() === run.headSha.toLowerCase()),
-    )
-    .sort((left, right) => right.createdAt - left.createdAt);
-}
-
-async function getPull(context, number) {
-  const url = `${context.apiUrl}/repos/${context.repositoryPath}/pulls/${number}`;
-  const response = await context.fetchImpl(url, { headers: context.headers });
-  if (!response.ok) {
-    throw new Error(`failed to revalidate a pull request head (HTTP ${response.status})`);
-  }
-  return parsePull(await response.json());
-}
-
-/**
- * GitHub's manual-approval gate. A run parked behind it reports
- * `status: "completed"` with `conclusion: "action_required"` and ZERO jobs, so
- * the pull request shows no checks whatsoever.
- *
- * Reading only `status` therefore mistook it for finished CI and refused to
- * recover, leaving Copilot-authored PRs wedged with an empty check rollup
- * (cave-qshvl). `conclusion` was not merely unused — parseRun dropped it, so
- * this decision could not have consulted it.
- */
-const APPROVAL_GATED = "action_required";
-
-/** A run GitHub stopped before it reported a verdict. */
-const CANCELLED = "cancelled";
-
-/**
- * Whether a run counts as CI having actually covered this head.
- *
- * Deliberately narrow. A FAILED run is coverage — it reported a verdict.
- * `startup_failure` genuinely produced no coverage, but re-dispatching a
- * workflow that cannot start would just loop, so it is left to a human.
- *
- * `cancelled` is judged by POSITION rather than here, in {@link decideRecovery}:
- * a cancelled run underneath a newer one was superseded and is nobody's
- * problem, while a cancelled run that is the newest for a static head is a
- * wedge (cave-geaji). This predicate cannot see position, so it deliberately
- * does not try to answer that.
- */
-function isCoverage(run) {
-  if (run.status === "in_progress") return true;
-  if (run.status !== "completed") return false;
-  return run.conclusion !== APPROVAL_GATED;
-}
-
-async function decideRecovery(context, runs, now) {
-  if (runs.length === 0) return { recover: true, reason: "missing_ci_run" };
-
-  const recentRecovery = runs.some(
-    (run) =>
-      run.event === "workflow_dispatch" &&
-      run.createdAt > now - RECOVERY_COOLDOWN_MS,
-  );
-  if (recentRecovery) return { recover: false, reason: "recovery_cooldown" };
-
-  // `runs` is fetched filtered by head_sha and sorted newest-first, so runs[0]
-  // is the newest run for THIS exact head.
-  const latest = runs[0];
-
-  // A cancelled run is normally superseded by a newer push that carries its own
-  // run — which is why cave-qshvl classified `cancelled` as coverage. That
-  // holds right up until the cancelled run is the NEWEST one for a head that
-  // has not moved: nothing is coming to replace it, the required context
-  // reports `cancelled` rather than `success` forever, and the pull request is
-  // wedged with no path to green.
-  //
-  // Checked against the LATEST run rather than "every run is cancelled",
-  // because GitHub's rollup shows the most recent check-run per name. An older
-  // success underneath a newer cancellation does not unblock the PR, so it must
-  // not suppress recovery either.
-  //
-  // Observed on #4514: head 02f74118ff carried exactly one run, cancelled, and
-  // `pnpm ci:recovery` reported it as covered and declined to help (cave-geaji).
-  if (latest.status === "completed" && latest.conclusion === CANCELLED) {
-    // …unless recovery has already been tried on this exact head and the head
-    // is STILL sitting on a cancellation. Dispatching again would repeat
-    // whatever did not work the first time, and the cooldown does not stop it:
-    // it only bounds the rate, so a head that keeps ending up cancelled draws
-    // one dispatch per cooldown forever.
-    //
-    // That is not hypothetical. On #4618 head 11aceeb89 collected three
-    // cancelled runs and no verdict — the dispatches shared ci.yml's
-    // concurrency group and cancelled the very runs they were rescuing, and
-    // each cancellation then read as this wedge and justified the next
-    // dispatch (cave-f22tp). ci.yml no longer lets a dispatch cancel, which
-    // removes the cause; this removes the loop even if something else cancels.
-    const alreadyRecovered = runs.some((run) => run.event === "workflow_dispatch");
-    if (alreadyRecovered) {
-      return { recover: false, reason: "recovery_already_attempted" };
-    }
-    return { recover: true, reason: "cancelled_latest_run" };
-  }
-
-  if (runs.some(isCoverage)) {
-    return { recover: false, reason: "ci_present" };
-  }
-
-  // Every run is parked behind the manual-approval gate, so the PR has no
-  // checks at all and never will until someone approves or a fresh run is
-  // dispatched. Recovering is exactly right here.
-  if (runs.length > 0 && runs.every((run) => run.conclusion === APPROVAL_GATED)) {
-    return { recover: true, reason: "approval_gated_run" };
-  }
-
-  // `queued` and `pending` are the two "waiting to start" statuses. GitHub
-  // reports `queued` while a run waits for a runner, but a run parked behind
-  // ci.yml's concurrency group reports `pending` with ZERO jobs until the
-  // group key frees — and the key only frees when the holder's `if: always()`
-  // required job drains, which under runner queueing takes 10-15 minutes
-  // (observed on #4925: run 32632713873 pending with 0 jobs behind run
-  // 32631588451). Reading `pending` as `ci_present` made recovery decline
-  // forever for a head that was actually waiting on the group, so it must
-  // ride the same grace window and job-count checks as `queued` (cave-q7spw).
-  if (latest.status !== "queued" && latest.status !== "pending") {
-    return { recover: false, reason: "ci_present" };
-  }
-  if (latest.createdAt > now - RECOVERY_GRACE_MS) {
-    return { recover: false, reason: "ci_queued" };
-  }
-
-  const jobCount = await workflowJobCount(context, latest.id);
-  if (jobCount > 0) return { recover: false, reason: "ci_present" };
-  return { recover: true, reason: "stalled_empty_run" };
-}
-
-async function workflowJobCount(context, runId) {
-  const url = `${context.apiUrl}/repos/${context.repositoryPath}/actions/runs/${runId}/jobs?per_page=1`;
-  const response = await context.fetchImpl(url, { headers: context.headers });
-  if (!response.ok) {
-    throw new Error(`failed to inspect queued CI run jobs (HTTP ${response.status})`);
-  }
-  const payload = await response.json();
-  if (!payload || !Number.isInteger(payload.total_count) || payload.total_count < 0) {
-    throw new Error("CI workflow jobs response was malformed");
-  }
-  return payload.total_count;
-}
-
-/** Inspect the CI workflow at an exact head and decide how it may be dispatched.
- *
- *  Three outcomes, and keeping them distinct is the whole point:
- *  - `{dispatchable: false, reason: NOT_DISPATCHABLE}` — that head's ci.yml has
- *    no `workflow_dispatch` trigger, so it cannot be dispatched by anyone. A
- *    permanent fact about the branch, not an ambiguity, so the caller skips
- *    this candidate and continues.
- *  - `{dispatchable: true, supportsExpectedSha, supportsExpectedPrNumber}` —
- *    dispatch it with exactly the inputs its exact-head guard supports.
- *  - `{dispatchable: false, reason: CONTRACT_PARTIAL}` — the guard contract is
- *    only PARTIALLY configured. We cannot tell whether the exact-SHA guard will
- *    be honoured, so a dispatch might silently test a different commit than the
- *    one we checked: THIS head is never dispatched, and that safety property is
- *    unchanged. What changed is blast radius. It used to throw, which killed
- *    the whole apply — so a single un-rebased branch carrying an older ci.yml
- *    shape disabled recovery for every other open pull request, which is the
- *    exact failure already fixed for the un-dispatchable case (cave-qibp6).
- *    Observed twice in ten days: runs 31393882802 (2026-08-10) and 31618670601
- *    (2026-08-12) aborted on this path. The scan now finishes, recovers
- *    everything else, and exits non-zero so the misconfiguration stays visible.
- */
-async function inspectRecoveryDispatch(context, sha) {
-  const url =
-    `${context.apiUrl}/repos/${context.repositoryPath}/contents/.github/workflows/${WORKFLOW_FILE}` +
-    `?ref=${encodeURIComponent(sha)}`;
-  const response = await context.fetchImpl(url, { headers: context.headers });
-  if (!response.ok) {
-    throw new Error(`failed to inspect the CI workflow contract (HTTP ${response.status})`);
-  }
-  const payload = await response.json();
-  if (
-    payload?.encoding !== "base64" ||
-    typeof payload.content !== "string" ||
-    payload.content.length === 0
-  ) {
-    throw new Error("CI workflow content response was malformed");
-  }
-  let workflow;
-  try {
-    workflow = parse(Buffer.from(payload.content, "base64").toString("utf8"));
-  } catch {
-    throw new Error("CI workflow content was not valid YAML");
-  }
-  const triggers = workflow?.on;
-  if (
-    triggers === null ||
-    typeof triggers !== "object" ||
-    !Object.hasOwn(triggers, "workflow_dispatch")
-  ) {
-    // Un-dispatchable, not ambiguous. This used to throw, which aborted the
-    // WHOLE apply — so a single stale branch whose ci.yml predates dispatch
-    // support disabled recovery for every other PR in the repository
-    // (cave-qibp6: #4646 blocked #4643 and #4641, and nothing was dispatched).
-    return {
-      dispatchable: false,
-      reason: NOT_DISPATCHABLE,
-      supportsExpectedSha: false,
-      supportsExpectedPrNumber: false,
-    };
-  }
-  const inputs = workflow?.on?.workflow_dispatch?.inputs;
-  const expectedInput =
-    inputs !== null &&
-    typeof inputs === "object" &&
-    Object.hasOwn(inputs, "expected_sha")
-      ? inputs.expected_sha
-      : null;
-  const hasExpectedInput = expectedInput !== null;
-  const hasCompleteExpectedInput =
-    expectedInput !== null &&
-    typeof expectedInput === "object" &&
-    expectedInput.required === true &&
-    expectedInput.type === "string";
-  const expectedPrNumberInput =
-    inputs !== null &&
-    typeof inputs === "object" &&
-    Object.hasOwn(inputs, "expected_pr_number")
-      ? inputs.expected_pr_number
-      : null;
-  const hasExpectedPrNumberInput = expectedPrNumberInput !== null;
-  const hasCompleteExpectedPrNumberInput =
-    expectedPrNumberInput !== null &&
-    typeof expectedPrNumberInput === "object" &&
-    expectedPrNumberInput.required === true &&
-    expectedPrNumberInput.type === "string";
-  const hasCompleteGuardedContract =
-    hasCompleteExpectedInput &&
-    hasCompleteExpectedPrNumberInput &&
-    workflow["run-name"] === EXPECTED_RUN_NAME &&
-    workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
-    Object.entries(EXPECTED_SUBORDINATE_JOB_GUARDS).every(
-      ([name, guard]) => workflow?.jobs?.[name]?.if === guard,
-    ) &&
-    Object.entries(EXPECTED_REQUIRED_JOB_IFS).every(
-      ([name, jobIf]) =>
-        workflow?.jobs?.[name]?.if === jobIf &&
-        hasExpectedShaMismatchFailureStep(workflow?.jobs?.[name]),
-    );
-  const hasPreviousGuardedContract =
-    hasCompleteExpectedInput &&
-    workflow["run-name"] === EXPECTED_RUN_NAME &&
-    workflow?.concurrency?.group === PREVIOUS_CONCURRENCY_GROUP &&
-    workflow?.jobs?.build?.if === EXPECTED_JOB_GUARD &&
-    !Object.hasOwn(workflow?.jobs ?? {}, "paths") &&
-    !Object.hasOwn(workflow?.jobs ?? {}, "ios");
-  const hasMigrationGuardedContract =
-    hasCompleteExpectedInput &&
-    workflow["run-name"] === EXPECTED_RUN_NAME &&
-    workflow?.concurrency?.group === PREVIOUS_CONCURRENCY_GROUP &&
-    workflow?.jobs?.paths?.if === EXPECTED_JOB_GUARD &&
-    workflow?.jobs?.ios?.if === `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})` &&
-    workflow?.jobs?.build?.if === `always() && (${EXPECTED_JOB_GUARD})`;
-  const hasExpectedPrNumberMarker = JSON.stringify(workflow).includes("expected_pr_number");
-  if (hasCompleteGuardedContract) {
-    return {
-      dispatchable: true,
-      supportsExpectedSha: true,
-      supportsExpectedPrNumber: true,
-    };
-  }
-  if (
-    !hasExpectedPrNumberMarker &&
-    (hasPreviousGuardedContract || hasMigrationGuardedContract)
-  ) {
-    return {
-      dispatchable: true,
-      supportsExpectedSha: true,
-      supportsExpectedPrNumber: false,
-    };
-  }
-
-  const serialized = JSON.stringify(workflow);
-  const hasGuardedProtocolMarker =
-    hasExpectedInput ||
-    hasExpectedPrNumberInput ||
-    serialized.includes("inputs.expected_sha") ||
-    hasExpectedPrNumberMarker;
-  if (hasGuardedProtocolMarker) {
-    return {
-      dispatchable: false,
-      reason: CONTRACT_PARTIAL,
-      supportsExpectedSha: false,
-      supportsExpectedPrNumber: false,
-    };
-  }
-  return {
-    dispatchable: true,
-    supportsExpectedSha: false,
-    supportsExpectedPrNumber: false,
-  };
-}
-
-function hasExpectedShaMismatchFailureStep(job) {
-  const step = job?.steps?.[0];
-  return (
-    step?.name === EXPECTED_SHA_MISMATCH_STEP &&
-    step?.env?.EXPECTED_SHA === "${{ inputs.expected_sha }}" &&
-    step?.env?.ACTUAL_SHA === "${{ github.sha }}" &&
-    typeof step.run === "string" &&
-    step.run.includes(EXPECTED_SHA_MISMATCH_CONDITION) &&
-    step.run.includes("exit 1")
-  );
-}
-
-async function dispatchWorkflow(
-  context,
-  ref,
-  expectedSha,
-  expectedPrNumber,
-  supportsExpectedSha,
-  supportsExpectedPrNumber,
-) {
-  const url = `${context.apiUrl}/repos/${context.repositoryPath}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
-  const inputs = supportsExpectedSha ? { expected_sha: expectedSha } : null;
-  if (inputs && supportsExpectedPrNumber) {
-    inputs.expected_pr_number = String(expectedPrNumber);
-  }
-  const body = inputs ? { ref, inputs } : { ref };
-  const response = await context.fetchImpl(url, {
-    method: "POST",
-    headers: { ...context.headers, "content-type": "application/json" },
-    body: JSON.stringify(body),
+async function get(context, path) {
+  const response = await context.fetchImpl(`${context.root}/${path}`, {
+    headers: context.headers,
   });
-  if (!response.ok) {
-    throw new Error(`failed to dispatch CI recovery (HTTP ${response.status})`);
-  }
+  if (!response.ok)
+    throw new Error(
+      `GitHub read failed for ${path.split("?")[0]} (HTTP ${response.status})`,
+    );
+  return response.json();
 }
-
-function parsePull(value) {
-  const number = value?.number;
-  const createdAt = Date.parse(value?.created_at);
-  const updatedAt = Date.parse(value?.updated_at);
-  const draft = value?.draft;
-  const state = value?.state;
-  const url = value?.html_url;
-  const ref = value?.head?.ref;
-  const sha = value?.head?.sha;
-  const headRepository = value?.head?.repo?.full_name;
+async function pages(context, first, runInventory = false) {
+  const expected = new URL(first);
+  let url = first;
+  const values = [];
+  let total = null;
+  for (let page = 0; url && page < MAX_PAGES; page++) {
+    const response = await context.fetchImpl(url, { headers: context.headers });
+    if (!response.ok)
+      throw new Error(`GitHub inventory failed (HTTP ${response.status})`);
+    const payload = await response.json();
+    const entries = runInventory ? payload?.workflow_runs : payload;
+    if (!Array.isArray(entries)) throw new Error("malformed GitHub inventory");
+    if (runInventory) {
+      if (
+        !Number.isSafeInteger(payload.total_count) ||
+        payload.total_count < 0 ||
+        payload.total_count > 1000
+      )
+        throw new Error("unbounded or malformed run inventory");
+      total = Math.max(total ?? 0, payload.total_count);
+    }
+    values.push(...entries);
+    url = nextLink(response.headers.get("link"));
+    if (url) {
+      const next = new URL(url);
+      if (
+        next.origin !== expected.origin ||
+        next.pathname !== expected.pathname ||
+        (runInventory &&
+          next.searchParams.get("head_sha") !==
+            expected.searchParams.get("head_sha"))
+      )
+        throw new Error("pagination escaped the repository inventory endpoint");
+    }
+  }
+  if (url || (total !== null && values.length < total))
+    throw new Error("incomplete GitHub inventory");
+  return values;
+}
+async function listRuns(context, sha) {
+  return (
+    await pages(
+      context,
+      `${context.root}/actions/workflows/${WORKFLOW}/runs?head_sha=${sha}&per_page=100`,
+      true,
+    )
+  )
+    .map(parseRun)
+    .filter((run) => run.sha === sha)
+    .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id);
+}
+function binding(run, pull) {
+  return run.pulls.find(
+    (p) =>
+      p.number === pull.number &&
+      p.head?.sha === pull.sha &&
+      p.base?.ref === pull.baseRef &&
+      SHA.test(p.base?.sha ?? ""),
+  );
+}
+function decideRecovery(runs, pull, now) {
+  // This repository's recoverable protected workflow is pull_request. A push
+  // to main or a manual dispatch for the same SHA is not this PR's event.
+  const latest = runs.find(
+    (run) => run.event === "pull_request" && binding(run, pull),
+  );
+  if (!latest) return { reason: "missing_eligible_pr_run", attention: true };
+  if (latest.status === "in_progress") return { reason: "ci_in_progress" };
+  if (["queued", "pending", "waiting", "requested"].includes(latest.status))
+    return {
+      reason: "ci_waiting",
+      attention: latest.updatedAt <= now - RECOVERY_GRACE_MS,
+    };
+  if (latest.status !== "completed")
+    return { reason: "unknown_run_conclusion", attention: true };
+  if (latest.conclusion === "action_required")
+    return { reason: "approval_required", attention: true };
+  if (latest.conclusion === "startup_failure")
+    return { reason: "startup_failure", attention: true };
+  if (latest.conclusion === "cancelled") {
+    if (latest.attempt > 1)
+      return { reason: "recovery_already_attempted", attention: true };
+    if (latest.updatedAt > now - RECOVERY_COOLDOWN_MS)
+      return { reason: "recovery_cooldown" };
+    return { run: latest };
+  }
   if (
-    !Number.isInteger(number) ||
-    number <= 0 ||
+    ["success", "failure", "neutral", "skipped", "timed_out"].includes(
+      latest.conclusion,
+    )
+  )
+    return { reason: "ci_present" };
+  return { reason: "unknown_run_conclusion", attention: true };
+}
+async function preflight(context, { pull, run }, repository, now) {
+  let current = parsePull(await get(context, `pulls/${pull.number}`));
+  let reason = driftReason(current, pull, repository, now);
+  if (reason) return reason;
+  if (!current.mergeable || !SHA.test(current.mergeSha ?? ""))
+    return "merge_snapshot_stale";
+  const association = binding(run, pull);
+  const base = await get(
+    context,
+    `git/ref/heads/${encodeURIComponent(pull.baseRef)}`,
+  );
+  if (
+    base?.ref !== `refs/heads/${pull.baseRef}` ||
+    base.object?.type !== "commit" ||
+    !SHA.test(base.object?.sha ?? "")
+  )
+    throw new Error("malformed live base ref");
+  if (association.base.sha !== base.object.sha) return "base_changed";
+  const merge = await get(context, `git/ref/pull/${pull.number}/merge`);
+  if (
+    merge?.ref !== `refs/pull/${pull.number}/merge` ||
+    merge.object?.type !== "commit" ||
+    merge.object?.sha !== current.mergeSha
+  )
+    return "merge_snapshot_stale";
+  const commit = await get(context, `git/commits/${current.mergeSha}`);
+  if (
+    commit?.sha !== current.mergeSha ||
+    commit.parents?.length !== 2 ||
+    commit.parents[0]?.sha !== base.object.sha ||
+    commit.parents[1]?.sha !== pull.sha
+  )
+    return "merge_snapshot_stale";
+  if (!(await hasFreshnessContract(context, pull.sha)))
+    return "workflow_contract_partial";
+  // Slow network/contract inspection must not leave a stale mutation target.
+  const latest = decideRecovery(
+    await listRuns(context, pull.sha),
+    pull,
+    now,
+  ).run;
+  if (!latest || latest.id !== run.id || latest.attempt !== run.attempt)
+    return "run_changed";
+  const detail = parseRun(await get(context, `actions/runs/${run.id}`));
+  if (
+    detail.id !== run.id ||
+    detail.sha !== pull.sha ||
+    detail.event !== "pull_request" ||
+    detail.path !== ".github/workflows/ci.yml" ||
+    detail.attempt !== run.attempt ||
+    detail.status !== "completed" ||
+    detail.conclusion !== "cancelled" ||
+    binding(detail, pull)?.base.sha !== base.object.sha
+  )
+    return "run_changed";
+  current = parsePull(await get(context, `pulls/${pull.number}`));
+  reason = driftReason(current, pull, repository, now);
+  if (reason) return reason;
+  if (!current.mergeable || current.mergeSha !== merge.object.sha)
+    return "merge_snapshot_stale";
+  const finalBase = await get(
+    context,
+    `git/ref/heads/${encodeURIComponent(pull.baseRef)}`,
+  );
+  if (finalBase?.ref !== base.ref || finalBase.object?.sha !== base.object.sha)
+    return "base_changed";
+  return null;
+}
+async function hasFreshnessContract(context, sha) {
+  const content = await get(
+    context,
+    `contents/.github/workflows/${WORKFLOW}?ref=${sha}`,
+  );
+  if (
+    content?.encoding !== "base64" ||
+    typeof content.content !== "string" ||
+    !content.content
+  )
+    throw new Error("malformed workflow content");
+  const workflow = parse(
+    Buffer.from(content.content, "base64").toString("utf8"),
+  );
+  const trigger = workflow?.on;
+  if (
+    !trigger ||
+    typeof trigger !== "object" ||
+    !Object.hasOwn(trigger, "pull_request")
+  )
+    return false;
+  const jobs = workflow.jobs;
+  if (!jobs?.["pr-checks"] || !jobs.paths || jobs.build?.if !== "always()")
+    return false;
+  const attemptGuard = jobs.build.steps?.find(
+    (step) => step.name === "Refuse carried-forward upstream evidence",
+  );
+  if (
+    !attemptGuard ||
+    attemptGuard.if ||
+    attemptGuard["continue-on-error"] ||
+    attemptGuard.env?.RUN_ATTEMPT !== "${{ github.run_attempt }}" ||
+    !attemptGuard.run?.includes("node scripts/check-build-evidence.mjs") ||
+    !attemptGuard.run.includes('--run-attempt "$RUN_ATTEMPT"') ||
+    !attemptGuard.run.includes('--attempt-started-at "$ATTEMPT_STARTED_AT"')
+  )
+    return false;
+  const freshnessShell =
+    /^set -euo pipefail\s+test -f scripts\/check-merge-tree-freshness\.mjs \|\| \{\s+echo "[^"\n]+"\s+exit 1\s+\}\s+node scripts\/check-merge-tree-freshness\.mjs --pr "\$PR_NUMBER" --head "\$HEAD_SHA"\s*$/;
+  let checkouts = 0;
+  for (const job of Object.values(jobs)) {
+    const steps = job?.steps;
+    if (!Array.isArray(steps)) continue;
+    const checkoutIndex = steps.findIndex((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    if (checkoutIndex < 0) continue;
+    checkouts++;
+    const guardIndex = steps.findIndex(
+      (step) =>
+        step.if === "github.event_name == 'pull_request'" &&
+        step.env?.PR_NUMBER === "${{ github.event.pull_request.number }}" &&
+        step.env?.HEAD_SHA === "${{ github.event.pull_request.head.sha }}" &&
+        typeof step.run === "string" &&
+        freshnessShell.test(step.run),
+    );
+    if (
+      guardIndex <= checkoutIndex ||
+      !steps
+        .slice(checkoutIndex + 1, guardIndex)
+        .every(
+          (step) =>
+            step.name === "Capture run base snapshot" &&
+            step.run ===
+              'node scripts/capture-ci-base-snapshot.mjs >> "$GITHUB_OUTPUT"',
+        ) ||
+      job["continue-on-error"] ||
+      steps[guardIndex]["continue-on-error"]
+    )
+      return false;
+  }
+  return checkouts > 0;
+}
+function parsePull(value) {
+  const createdAt = Date.parse(value?.created_at),
+    updatedAt = Date.parse(value?.updated_at);
+  if (
+    !Number.isSafeInteger(value?.number) ||
+    value.number < 1 ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(updatedAt) ||
-    typeof draft !== "boolean" ||
-    typeof state !== "string" ||
-    typeof url !== "string" ||
-    url.length === 0 ||
-    typeof ref !== "string" ||
-    ref.length === 0 ||
-    typeof sha !== "string" ||
-    !/^[0-9a-f]{40}$/i.test(sha) ||
-    typeof headRepository !== "string"
-  ) {
-    throw new Error("open pull request response contained a malformed entry");
-  }
-  return { number, createdAt, updatedAt, draft, state, url, ref, sha, headRepository };
-}
-
-function parseRun(value) {
-  const id = value?.id;
-  const status = value?.status;
-  // Normally null while a run is queued or in progress and a string once it
-  // completes, but validated as string-or-null against ANY status rather than
-  // keyed to `status === "completed"`. A completed run that reports no
-  // conclusion is odd, not malformed, and the only consumer below asks whether
-  // the conclusion IS the approval gate — a null answers "no" and the run is
-  // treated as coverage. Throwing there would turn a harmless API quirk into a
-  // dead recovery tool, which is a worse failure than reading one odd run
-  // conservatively.
-  const conclusion = value?.conclusion ?? null;
-  const event = value?.event;
-  const createdAt = Date.parse(value?.created_at);
-  const headSha = value?.head_sha;
-  const displayTitle = value?.display_title;
-  if (
-    !Number.isInteger(id) ||
-    id <= 0 ||
-    typeof status !== "string" ||
-    status.length === 0 ||
-    typeof event !== "string" ||
-    event.length === 0 ||
-    !Number.isFinite(createdAt) ||
-    typeof headSha !== "string" ||
-    !/^[0-9a-f]{40}$/i.test(headSha) ||
-    typeof displayTitle !== "string" ||
-    displayTitle.length === 0 ||
-    (conclusion !== null && typeof conclusion !== "string")
-  ) {
-    throw new Error("CI workflow run response contained a malformed entry");
-  }
-  const expectedShaMatch =
-    event === "workflow_dispatch"
-      ? displayTitle.match(/^CI workflow_dispatch ([0-9a-f]{40})$/i)
-      : null;
-  const hasInvalidExpectedShaStamp =
-    event === "workflow_dispatch" &&
-    displayTitle.startsWith("CI workflow_dispatch ") &&
-    expectedShaMatch === null;
+    typeof value.draft !== "boolean" ||
+    !["open", "closed"].includes(value.state) ||
+    !SHA.test(value.head?.sha ?? "") ||
+    typeof value.head?.ref !== "string" ||
+    typeof value.head.repo?.full_name !== "string" ||
+    typeof value.base?.ref !== "string" ||
+    typeof value.base.repo?.full_name !== "string" ||
+    typeof value.html_url !== "string"
+  )
+    throw new Error("malformed pull request evidence");
   return {
-    id,
-    status,
-    conclusion,
-    event,
+    number: value.number,
     createdAt,
-    headSha,
-    expectedSha: expectedShaMatch?.[1] ?? null,
-    hasInvalidExpectedShaStamp,
+    updatedAt,
+    draft: value.draft,
+    state: value.state,
+    sha: value.head.sha,
+    ref: value.head.ref,
+    headRepository: value.head.repo.full_name,
+    baseRef: value.base.ref,
+    baseRepository: value.base.repo.full_name,
+    url: value.html_url,
+    mergeable: value.mergeable,
+    mergeSha: value.merge_commit_sha,
   };
 }
-
+function parseRun(value) {
+  const createdAt = Date.parse(value?.created_at),
+    updatedAt = Date.parse(value?.updated_at);
+  if (
+    !Number.isSafeInteger(value?.id) ||
+    value.id < 1 ||
+    !Number.isSafeInteger(value.run_attempt) ||
+    value.run_attempt < 1 ||
+    !Number.isFinite(createdAt) ||
+    !Number.isFinite(updatedAt) ||
+    !SHA.test(value.head_sha ?? "") ||
+    typeof value.status !== "string" ||
+    typeof value.event !== "string" ||
+    !Array.isArray(value.pull_requests) ||
+    (value.conclusion !== null && typeof value.conclusion !== "string")
+  )
+    throw new Error("malformed workflow run evidence");
+  return {
+    id: value.id,
+    attempt: value.run_attempt,
+    createdAt,
+    updatedAt,
+    sha: value.head_sha,
+    status: value.status,
+    conclusion: value.conclusion,
+    event: value.event,
+    pulls: value.pull_requests,
+    path: value.path,
+  };
+}
 function baseSkipReason(pull, repository, now) {
   if (pull.state !== "open") return "pull_closed";
   if (pull.draft) return "draft";
-  if (pull.headRepository.toLowerCase() !== repository.toLowerCase()) return "fork_head";
-  if (Math.max(pull.createdAt, pull.updatedAt) > now - RECOVERY_GRACE_MS) {
+  if (pull.headRepository.toLowerCase() !== repository.toLowerCase())
+    return "fork_head";
+  if (
+    pull.baseRepository.toLowerCase() !== repository.toLowerCase() ||
+    pull.baseRef !== "main"
+  )
+    return "other_base";
+  if (Math.max(pull.createdAt, pull.updatedAt) > now - RECOVERY_GRACE_MS)
     return "grace_period";
-  }
   return null;
 }
-
-function dispatchSkipReason(current, expected, repository, now) {
-  if (current.state !== "open") return "pull_closed";
+function driftReason(current, expected, repository, now) {
+  const reason = baseSkipReason(current, repository, now);
+  if (reason) return reason;
   if (
     current.sha !== expected.sha ||
     current.ref !== expected.ref ||
-    current.headRepository.toLowerCase() !== repository.toLowerCase()
-  ) {
+    current.baseRef !== expected.baseRef
+  )
     return "head_changed";
-  }
-  return baseSkipReason(current, repository, now);
+  return null;
 }
-
 function nextLink(header) {
-  if (!header) return null;
-  for (const part of header.split(",")) {
+  for (const part of (header ?? "").split(",")) {
     const match = part.trim().match(/^<([^>]+)>;\s*rel="([^"]+)"$/);
     if (match?.[2].split(/\s+/).includes("next")) return match[1];
   }
   return null;
 }
-
-function isPullInventoryUrl(value, context) {
+if (
+  process.argv[1] &&
+  pathToFileURL(process.argv[1]).href === import.meta.url
+) {
   try {
-    const candidate = new URL(value);
-    const api = new URL(context.apiUrl);
-    const apiPath = api.pathname.replace(/\/+$/, "");
-    return (
-      candidate.origin === api.origin &&
-      candidate.pathname === `${apiPath}/repos/${context.repositoryPath}/pulls`
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** Render a per-candidate failure as a one-line skip reason.
- *
- * Kept on one line because these are printed one per line, and a multi-line
- * reason would break a log a human scans for what was dropped.
- */
-function failureReason(cause) {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  return `error: ${message.replace(/\s+/g, " ").trim() || "unknown failure"}`;
-}
-
-function requiredEnv(env, name) {  const value = env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
-function requiredRepository(value) {
-  const repository = value?.trim();
-  if (!repository || !/^[^/\s]+\/[^/\s]+$/.test(repository)) {
-    throw new Error("GITHUB_REPOSITORY must use OWNER/REPO form");
-  }
-  return repository;
-}
-
-function parseArgs(argv) {
-  const options = { apply: false, json: false };
-  for (const arg of argv) {
-    if (arg === "--apply") options.apply = true;
-    else if (arg === "--json") options.json = true;
-    else if (arg === "-h" || arg === "--help") {
-      console.log("Usage: node scripts/ci-recovery.mjs [--apply] [--json]");
-      return null;
-    } else {
-      throw new Error(`unsupported argument: ${arg}`);
-    }
-  }
-  return options;
-}
-
-const isDirectRun =
-  process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url;
-
-if (isDirectRun) {
-  try {
-    const options = parseArgs(process.argv.slice(2));
-    if (options) {
+    const args = process.argv.slice(2);
+    if (
+      args.some((arg) => !["--apply", "--json", "--help", "-h"].includes(arg))
+    )
+      throw new Error("unsupported recovery argument");
+    if (args.includes("--help") || args.includes("-h"))
+      console.log(
+        "Usage: node scripts/ci-recovery.mjs [--apply] [--json]\nOnly full retries of eligible cancelled PR runs are automatic; other cases report maintainer actions.",
+      );
+    else {
       const result = await runCiRecovery({
-        apply: options.apply,
-        log: options.json ? () => {} : console.log,
+        apply: args.includes("--apply"),
+        log: args.includes("--json") ? () => {} : console.log,
       });
-      if (options.json) console.log(JSON.stringify(result, null, 2));
-      // Every recoverable PR has already been dispatched by this point. A
-      // non-zero exit reports the candidates that were dropped for a reason a
-      // human should fix; it no longer means recovery was skipped.
+      if (args.includes("--json")) console.log(JSON.stringify(result, null, 2));
       if (result.degraded) process.exitCode = 1;
     }
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    console.error(`ci-recovery: ${message}`);
+  } catch (error) {
+    console.error(`ci-recovery: ${error.message}`);
     process.exitCode = 1;
   }
 }

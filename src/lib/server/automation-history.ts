@@ -16,6 +16,11 @@ const states = new Set(["none", "planned", "eligible", "claimed", "dispatching",
   "recovery_required", "succeeded", "failed", "cancelled", "timed_out", "skipped", "superseded",
   "adopted", "started", "observing", "ambiguous", "queued", "cancellation_requested"]);
 
+/** The display label and non-sensitive detail for one validated event. */
+export function describeAutomationEvent(event: CovenAutomationEvent): { label: string; detail: string } {
+  return { label: labels[event.kind], detail: detail(event) };
+}
+
 function detail(event: CovenAutomationEvent): string {
   if ("revision" in event.payload) return `Revision ${event.payload.revision}`;
   if ("from" in event.payload) {
@@ -56,7 +61,7 @@ export async function readAutomationHistory(
     return {
       kind: "available",
       entries: visible.map(event => ({ id: event.eventId, sequence: event.sequence, recordedAt: event.recordedAt,
-        label: labels[event.kind], detail: detail(event) })),
+        ...describeAutomationEvent(event) })),
       withheld: page.events.length - visible.length,
       checkpoint: page.checkpoint,
       hasEntries: page.events.length > 0,
@@ -64,7 +69,8 @@ export async function readAutomationHistory(
     };
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (code === "CURSOR_EXPIRED") return { kind: "expired" };
+    // Coven prunes a checkpoint once it expires, so an expired one can also come back unknown.
+    if (code === "CURSOR_EXPIRED" || (code === "NOT_FOUND" && checkpoint !== null)) return { kind: "expired" };
     if (code === "capability_unsupported" || code === "unsupported_operation") return { kind: "unsupported" };
     return { kind: "unavailable" };
   }

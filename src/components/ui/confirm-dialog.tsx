@@ -97,3 +97,12 @@ export function useConfirm(): (opts: ConfirmOptions) => Promise<boolean> {
   if (!ctx) throw new Error("useConfirm must be used within a ConfirmProvider");
   return ctx;
 }
+
+/**
+ * Like `useConfirm`, but `null` when no provider is in scope — for components
+ * that also render in controlled or test trees without the app layout. A caller
+ * runs the action directly when there is nobody to ask.
+ */
+export function useOptionalConfirm(): ((opts: ConfirmOptions) => Promise<boolean>) | null {
+  return useContext(ConfirmContext);
+}

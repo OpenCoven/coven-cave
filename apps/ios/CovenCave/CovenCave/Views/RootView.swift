@@ -148,34 +148,8 @@ struct MainShellView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsMounted = false
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                shellContent
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .modifier(
-                        DrawerDestinationStage(
-                            isOpen: app.navigationDrawerOpen,
-                            availableWidth: geometry.size.width
-                        )
-                    )
-
-                CaveNavigationDrawer(
-                    isOpen: Binding(
-                        get: { app.navigationDrawerOpen },
-                        set: { app.navigationDrawerOpen = $0 }
-                    ),
-                    openThread: { _ = app.requestOpen($0) },
-                    newChat: {
-                        app.selectedTab = .chats
-                        app.newChatRequested = true
-                    },
-                    openSearch: {
-                        app.selectedTab = .chats
-                        app.chatSearchRequested = true
-                    }
-                )
-                .zIndex(100)
-            }
+        CaveNavigationHost {
+            shellContent
         }
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
         .background {
@@ -262,7 +236,7 @@ struct MainShellView: View {
     }
 }
 
-private struct DrawerDestinationStage: ViewModifier {
+struct DrawerDestinationStage: ViewModifier {
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -352,10 +326,12 @@ struct ConnectingView: View {
             Spacer()
         }
         .padding(.horizontal, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Connecting to your desktop")
         .accessibilityValue(app.connection?.host ?? "")
+        // Fills the screen; a folded hinge moves the status into one pane,
+        // the upper one in tabletop, since there is nothing here to tap.
+        .foldAvoiding(tabletop: .top)
     }
 
     @ViewBuilder

@@ -201,6 +201,24 @@ async function gotoApp(
 const setup = (page: Page) => page.getByRole("dialog", { name: "Set up Cave" });
 
 test.describe("onboarding bootstrap", () => {
+  test("completed local setup hands off without duplicating runtime installation", async ({ page }) => {
+    const complete = state({ confirmed: true, complete: true, needsSetup: false, status: "complete",
+      stages: state().stages.map((stage) => ({ ...stage, status: "complete", detail: "Ready." })) });
+    let installPosts = 0;
+    await page.route("**/api/harnesses**", (route) => route.fulfill({ json: { ok: true, harnesses: [] } }));
+    await page.route("**/api/onboarding/install**", (route) => {
+      if (route.request().method() === "POST") installPosts += 1;
+      return route.fulfill({ json: { status: "idle", npmBusy: false } });
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(complete) }));
+    const dialog = setup(page);
+    await expect(dialog.getByRole("region", { name: "Chat runtime" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Open Cave", exact: true })).toBeVisible();
+    expect(installPosts).toBe(0);
+    await dialog.getByRole("button", { name: "Open Cave", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
   test("auto-opens on first run and traps keyboard focus", async ({ page }) => {
     await gotoApp(page, (route) => route.fulfill({ json: payload(state()) }));
     await expect(setup(page)).toBeVisible({ timeout: 30_000 });
@@ -618,6 +636,142 @@ test.describe("onboarding bootstrap", () => {
     await expect(setup(page)).toHaveCount(0);
   });
 
+  test("Run in background keeps progress in the shell banner until setup completes", async ({
+    page,
+  }) => {
+    const running = state({
+      confirmed: true,
+      status: "running",
+      activeStage: "core-tools",
+      stages: [
+        {
+          ...state().stages[0],
+          status: "running",
+          detail: "Preparing Cave’s private Node.js and npm runtime…",
+        },
+        ...state().stages.slice(1),
+      ],
+    });
+    const complete = state({
+      confirmed: true,
+      complete: true,
+      needsSetup: false,
+      status: "complete",
+      stages: state().stages.map((stage) => ({
+        ...stage,
+        status: "complete",
+        detail: "Ready.",
+      })),
+    });
+    let current = state();
+    await gotoApp(page, async (route) => {
+      if (route.request().method() === "POST") current = running;
+      await route.fulfill({ json: payload(current) });
+    });
+
+    const dialog = setup(page);
+    await dialog.getByRole("button", { name: "Set up Cave", exact: true }).click();
+    await dialog.getByRole("button", { name: "Run in background" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const progress = page.locator(".shell-banner--info", {
+      hasText: "Setting up Cave — Prepare local components…",
+    });
+    await expect(progress).toBeVisible({ timeout: 15_000 });
+    await expect(progress.getByRole("button", { name: "View setup" })).toBeVisible();
+
+    current = complete;
+    const done = page.locator(".shell-banner--info", { hasText: "Cave is set up." });
+    await expect(done).toBeVisible({ timeout: 15_000 });
+    await expect(done.getByRole("button", { name: "View setup" })).toHaveCount(0);
+    await expect(done.getByRole("button", { name: "Dismiss" })).toBeVisible();
+    await expect(setup(page)).toHaveCount(0);
+  });
+
+  test("a failed background run warns in the banner and Retry setup reopens the dialog", async ({
+    page,
+  }) => {
+    const running = state({
+      confirmed: true,
+      status: "running",
+      activeStage: "workspace",
+      stages: state().stages.map((stage) =>
+        stage.id === "core-tools"
+          ? { ...stage, status: "complete", detail: "Local components are ready." }
+          : stage.id === "workspace"
+            ? { ...stage, status: "running", detail: "Creating user-scoped folders…" }
+            : stage,
+      ),
+    });
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "workspace",
+      stages: running.stages.map((stage) =>
+        stage.id === "workspace"
+          ? { ...stage, status: "failed", detail: "Setup stopped at Create Cave defaults." }
+          : stage,
+      ),
+      failure: {
+        stage: "workspace",
+        stageLabel: "Create Cave defaults",
+        message:
+          "Setup stopped at Create Cave defaults. Check that ~/.coven is writable, then retry setup.",
+        recoveryLabel: "Retry setup",
+      },
+    });
+    let current = running;
+    await gotoApp(
+      page,
+      (route) => route.fulfill({ json: payload(current) }),
+      { dismissed: true },
+    );
+
+    const dialog = setup(page);
+    await dialog.getByRole("button", { name: "Run in background" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.locator(".shell-banner--info", { hasText: "Setting up Cave — Create Cave defaults…" }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    current = failed;
+    const warning = page.locator(".shell-banner--warning", {
+      hasText: "Setup stopped at Create Cave defaults.",
+    });
+    await expect(warning).toBeVisible({ timeout: 15_000 });
+    await warning.getByRole("button", { name: "Retry setup" }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("alert")).toContainText("Create Cave defaults is blocked");
+    await expect(dialog.getByRole("alert").getByRole("button", { name: "Retry setup" })).toHaveCount(1);
+    await expect(warning).toHaveCount(0);
+  });
+
+  test("Settings › General › Setup opens the dialog on the standalone route", async ({
+    page,
+  }) => {
+    await baseRoutes(page);
+    await page.route("**/api/onboarding/bootstrap**", (route) =>
+      route.fulfill({ json: payload(state()) }),
+    );
+    await page.goto("/settings#general");
+
+    const group = page.getByRole("group", { name: "Setup" });
+    await expect(group).toBeVisible({ timeout: 30_000 });
+    await expect(group).toContainText("Not run yet");
+    await group.getByRole("button", { name: "Open setup" }).click();
+
+    const dialog = setup(page);
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await expect(
+      dialog.getByRole("button", { name: "Set up Cave", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await group.getByRole("button", { name: "Open setup" }).click();
+    await expect(setup(page)).toBeVisible();
+  });
+
   test("confirmed interrupted setup resumes even after an earlier dismissal", async ({
     page,
   }) => {
@@ -647,3 +801,110 @@ test.describe("onboarding bootstrap", () => {
     await expect.poll(() => resumes).toBe(1);
   });
 });
+
+test("completed setup can explicitly recheck a later daemon failure", async ({ page }) => {
+  let confirmations = 0;
+  let current = state({
+    confirmed: true, complete: true, needsSetup: false, status: "complete",
+    stages: state().stages.map(stage => ({ ...stage, status: "complete" })),
+  });
+  await gotoApp(page, async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({ confirm: true });
+      confirmations += 1;
+      current = state({
+        confirmed: true, status: "failed", activeStage: "daemon",
+        stages: current.stages.map(stage => stage.id === "daemon"
+          ? { ...stage, status: "failed", detail: "The local service could not start." } : stage),
+        failure: { stage: "daemon", stageLabel: "Start local services",
+          message: "The local service could not start. Retry setup.", recoveryLabel: "Retry setup" },
+      });
+    }
+    await route.fulfill({ json: payload(current) });
+  }, { dismissed: true });
+  const dialog = setup(page);
+  await dialog.getByRole("button", { name: "Run setup again", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Retry setup", exact: true })).toBeVisible();
+  expect(confirmations).toBe(1);
+});
+
+
+for (const scenario of ["foreground", "background", "unavailable"] as const) {
+  test(`setup completion reconciles daemon health (${scenario})`, async ({ page }) => {
+    let current = state();
+    let freshReads = 0;
+    let familiarReads = 0;
+    let releaseHealth: (() => void) | undefined;
+    const health = new Promise<void>((resolve) => { releaseHealth = resolve; });
+    const offline = { running: false, availability: "offline", reason: "daemon offline", target: { mode: "local" } };
+    await page.route("**/api/daemon/connection**", async (route) => {
+      if (new URL(route.request().url()).searchParams.get("fresh") === "1" && current.complete) {
+        freshReads += 1;
+        await health;
+        await route.fulfill({ json: scenario === "unavailable"
+          ? { running: false, availability: "unreachable", reason: "ECONNREFUSED", target: { mode: "local" } }
+          : { running: true, availability: "online", target: { mode: "local" } } });
+        return;
+      }
+      // Ordinary polls deliberately stay offline: the completion bridge must
+      // initiate a fresh authoritative read, not wait out its retry cadence.
+      await route.fulfill({ json: offline });
+    });
+    await page.route("**/api/harnesses**", (route) => route.fulfill({ json: { ok: true, harnesses: [] } }));
+    await page.route("**/api/onboarding/install**", (route) => route.fulfill({ json: { status: "idle", npmBusy: false } }));
+    await gotoApp(page, async (route) => {
+      if (route.request().method() === "POST") {
+        current = state({ confirmed: true, status: "running", activeStage: "daemon" });
+      }
+      await route.fulfill({ json: payload(current) });
+    }, { dismissed: true, openOnboarding: false });
+    // Count the global roster refreshed by a verified running transition;
+    // unrelated project-crew queries keep the baseRoutes fixture.
+    await page.route("**/api/familiars", (route) => {
+      familiarReads += 1;
+      return route.fulfill({ json: { ok: true, familiars: [] } });
+    });
+    const offlineBanner = page.locator(".shell-banner").filter({ hasText: "Daemon offline — open setup to get connected." });
+    await expect(offlineBanner).toBeVisible({ timeout: 15_000 });
+    await offlineBanner.getByRole("button", { name: "Open setup", exact: true }).click();
+    await setup(page).getByRole("button", { name: "Set up Cave", exact: true }).click();
+    await expect(setup(page).getByRole("button", { name: "Run in background" })).toBeVisible();
+    expect(freshReads).toBe(0);
+    if (scenario === "background") {
+      await setup(page).getByRole("button", { name: "Run in background" }).click();
+      await expect(setup(page)).toHaveCount(0);
+    }
+    const rosterBefore = familiarReads;
+    current = state({ confirmed: true, complete: true, needsSetup: false, status: "complete",
+      stages: state().stages.map((stage) => ({ ...stage, status: "complete", detail: "Ready." })) });
+    try {
+      if (scenario === "background") {
+        await expect(page.locator(".shell-banner").filter({ hasText: "Cave is set up." })).toBeVisible({ timeout: 10_000 });
+      } else {
+        await expect(setup(page).getByRole("button", { name: "Run setup again" })).toBeVisible({ timeout: 10_000 });
+      }
+      await expect.poll(() => freshReads, { timeout: 2_000 }).toBe(1);
+      await expect(offlineBanner).toBeVisible();
+      const healthResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/daemon/connection" && new URL(response.url()).searchParams.get("fresh") === "1");
+      releaseHealth!();
+      await (await healthResponse).finished();
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      if (scenario === "unavailable") {
+        await expect(offlineBanner).toBeVisible();
+        expect(familiarReads).toBe(rosterBefore);
+      } else {
+        await expect(offlineBanner).toHaveCount(0, { timeout: 2_000 });
+        await expect.poll(() => familiarReads, { timeout: 2_000 }).toBeGreaterThan(rosterBefore);
+      }
+      // Reopening the shared dialog republishes the complete snapshot. It is
+      // not another run, and cannot issue another fresh read.
+      if (scenario !== "background") await setup(page).getByRole("button", { name: "Open Cave", exact: true }).click();
+      await page.evaluate(() => window.dispatchEvent(new Event("cave:onboarding-open")));
+      await expect(setup(page).getByRole("button", { name: "Run setup again" })).toBeVisible();
+      await setup(page).getByRole("button", { name: "Open Cave", exact: true }).click();
+      expect(freshReads).toBe(1);
+    } finally {
+      releaseHealth!();
+    }
+  });
+}

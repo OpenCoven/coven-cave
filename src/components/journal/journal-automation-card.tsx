@@ -1,36 +1,54 @@
 "use client";
 
+import { pendingIntentMap } from "@/lib/automations/pending-intent-store";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import type { ReviewedAutomationSource } from "@/lib/server/automation-consumer-commands";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { relativeTime } from "@/lib/daily-report";
 import {
-  DEFAULT_JOURNAL_ROUTINE_TIME,
   DEFAULT_JOURNAL_RUNTIME,
+  JOURNAL_ROUTINE_TIMEOUT_MINUTES,
   JOURNAL_RUNTIMES,
   formatRoutineHour,
   isJournalRuntime,
-  type JournalRuntime,
+  suggestedJournalHour,
+  type JournalRunFailure,
 } from "@/lib/journal-automation";
 
 /** The routine fields this card reads from GET/PUT /api/journal/automation. */
-type RoutineView = { id: string; status: "ACTIVE" | "PAUSED"; hour: number | null; minute: number | null; runtime?: string };
+type RoutineView = { id: string; status: "ACTIVE" | "PAUSED" | "DISABLED"; hour: number | null; minute: number | null; runtime?: string; revision?: number; reviewedSource?: ReviewedAutomationSource };
 type RunView = { id: string; status: "running" | "succeeded" | "failed" | "cancelled"; startedAt: string; finishedAt?: string; sessionId?: string };
 /** Whether the last succeeded run actually wrote the day's entry (server-checked). */
 type RunEntryView = { date: string; written: boolean } | null;
+/** Why the last run failed, read server-side from its session log. */
+type RunFailureView = JournalRunFailure | null;
 
 type CardState =
   | { kind: "loading" }
-  | { kind: "ready"; routine: RoutineView | null; lastRun: RunView | null; lastRunEntry: RunEntryView }
+  | {
+      kind: "ready";
+      routine: RoutineView | null;
+      lastRun: RunView | null;
+      lastRunUnavailable: boolean;
+      lastRunEntry: RunEntryView;
+      lastRunFailure: RunFailureView;
+      /** The routine was saved with older reflection instructions. */
+      promptOutdated: boolean;
+    }
   /** The daemon's automations service can't be reached — said precisely, no fallback. */
   | { kind: "unavailable"; error: string }
   | { kind: "error"; error: string };
 
 const RUN_POLL_MS = 5_000;
-const RUN_POLL_LIMIT = 36; // three minutes of watching; the list refresh on return covers a slower run
+/** Watch for as long as a run may take (the routine's timeout), plus a minute
+ *  of slack for the daemon to record the outcome. */
+const RUN_POLL_LIMIT = Math.ceil(((JOURNAL_ROUTINE_TIMEOUT_MINUTES + 1) * 60_000) / RUN_POLL_MS);
 
 const RUN_STATUS_LABEL: Record<RunView["status"], string> = {
   running: "Running",
@@ -39,16 +57,25 @@ const RUN_STATUS_LABEL: Record<RunView["status"], string> = {
   cancelled: "Cancelled",
 };
 
-/** The routine's hour, or the default for a familiar without one. Coven
- *  routines run on the hour — the native scheduler has no BYMINUTE. */
-function routineHour(routine: RoutineView | null): number {
-  return routine && routine.hour !== null ? routine.hour : DEFAULT_JOURNAL_ROUTINE_TIME.hour;
+/** The routine's hour, or a staggered morning default for a familiar
+ *  without one. Coven routines run on the hour — the native scheduler has
+ *  no BYMINUTE. */
+function routineHour(routine: RoutineView | null, familiarId: string): number {
+  return routine && routine.hour !== null ? routine.hour : suggestedJournalHour(familiarId);
 }
 
 const HOUR_VALUES = Array.from({ length: 24 }, (_, hour) => String(hour));
+/** Picker value for a schedule set elsewhere that isn't one daily hour. */
+const CUSTOM_SCHEDULE = "custom";
 
-function routineRuntime(routine: RoutineView | null): JournalRuntime {
-  return routine && isJournalRuntime(routine.runtime) ? routine.runtime : DEFAULT_JOURNAL_RUNTIME;
+/** A routine whose rule isn't a single daily hour (e.g. edited in Rituals). */
+function hasCustomSchedule(routine: RoutineView | null): boolean {
+  return Boolean(routine) && routine!.hour === null;
+}
+
+/** The harness the routine runs on — including one picked outside this card. */
+function routineRuntime(routine: RoutineView | null): string {
+  return routine?.runtime || DEFAULT_JOURNAL_RUNTIME;
 }
 
 function runtimeLabel(runtime: string): string {
@@ -69,14 +96,18 @@ export function JournalAutomationCard({
 }: {
   familiarId: string;
   familiarName: string;
-  /** Called when a Run now finishes, so the journal can reload the new entry. */
-  onRunFinished?: () => void;
+  /** Called when a Run now finishes, with the day the run is answerable for,
+   *  so the journal can open the entry it wrote. */
+  onRunFinished?: (entry: RunEntryView) => void;
 }) {
   const { announce } = useAnnouncer();
+  const confirm = useConfirm();
+  const pendingSaves = useRef(pendingIntentMap<{ body: string; intent: string }>("journal-save"));
+  const pendingActivations = useRef(pendingIntentMap<{ id: string; body: string }>("journal-activate"));
   const [state, setState] = useState<CardState>({ kind: "loading" });
-  const [hour, setHour] = useState<number>(DEFAULT_JOURNAL_ROUTINE_TIME.hour);
-  const [runtime, setRuntime] = useState<JournalRuntime>(DEFAULT_JOURNAL_RUNTIME);
-  const [busy, setBusy] = useState<"toggle" | "time" | "runtime" | "run" | null>(null);
+  const [hour, setHour] = useState<number>(() => suggestedJournalHour(familiarId));
+  const [runtime, setRuntime] = useState<string>(DEFAULT_JOURNAL_RUNTIME);
+  const [busy, setBusy] = useState<"toggle" | "time" | "runtime" | "prompt" | "run" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [runNote, setRunNote] = useState<string | null>(null);
   // While a Run now is in flight, poll for its outcome (bounded, and paused
@@ -84,6 +115,7 @@ export function JournalAutomationCard({
   const [watchingRun, setWatchingRun] = useState(false);
   const watchRef = useRef<{ startedAfter: string; tries: number } | null>(null);
   const mountedRef = useRef(true);
+  const familiarGeneration = useRef(0);
   const reqRef = useRef(0);
   const onRunFinishedRef = useRef(onRunFinished);
   useEffect(() => {
@@ -97,12 +129,20 @@ export function JournalAutomationCard({
     };
   }, []);
 
-  const applyBody = useCallback((json: { routine?: RoutineView | null; lastRun?: RunView | null; lastRunEntry?: RunEntryView }) => {
+  const applyBody = useCallback((json: { routine?: RoutineView | null; lastRun?: RunView | null; lastRunUnavailable?: boolean; lastRunEntry?: RunEntryView; lastRunFailure?: RunFailureView; promptOutdated?: boolean }) => {
     const routine = json.routine ?? null;
-    setState({ kind: "ready", routine, lastRun: json.lastRun ?? null, lastRunEntry: json.lastRunEntry ?? null });
-    setHour(routineHour(routine));
+    setState({
+      kind: "ready",
+      routine,
+      lastRun: json.lastRun ?? null,
+      lastRunUnavailable: json.lastRunUnavailable === true,
+      lastRunEntry: json.lastRunEntry ?? null,
+      lastRunFailure: json.lastRunFailure ?? null,
+      promptOutdated: json.promptOutdated === true,
+    });
+    setHour(routineHour(routine, familiarId));
     setRuntime(routineRuntime(routine));
-  }, []);
+  }, [familiarId]);
 
   /** Load the routine; resolves to the fresh state (or null when stale). */
   const load = useCallback(async (quiet = false): Promise<CardState | null> => {
@@ -123,7 +163,15 @@ export function JournalAutomationCard({
         return next;
       }
       applyBody(json);
-      return { kind: "ready", routine: json.routine ?? null, lastRun: json.lastRun ?? null, lastRunEntry: json.lastRunEntry ?? null };
+      return {
+        kind: "ready",
+        routine: json.routine ?? null,
+        lastRun: json.lastRun ?? null,
+        lastRunUnavailable: json.lastRunUnavailable === true,
+        lastRunEntry: json.lastRunEntry ?? null,
+        lastRunFailure: json.lastRunFailure ?? null,
+        promptOutdated: json.promptOutdated === true,
+      };
     } catch (err) {
       if (reqId !== reqRef.current || !mountedRef.current) return null;
       const next: CardState = { kind: "error", error: err instanceof Error ? err.message : "request failed" };
@@ -133,48 +181,114 @@ export function JournalAutomationCard({
   }, [familiarId, applyBody]);
 
   useEffect(() => {
+    familiarGeneration.current += 1;
+    setBusy(null);
     setActionError(null);
     setRunNote(null);
     void load();
   }, [load]);
 
+  const activate = useCallback(async (routine?: RoutineView) => {
+    const generation = familiarGeneration.current;
+    const current = () => mountedRef.current && generation === familiarGeneration.current;
+    let pending = pendingActivations.current.get(familiarId);
+    if (!pending) {
+      if (!routine?.reviewedSource || !routine.revision || routine.status !== "PAUSED") throw new Error("The paused revision could not be confirmed. Refresh before activating.");
+      const source = routine.reviewedSource.routine;
+      if (!(await confirm({ title: `Activate ${familiarName}'s daily reflection?`,
+        body: `Review revision ${routine.revision}: ${source.rrule}, timezone ${source.timezone}, runtime ${source.runtime}. Instructions: ${source.prompt}`,
+        confirmLabel: "Activate daily reflection" }))) return;
+      if (!current()) return;
+      pending = { id: routine.id, body: JSON.stringify({ command: "activate", expectedRevision: routine.revision,
+        adoptionKey: `journal-activate:${routine.id}:${routine.revision}` }) };
+      pendingActivations.current.set(familiarId, pending);
+    }
+    const res = await fetch(`/api/coven-automations/${encodeURIComponent(pending.id)}/lifecycle`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: pending.body,
+    });
+    const json = await res.json().catch(() => null);
+    if (!current()) return;
+    if (json?.kind !== "committed") {
+      if (json?.kind === "conflict" || json?.kind === "rejected" || json?.kind === "invalid") {
+        pendingActivations.current.delete(familiarId);
+        await load(true);
+        throw new Error("Activation was refused. Review the current schedule before trying again.");
+      }
+      throw new Error("Activation is unconfirmed. Toggle again to retry the original activation request.");
+    }
+    pendingActivations.current.delete(familiarId);
+    await load(true);
+    announce(`Daily reflection activated for ${familiarName}.`);
+  }, [familiarId, familiarName, confirm, load, announce]);
+
   const save = useCallback(async (
     enabled: boolean,
-    nextHour: number,
-    nextRuntime: JournalRuntime,
-    reason: "toggle" | "time" | "runtime",
+    nextHour: number | null,
+    nextRuntime: string | undefined,
+    reason: "toggle" | "time" | "runtime" | "prompt",
   ) => {
+    const generation = familiarGeneration.current;
+    const current = () => mountedRef.current && generation === familiarGeneration.current;
     setBusy(reason);
     setActionError(null);
+    // A refresh already in flight was read before this save; drop it so it
+    // can't put the old setting back on screen.
+    reqRef.current += 1;
     try {
+      if (pendingActivations.current.has(familiarId)) { await activate(); return; }
+      if (state.kind !== "ready") throw new Error("Refresh the schedule before changing it.");
+      const intent = JSON.stringify({ enabled, nextHour, nextRuntime, reason });
+      let pending = pendingSaves.current.get(familiarId);
+      if (!pending) {
+        if (state.routine && (!state.routine.reviewedSource || !state.routine.revision)) throw new Error("Refresh to load the reviewed schedule revision before saving.");
+        pending = { intent, body: JSON.stringify({ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName,
+          mutation: { adoptionKey: `journal-save:${crypto.randomUUID()}`, source: state.routine?.reviewedSource ?? null,
+            ...(state.routine ? { expectedRevision: state.routine.revision } : {}), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } }) };
+        pendingSaves.current.set(familiarId, pending);
+      }
+      // hour null keeps a custom schedule; an omitted runtime keeps the
+      // routine's harness (which may have been picked in Rituals).
       const res = await fetch("/api/journal/automation", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName }),
+        body: pending.body,
       });
       const json = await res.json().catch(() => ({}));
-      if (!mountedRef.current) return;
-      if (json.available === false || res.status === 503) {
-        setState({ kind: "unavailable", error: json.error ?? `HTTP ${res.status}` });
+      if (!current()) return;
+      reqRef.current += 1;
+      if (!res.ok || !json.ok) {
+        if (res.status >= 400 && res.status < 500 && json.uncertain !== true) pendingSaves.current.delete(familiarId);
+        if (json.conflict) await load(true);
+        throw new Error(json.error ?? "The save is unconfirmed. Retry the original change.");
+      }
+      pendingSaves.current.delete(familiarId);
+      applyBody(json);
+      if (pending.intent !== intent) {
+        setActionError("The previous change is confirmed. Your newer selection was not applied; review it and choose again.");
         return;
       }
-      if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't save the daily reflection.");
-      applyBody(json);
+      if (enabled && reason === "toggle" && json.routine?.status === "PAUSED") {
+        announce(`Daily reflection saved paused for ${familiarName}.`);
+        await activate(json.routine);
+        return;
+      }
       announce(
-        reason === "time"
-          ? `Daily reflection time set to ${formatRoutineHour(nextHour)}.`
+        reason === "prompt"
+          ? `${familiarName}'s daily reflection now uses the latest instructions.`
+          : reason === "time"
+          ? `Daily reflection time set to ${formatRoutineHour(nextHour ?? 0)}.`
           : reason === "runtime"
-            ? `Daily reflection now runs on ${runtimeLabel(nextRuntime)}.`
+            ? `Daily reflection now runs on ${runtimeLabel(nextRuntime ?? runtime)}.`
             : enabled
             ? `Daily reflection turned on for ${familiarName}.`
             : `Daily reflection paused for ${familiarName}.`,
       );
     } catch (err) {
-      if (mountedRef.current) setActionError(err instanceof Error ? err.message : "Couldn't save the daily reflection.");
+      if (current()) setActionError(err instanceof Error ? err.message : "Couldn't save the daily reflection.");
     } finally {
-      if (mountedRef.current) setBusy(null);
+      if (current()) setBusy(null);
     }
-  }, [familiarId, familiarName, applyBody, announce]);
+  }, [familiarId, familiarName, runtime, applyBody, announce, activate, state, load]);
 
   const stopWatching = useCallback(() => {
     watchRef.current = null;
@@ -191,7 +305,7 @@ export function JournalAutomationCard({
     if (run && run.startedAt >= watch.startedAfter && run.status !== "running") {
       stopWatching();
       announce(`Reflection run ${RUN_STATUS_LABEL[run.status].toLowerCase()}.`);
-      onRunFinishedRef.current?.();
+      onRunFinishedRef.current?.(next.kind === "ready" ? next.lastRunEntry : null);
       return;
     }
     watch.tries += 1;
@@ -216,7 +330,7 @@ export function JournalAutomationCard({
         return;
       }
       if (!res.ok || !json.ok) throw new Error(json.error ?? "The reflection run didn't start.");
-      setRunNote(`${familiarName} is reflecting — today's entry appears here when the run finishes.`);
+      setRunNote(`${familiarName} is reflecting on yesterday — the entry appears in the journal when the run finishes.`);
       announce("Reflection run started.");
       void load(true);
       watchRef.current = { startedAfter, tries: 0 };
@@ -230,9 +344,22 @@ export function JournalAutomationCard({
 
   const routine = state.kind === "ready" ? state.routine : null;
   const enabled = routine?.status === "ACTIVE";
-  const savedTime = formatRoutineHour(routineHour(routine));
+  const customSchedule = hasCustomSchedule(routine);
+  const savedTime = formatRoutineHour(routineHour(routine, familiarId));
+  /** The hour a save sends: null keeps a custom schedule as it is. */
+  const saveHour = customSchedule ? null : hour;
+  /** The harness a save sends: only a new routine needs one; an existing
+   *  routine keeps its own unless the harness picker changes it. */
+  const saveRuntime = routine ? undefined : (isJournalRuntime(runtime) ? runtime : DEFAULT_JOURNAL_RUNTIME);
+  const runtimeOptions = [
+    ...JOURNAL_RUNTIMES.map((r) => ({ value: r.id as string, label: r.label })),
+    ...(JOURNAL_RUNTIMES.some((r) => r.id === runtime) ? [] : [{ value: runtime, label: runtime }]),
+  ];
   const lastRun = state.kind === "ready" ? state.lastRun : null;
   const lastRunEntry = state.kind === "ready" ? state.lastRunEntry : null;
+  const lastRunFailure = state.kind === "ready" ? state.lastRunFailure : null;
+  const runFailed = lastRun?.status === "failed";
+  const promptOutdated = state.kind === "ready" && Boolean(state.routine) && state.promptOutdated;
   // The daemon says "succeeded" whenever the harness exits 0 — including a
   // signed-out harness that only printed "Login expired". Trust the file.
   const wroteNothing = lastRun?.status === "succeeded" && lastRunEntry !== null && !lastRunEntry.written;
@@ -289,7 +416,7 @@ export function JournalAutomationCard({
               aria-label={`Daily reflection for ${familiarName}`}
               className={`journal-auto__switch focus-ring${enabled ? " is-on" : ""}`}
               disabled={busy !== null}
-              onClick={() => { void save(!enabled, hour, runtime, "toggle"); }}
+              onClick={() => { void save(!enabled, saveHour, saveRuntime, "toggle"); }}
             >
               <span className="journal-auto__knob" aria-hidden />
             </button>
@@ -301,28 +428,34 @@ export function JournalAutomationCard({
               label="Daily reflection time"
               aria-describedby="journal-auto-time-label"
               className="journal-auto__time focus-ring"
-              value={String(hour)}
+              value={customSchedule ? CUSTOM_SCHEDULE : String(hour)}
               disabled={busy !== null}
-              options={HOUR_VALUES.map((value) => ({ value, label: formatRoutineHour(Number(value)) }))}
+              options={[
+                ...(customSchedule ? [{ value: CUSTOM_SCHEDULE, label: "Custom schedule" }] : []),
+                ...HOUR_VALUES.map((value) => ({ value, label: formatRoutineHour(Number(value)) })),
+              ]}
               onChange={(value) => {
+                if (value === CUSTOM_SCHEDULE) return;
                 const next = Number(value);
                 setHour(next);
-                // An existing routine is rescheduled right away; a new one
-                // picks the hour up when it is switched on.
-                if (routine && next !== routineHour(routine)) void save(enabled, next, runtime, "time");
+                // An existing routine is rescheduled right away (replacing a
+                // custom schedule only on an explicit pick); a new one picks
+                // the hour up when it is switched on.
+                if (routine && (customSchedule || next !== routineHour(routine, familiarId))) void save(enabled, next, undefined, "time");
               }}
             />
             <span className="journal-auto__label">on</span>
-            <StandardSelect<JournalRuntime>
+            <StandardSelect
               id="journal-auto-runtime"
               label="Harness the daily reflection runs on"
               className="journal-auto__time focus-ring"
               value={runtime}
               disabled={busy !== null}
-              options={JOURNAL_RUNTIMES.map((r) => ({ value: r.id, label: r.label }))}
+              options={runtimeOptions}
               onChange={(next) => {
+                if (!isJournalRuntime(next)) return;
                 setRuntime(next);
-                if (routine && next !== routineRuntime(routine)) void save(enabled, hour, next, "runtime");
+                if (routine && next !== routineRuntime(routine)) void save(enabled, saveHour, next, "runtime");
               }}
             />
             <Button
@@ -342,7 +475,9 @@ export function JournalAutomationCard({
           <p className="journal-auto__line">
             {routine
               ? enabled
-                ? `${familiarName} writes today's entry at ${savedTime}, local time.`
+                ? customSchedule
+                  ? `On a custom schedule set in Rituals, ${familiarName} writes the previous day's entry and fills in one recently missed day.`
+                  : `Every morning at ${savedTime} (local time), ${familiarName} writes the previous day's entry and fills in one recently missed day.`
                 : `Paused — ${familiarName} won't reflect on a schedule until you turn it back on.`
               : `Off — ${familiarName} only reflects when you generate an entry.`}
           </p>
@@ -354,7 +489,7 @@ export function JournalAutomationCard({
                   {` · ${relativeTime(lastRun.finishedAt ?? lastRun.startedAt)}`}
                 </>
               ) : (
-                "No runs yet."
+                state.kind === "ready" && state.lastRunUnavailable ? "Recent runs could not be read. Refresh to check again." : "No runs yet."
               )}
             </p>
           ) : null}
@@ -362,8 +497,46 @@ export function JournalAutomationCard({
             <div className="journal-auto__degraded" role="status">
               <p className="journal-auto__line">
                 <Icon name="ph:warning" width={12} aria-hidden />
-                The last run finished without writing {familiarName}&apos;s entry. {runtimeLabel(routine?.runtime ?? runtime)} may
+                The last run finished without writing {familiarName}&apos;s entry
+                {lastRunEntry ? ` for ${lastRunEntry.date}` : ""}. {runtimeLabel(routine?.runtime ?? runtime)} may
                 need signing in — check it with <code>coven doctor</code>, or pick another harness above.
+              </p>
+              {lastRun?.sessionId ? (
+                <details className="journal-details">
+                  <summary>Details</summary>
+                  <code>coven attach {lastRun.sessionId}</code>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
+          {promptOutdated ? (
+            <div className="journal-auto__degraded" role="status" data-prompt-outdated="">
+              <p className="journal-auto__line">
+                <Icon name="ph:info" width={12} aria-hidden />
+                This routine still runs older reflection instructions. Update it to the latest ones, which ground
+                the entry in {familiarName}&apos;s sessions and stay within the run&apos;s turn budget.
+              </p>
+              <Button
+                size="xs"
+                leadingIcon="ph:arrow-clockwise"
+                disabled={busy !== null}
+                loading={busy === "prompt"}
+                onClick={() => { void save(enabled, saveHour, undefined, "prompt"); }}
+              >
+                Update instructions
+              </Button>
+            </div>
+          ) : null}
+          {runFailed ? (
+            <div className="journal-auto__degraded" role="status" data-failure-kind={lastRunFailure?.kind ?? "unknown"}>
+              <p className="journal-auto__line">
+                <Icon name="ph:warning" width={12} aria-hidden />
+                {lastRunFailure
+                  ? `The last run failed: ${lastRunFailure.message}`
+                  : `The last run failed before writing ${familiarName}'s entry.`}
+              </p>
+              <p className="journal-auto__line journal-auto__line--muted">
+                {lastRunFailure?.hint ?? "Open the session for the full log, or Run now to try again."}
               </p>
               {lastRun?.sessionId ? (
                 <details className="journal-details">

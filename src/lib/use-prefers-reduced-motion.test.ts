@@ -62,7 +62,6 @@ assert.match(
 const callSites = [
   "../components/projects-view.tsx",
   "../components/board-kanban.tsx",
-  "../components/salem/salem-widget.tsx",
 ];
 for (const rel of callSites) {
   const src = readFileSync(new URL(rel, import.meta.url), "utf8");

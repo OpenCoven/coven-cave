@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { normalizeTurnUsage, parseStreamJsonUsage } from "./usage-format.ts";
 
 import {
   DEFAULT_CONTEXT_WINDOW_TOKENS,
@@ -49,6 +50,23 @@ test("contextWindowForModel tolerates a bare model id (no provider prefix)", () 
     tokens: 1_000_000,
     known: true,
   });
+});
+
+test("current GPT family context stays measurable above the unknown-model fallback", () => {
+  const defaults = [
+    ["gpt-6.2-sol", 500_000, 50],
+    ["gpt-6.2-astra", 272_000, 92],
+    ["gpt-6.1-terra", 500_000, 50],
+    ["gpt-6-luna", 272_000, 92],
+  ] as const;
+  for (const [model, window, percent] of defaults) {
+    for (const id of [model, `openai/${model}`]) {
+      const meter = computeContextMeter({ inputTokens: 250_000, outputTokens: 100 }, id);
+      assert.equal(meter?.windowTokens, window);
+      assert.equal(meter.known, false);
+      assert.equal(meter.percent, percent);
+    }
+  }
 });
 
 test("contextWindowForModel falls back for unknown / non-string ids", () => {
@@ -105,7 +123,7 @@ test("computeContextMeter computes percent and level against the window", () => 
   assert.equal(m.known, true);
 });
 
-test("computeContextMeter bands warn at >=70% and high at >=90%, clamping at 100%", () => {
+test("computeContextMeter bands warn at >=70% and high at >=90%", () => {
   const warn = computeContextMeter(
     { inputTokens: 150_000, outputTokens: 0 },
     "anthropic/claude-haiku-4-5",
@@ -119,13 +137,30 @@ test("computeContextMeter bands warn at >=70% and high at >=90%, clamping at 100
   );
   assert.equal(high?.level, "high");
 
-  // Over the window clamps to 100% / fraction 1.
-  const over = computeContextMeter(
-    { inputTokens: 500_000, outputTokens: 0 },
+  const full = computeContextMeter(
+    { inputTokens: 200_000, outputTokens: 0 },
     "anthropic/claude-haiku-4-5",
   );
-  assert.equal(over?.percent, 100);
-  assert.equal(over?.fraction, 1);
+  assert.equal(full?.percent, 100);
+  assert.equal(full?.level, "high");
+});
+
+test("computeContextMeter reads usage past the window as no fill reading at all", () => {
+  // A prompt cannot be larger than the window that holds it, so more tokens
+  // than the window means the harness reported a run total (every model call
+  // summed), not one prompt. Clamping that to a red 100% invented a full window.
+  assert.equal(
+    computeContextMeter({ inputTokens: 500_000, outputTokens: 0 }, "anthropic/claude-haiku-4-5"),
+    null,
+  );
+  // The Codex case from the ultrawide review: 10.9M against the 200k fallback.
+  assert.equal(
+    computeContextMeter(
+      { inputTokens: 1_200_000, outputTokens: 40_000, cacheReadTokens: 9_700_000 },
+      undefined,
+    ),
+    null,
+  );
 });
 
 test("computeContextMeter marks unknown-model windows as estimates", () => {
@@ -144,4 +179,16 @@ test("formatContextMeter renders a compact label", () => {
   );
   assert.equal(formatContextMeter(m), "45% · 90k/200k");
   assert.equal(formatContextMeter(null), null);
+});
+
+test("the effective window survives usage normalization and takes precedence over catalog metadata", () => {
+  const usage = normalizeTurnUsage(parseStreamJsonUsage({
+    input_tokens: 250_000,
+    output_tokens: 100,
+    model_context_window: 272_000,
+  }));
+  const meter = computeContextMeter(usage, "openai/gpt-6.2-astra");
+  assert.equal(meter?.windowTokens, 272_000);
+  assert.equal(meter.percent, 92);
+  assert.equal(meter.level, "high");
 });

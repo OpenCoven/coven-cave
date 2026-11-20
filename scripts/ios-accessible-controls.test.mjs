@@ -115,6 +115,27 @@ test("the ⌘1–3 destination shortcuts stay out of the accessibility tree", ()
   );
 });
 
+test("the enlarged image is named by the alt text the bridge sends", () => {
+  // An inline image's alt text exists only in the WebView, so the enlarge
+  // message must carry it for the native zoom view to name the image (#5314).
+  // The UI test that proves the whole path compiles in CI but does not run.
+  const entry = readFileSync(join(root, "apps/ios/markdown/entry.mjs"), "utf8");
+  assert.ok(
+    /postMessage\(\{\s*type: "enlarge",[^}]*\balt\b/.test(entry),
+    "apps/ios/markdown/entry.mjs must send the tapped image's alt text with the enlarge message",
+  );
+
+  const zoom = readFileSync(join(appRoot, "Views/ContentZoom.swift"), "utf8");
+  assert.ok(
+    /\.accessibilityLabel\(ZoomTarget\.imageAccessibilityLabel\(description: description\)\)/.test(zoom),
+    "ZoomableImageView must name the image with ZoomTarget.imageAccessibilityLabel",
+  );
+  assert.ok(
+    /\.accessibilityIdentifier\("Zoomed image"\)/.test(zoom),
+    "PerformanceBaselineUITests finds the enlarged image by its \"Zoomed image\" identifier",
+  );
+});
+
 test("controls the session-switch UI tests drive keep their identifiers", () => {
   // SessionSwitchUITests queries these by identifier. Both are Buttons with
   // composed labels, which surface no queryable name on their own, so dropping

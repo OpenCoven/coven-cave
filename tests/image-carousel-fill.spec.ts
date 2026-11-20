@@ -12,6 +12,7 @@ const SESSION = {
   familiarId: "nova",
   exit_code: null,
   archived_at: null,
+  attention: { state: "none", since: null, reason: null },
   created_at: ISO,
   updated_at: ISO,
 };

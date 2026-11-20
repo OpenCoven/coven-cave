@@ -22,6 +22,8 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { restSource } from "@/lib/github-assigned-meta";
+import { upstreamFailureResponse } from "@/lib/server/upstream-answer";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -130,7 +132,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }
@@ -188,7 +190,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
         }
       }
     }`;
-  const res = await fetch(`${GH}/graphql`, {
+  const res = await upstreamFetch("github", `${GH}/graphql`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -283,10 +285,7 @@ async function load(req: Request): Promise<Response> {
     // and number is a positive integer, both safe to interpolate.
     const { res, data } = await ghFetch(`/repos/${repo}/issues/${number}/comments?per_page=100`, token);
     if (!res.ok || !Array.isArray(data)) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
     const issueComments: Comment[] = data.map((c): Comment => {
       const co = c as Record<string, unknown>;

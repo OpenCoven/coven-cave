@@ -94,6 +94,20 @@ assert.match(
   ".cave-md must also set -webkit-hyphens for the WebKit webview",
 );
 
+// Hyphenation is for words. Identifiers in code inherit it from the prose
+// container, so "noWindowsAvailable" broke as "noWindows-Available" (#5944).
+// Every surface that applies the reading setting turns it back off for code.
+const codeHyphenSheets = {
+  "cave-md": caveChat,
+  "document-reader": readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8"),
+  "md-editor": readFileSync(new URL("../styles/md-editor.css", import.meta.url), "utf8"),
+};
+for (const [sheet, css] of Object.entries(codeHyphenSheets)) {
+  const rule = css.match(/[^{}]*\bcode\b[^{}]*\bpre\b[^{}]*\{[^}]*\}/g)?.find((body) => /hyphens:\s*manual/.test(body));
+  assert.ok(rule, `${sheet}: code and pre must reset hyphens to manual`);
+  assert.match(rule, /-webkit-hyphens:\s*manual/, `${sheet}: code and pre must reset -webkit-hyphens too`);
+}
+
 // Chat message prose uses Inter (ChatGPT/Codex vibe), scoped to chat bubbles so
 // library + memory prose keep the app font.
 assert.match(

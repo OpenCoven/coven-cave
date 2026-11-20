@@ -30,7 +30,7 @@ const iosJob = workflow.slice(iosJobStart, iosJobEnd);
 assert.match(workflow, /^ {2}release-ios-build:$/m, "release.yml defines the iOS build job");
 assert.match(
   iosJob,
-  /runs-on: macos-15/,
+  /runs-on: xcode-27/,
   "the iOS build runs on macOS — xcodebuild cannot run anywhere else",
 );
 assert.match(
@@ -41,8 +41,22 @@ assert.match(
 assert.match(
   iosJob,
   /sudo xcode-select --switch "\$XCODE_PATH"[\s\S]*grep -q -- '--build-status'[\s\S]*grep -q -- '--api-key-subject'/,
-  "the job pins Xcode 26.3 and proves the required altool commands exist",
+  "the job selects Xcode 27.1 and proves the required altool commands exist",
 );
+assert.match(iosJob, /XCODE_PATH="\/Applications\/Xcode_27\.1\.app"/);
+assert.match(iosJob, /test "\$sdk_version" = "27\.1"/);
+const toolchain = parse(readFileSync(new URL("../.github/workflows/ios-release-toolchain.yml", import.meta.url), "utf8"));
+assert.deepEqual(toolchain.permissions, { contents: "read" });
+const unsigned = toolchain.jobs.compile;
+assert.deepEqual(unsigned.strategy.matrix.include, [
+  { runner: "xcode-27", version: "27.1", sdk: "27.1" },
+  { runner: "macos-15", version: "26.3", sdk: "26.2" },
+]);
+assert.equal(unsigned.steps[0].with.ref, "${{ github.event.pull_request.head.sha }}");
+const compileCommands = unsigned.steps.map((step) => step.run ?? "").join("\n");
+assert.match(compileCommands, /CODE_SIGNING_ALLOWED=NO build/);
+assert.match(compileCommands, /test -x .*CovenCaveWidgets\.appex\/CovenCaveWidgets/);
+assert.doesNotMatch(JSON.stringify(unsigned), /secrets\.|-exportArchive|--upload-app/);
 assert.match(
   workflow,
   /options:[\s\S]{0,200}- ios/,
@@ -436,10 +450,36 @@ assert.match(nativeRunner, /if \(unitSuite\) \{\s*delete target\.OnlyTestIdentif
   "full-suite mode must not retain the transport-only selector");
 assert.match(nativeRunner, /target\.EnvironmentVariables = \{[\s\S]*CAVE_NATIVE_ACTIVITY_FIXTURE: JSON\.stringify/,
   "the XCTest plan supplies the real TCP fixture configuration");
-assert.match(nativeRunner, /if \(!unitSuite\) \{\s*const uiTarget/,
+assert.match(nativeRunner, /if \(!unitSuite && !transportOnly\) \{\s*const uiTarget/,
   "routine CI leaves the separate native UI gate opt-in");
+assert.match(nativeRunner, /const transportOnly = args\.includes\('--transport-only'\)/,
+  "local consecutive-pass diagnosis may select the existing real TCP scenario alone");
+assert.ok(!testRun.includes("--transport-only"),
+  "the transport-only diagnostic selector must not replace full native CI coverage");
+assert.match(nativeRunner, /selectedModes > 1/,
+  "transport-only, full-suite, and live-UI modes cannot be combined");
 assert.ok(runScripts.some((run) => run.includes("pnpm build") && run.includes("installPinnedRelease")),
   "CI prepares a production server and the existing integrity-verified pinned CLI");
+// The fixture build may skip Next's own TypeScript pass (the typecheck job
+// covers types), and nothing else may: every other job and step keeps it.
+const fixtureStep = iosSteps.find((step) => step.name === "Prepare the native TCP fixture");
+assert.ok(ciIosJob["timeout-minutes"] <= 45,
+  "the iOS job's ceiling is back to 45 min now that the fixture build skips Turbopack's build cache write (#6005)");
+assert.equal(fixtureStep?.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK, "1",
+  "the iOS fixture build skips Next's build-time TypeScript pass (#5991: ~32 min under swap)");
+const skipSites = Object.entries(ci.jobs ?? {}).flatMap(([jobId, job]) => [
+  ...(job.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK !== undefined ? [`${jobId} (job env)`] : []),
+  ...(job.steps ?? []).filter((step) => step.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK !== undefined).map((step) => `${jobId}: ${step.name}`),
+]);
+assert.deepEqual(skipSites, ["ios: Prepare the native TCP fixture"],
+  "only the iOS fixture build may skip Next's build-time TypeScript pass");
+const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+assert.match(nextConfig, /const skipBuildTypecheck = process\.env\.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";/,
+  "the skip is opt-in by an exact env value");
+assert.match(nextConfig, /const typecheckedBeforeCompile =\s+process\.env\.COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE === "1";/,
+  "the wrapper's already-checked marker is an exact env value (#6036)");
+assert.match(nextConfig, /ignoreBuildErrors: skipBuildTypecheck \|\| typecheckedBeforeCompile,/,
+  "next.config skips Next's pass only for that opt-in or a build whose pass already ran before compiling (#6036)");
 assert.match(nativeRunner, /await run\('native-transport', 'xcodebuild', \['test-without-building'/,
   "the fixture actually runs XCTest instead of only compiling it");
 

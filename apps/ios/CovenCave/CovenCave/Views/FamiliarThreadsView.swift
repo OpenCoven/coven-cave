@@ -188,10 +188,10 @@ struct FamiliarThreadsView: View {
         .sheet(item: $exportArchive) { archive in
             ActivityView(items: [archive.url])
         }
-        .sheet(isPresented: $showPermissions) {
+        .caveSheet(isPresented: $showPermissions) {
             FamiliarPermissionsSheet(familiar: familiar)
         }
-        .sheet(isPresented: $showNewChat) {
+        .caveSheet(isPresented: $showNewChat) {
             NewChatView(fixedFamiliarId: familiar.id) { thread in
                 showNewChat = false
                 Haptics.tap()

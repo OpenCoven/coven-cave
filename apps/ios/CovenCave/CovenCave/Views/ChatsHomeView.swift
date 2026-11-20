@@ -214,7 +214,7 @@ struct ChatsHomeView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HiddenUnderSettings { homeSearchBar }
             }
-            .sheet(
+            .caveSheet(
                 isPresented: $showNewChat,
                 onDismiss: {
                     fixedNewChatFamiliarId = nil
@@ -259,6 +259,7 @@ struct ChatsHomeView: View {
             .sidebarColumn()
         } detail: {
             detailColumn
+                .splitDetailColumn()
         }
         // Keep the list visible beside the conversation on iPad; on iPhone the
         // split view still collapses to a single navigation stack.
@@ -425,55 +426,35 @@ struct ChatsHomeView: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private func listOptionsMenu(_ snapshot: ChatListSnapshot) -> some View {
+    private func archiveFilterMenu(_ snapshot: ChatListSnapshot) -> some View {
         Menu {
-            familiarFilterPicker(snapshot)
-            Divider()
             Button { showArchived.toggle() } label: {
-                Label(
-                    showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
-                    systemImage: "archivebox"
-                )
+                Label(showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))", systemImage: "archivebox")
             }
         } label: {
-            // The same round glass well as the navigation button, so
-            // the header's two controls read as a matched pair.
-            Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease")
-                .font(.system(size: ChatChrome.control * 0.44, weight: .semibold))
-                .foregroundStyle(familiarFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(chrome.accent))
-                .scaledControlFrame(ChatChrome.control)
-                .glass(.control, in: Circle())
-                .accentGlow(active: familiarFilter != nil)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
+            filterMenuLabel(showArchived ? "With archived" : "Archived hidden", symbol: "archivebox", active: showArchived)
         }
-        .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
-        .accessibilityIdentifier("Chat list options")
+        .accessibilityLabel("Archive visibility")
+        .accessibilityValue(showArchived ? "Including archived" : "Archived hidden")
+        .accessibilityIdentifier("Archive filter menu")
     }
 
     private func header(_ snapshot: ChatListSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if dynamicTypeSize.isAccessibilitySize {
-                // The serif title grows with the text size but the room
-                // between the two round controls does not: an iPad sidebar
-                // column at the largest size leaves about 80pt for a 140pt
-                // word, and "Chats" broke into "Ch / ats". Keep the title
-                // inline where it fits (an iPhone) and otherwise give it its
-                // own full-width line under the controls, rather than
-                // shrinking the size the reader asked for.
+                // Keep the title beside navigation where it fits, otherwise
+                // give it a full-width line without shrinking the chosen size.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
                         navigationButton
                         accessibilityTitle(oneLine: true)
                             .fixedSize()
                         Spacer(minLength: 0)
-                        listOptionsMenu(snapshot)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 12) {
                             navigationButton
                             Spacer(minLength: 0)
-                            listOptionsMenu(snapshot)
                         }
                         accessibilityTitle(oneLine: false)
                     }
@@ -491,7 +472,6 @@ struct ChatsHomeView: View {
                         )
                     }
                     Spacer(minLength: 0)
-                    listOptionsMenu(snapshot)
                 }
             }
             if dynamicTypeSize.isAccessibilitySize || sizeClass == .regular,
@@ -501,26 +481,11 @@ struct ChatsHomeView: View {
                     .foregroundStyle(chrome.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if ChatStatusFilterStrip.isVisible(counts: snapshot.statusCounts, selection: statusFilter) {
-                ChatStatusFilterStrip(counts: snapshot.statusCounts, selection: $statusFilter)
-            }
-            let projectChoices = projectFilterChoices(snapshot)
-            if projectChoices.count > 1 || projectFilter != nil {
-                // At accessibility sizes one chip fills the screen width, so
-                // the strip becomes a single menu naming the current choice.
-                if dynamicTypeSize.isAccessibilitySize {
-                    projectFilterMenu(projectChoices)
-                } else {
-                    projectFilterStrip(projectChoices)
-                }
-            }
+            filterRow(snapshot)
             // Sticky in the header, right above the list it acts on, so it
             // stays in reach however far the ready list scrolls.
             if statusFilter == .readyToArchive, !snapshot.entries.isEmpty {
                 archiveReadyRow(count: snapshot.entries.count)
-            }
-            if let familiarId = familiarFilter {
-                familiarFilterChip(familiarId)
             }
         }
         .padding(.horizontal, 14)
@@ -555,38 +520,87 @@ struct ChatsHomeView: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Label(
-                familiarFilter.map { "Familiar: \(familiarDisplayName($0))" } ?? "Filter by familiar",
-                systemImage: "line.3.horizontal.decrease.circle"
+            filterMenuLabel(
+                familiarFilter.map(familiarDisplayName) ?? "All familiars",
+                symbol: "person.2", active: familiarFilter != nil
             )
         }
         .disabled(familiars.isEmpty && familiarFilter == nil)
     }
 
-    /// The active filter, visible without opening the menu, and one tap to clear.
-    private func familiarFilterChip(_ familiarId: String) -> some View {
-        Button { withAnimation { familiarFilter = nil } } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                Text(familiarDisplayName(familiarId))
-                    .lineLimit(1)
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+    /// Every list filter shares one horizontal track. Menus keep long project
+    /// and familiar names, status counts, and accessibility text sizes usable
+    /// without adding another strip above the conversations.
+    private func filterRow(_ snapshot: ChatListSnapshot) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Menu {
+                    Picker("Filter by status", selection: $statusFilter) {
+                        Text("All chats").tag(ChatStatusFilter?.none)
+                        ForEach(ChatStatusFilter.allCases) { filter in
+                            let count = snapshot.statusCounts[filter] ?? 0
+                            if count > 0 || statusFilter == filter {
+                                Text("\(filter.label), \(count)").tag(Optional(filter))
+                            }
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    let label = statusFilter.map { "\($0.chipLabel), \(snapshot.statusCounts[$0] ?? 0)" } ?? "All chats"
+                    filterMenuLabel(label, symbol: "line.3.horizontal.decrease.circle", active: statusFilter != nil)
+                }
+                .accessibilityLabel("Filter by status")
+                .accessibilityValue(statusFilter.map { "\($0.label), \(snapshot.statusCounts[$0] ?? 0)" } ?? "All chats")
+                .accessibilityIdentifier("Status filter menu")
+
+                let choices = projectFilterChoices(snapshot)
+                if choices.count > 1 || projectFilter != nil {
+                    projectFilterMenu(choices)
+                }
+                familiarFilterPicker(snapshot)
+                    .accessibilityLabel("Filter by familiar")
+                    .accessibilityValue(familiarFilter.map(familiarDisplayName) ?? "All familiars")
+                    .accessibilityIdentifier("Familiar filter menu")
+
+                archiveFilterMenu(snapshot)
+
+                if statusFilter != nil || projectFilter != nil || familiarFilter != nil || showArchived {
+                    Button {
+                        statusFilter = nil
+                        projectFilter = nil
+                        familiarFilter = nil
+                        showArchived = false
+                        Haptics.tap()
+                    } label: {
+                        filterMenuLabel("Clear filters", symbol: "xmark.circle", active: false, showsChevron: false)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("Clear chat filters")
+                }
             }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(chrome.accent)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 32)
-            .glass(.control, in: Capsule())
+            .padding(.horizontal, 14)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Clear familiar filter, \(familiarDisplayName(familiarId))")
-        .accessibilityIdentifier("Familiar filter chip")
+        .padding(.horizontal, -14)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Chat filters")
+        .accessibilityIdentifier("Chat filters")
     }
 
-    /// Offer only projects with chats under the current search, familiar and
-    /// archive settings. All projects remains available to clear a selection
-    /// whose last matching chat disappeared.
+    private func filterMenuLabel(_ title: String, symbol: String, active: Bool, showsChevron: Bool = true) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).accessibilityHidden(true)
+            Text(title).lineLimit(1)
+            if showsChevron { Image(systemName: "chevron.down").accessibilityHidden(true) }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(active ? chrome.accent : chrome.textSecondary)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .fixedSize(horizontal: true, vertical: false)
+        .glass(.control, in: Capsule())
+        .contentShape(Rectangle())
+    }
+
     private func projectFilterChoices(_ snapshot: ChatListSnapshot) -> [ChatListSnapshot.ProjectFilter] {
         var choices: [ChatListSnapshot.ProjectFilter] = snapshot.projectIds
             .sorted {
@@ -615,33 +629,6 @@ struct ChatsHomeView: View {
         filter == .unassigned ? "tray" : "folder"
     }
 
-    /// One-tap project filter: "All" first, then each project with chats. It
-    /// appears only when there is more than one place to choose between.
-    private func projectFilterStrip(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                projectFilterChip(nil, label: "All projects", systemImage: "square.grid.2x2")
-                ForEach(choices, id: \.self) { choice in
-                    projectFilterChip(
-                        choice,
-                        label: projectFilterName(choice),
-                        systemImage: projectFilterSymbol(choice)
-                    )
-                }
-            }
-            // Inset to the header's text edge, but scroll edge to edge.
-            .padding(.horizontal, 14)
-        }
-        .padding(.horizontal, -14)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Filter by project")
-        .accessibilityIdentifier("Project filter")
-    }
-
-    /// The strip at accessibility text sizes. There each chip is about as
-    /// wide as the screen, so reaching a project meant swiping chip by chip;
-    /// one full-width control names the current choice and opens every choice
-    /// at once. Same filter, same choices, same order.
     private func projectFilterMenu(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
         let current = projectFilter.map(projectFilterName) ?? "All projects"
         let active = projectFilter != nil
@@ -656,68 +643,11 @@ struct ChatsHomeView: View {
             }
             .pickerStyle(.inline)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: projectFilter.map(projectFilterSymbol) ?? "square.grid.2x2")
-                    .accessibilityHidden(true)
-                Text(current)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.up.chevron.down")
-                    .accessibilityHidden(true)
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(active ? chrome.accent : chrome.textSecondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .glass(.control, cornerRadius: 22)
-            .accentGlow(active: active)
-            .contentShape(Rectangle())
+            filterMenuLabel(current, symbol: projectFilter.map(projectFilterSymbol) ?? "square.grid.2x2", active: active)
         }
-        // Rigid height, so the menu never competes with the title row for
-        // vertical room in the header.
-        .fixedSize(horizontal: false, vertical: true)
         .accessibilityLabel("Filter by project")
         .accessibilityValue(current)
         .accessibilityIdentifier("Project filter menu")
-    }
-
-    private func projectFilterChip(
-        _ choice: ChatListSnapshot.ProjectFilter?,
-        label: String,
-        systemImage: String
-    ) -> some View {
-        let selected = projectFilter == choice
-        return Button {
-            Haptics.tap()
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
-                projectFilter = choice
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .accessibilityHidden(true)
-                Text(label)
-                    .lineLimit(1)
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(selected ? chrome.accentForeground : chrome.textSecondary)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 32)
-            .background {
-                if selected {
-                    Capsule().fill(chrome.accentGradient)
-                }
-            }
-            .glass(.control, in: Capsule())
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.glassPress)
-        .accessibilityLabel(choice == nil ? "All projects" : "Project, \(label)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier(choice == nil ? "Project filter All" : "Project filter \(label)")
     }
 
     /// Nothing left once the familiar or project filter applies (search, if

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // The event plane's watchers start from Next's instrumentation hook, the root
 // instrumentation.ts, only in the Node runtime and only when the plane is
 // switched on (#5843). With it off there is no daemon poll and no file watch.
-const source = readFileSync(new URL("../instrumentation.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("./instrumentation.ts", import.meta.url), "utf8");
 const nodeGate = source.indexOf('if (process.env.NEXT_RUNTIME !== "nodejs") return;');
 const planeGate = source.indexOf("if (isEventPlaneEnabled(process.env)) {");
 const daemon = source.indexOf("startDaemonEventWatcher();");

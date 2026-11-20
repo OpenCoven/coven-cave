@@ -46,16 +46,16 @@ persist state offline, and hand a live session off to your phone over Tailscale.
   familiars are working at once.
 - **🗂️ Track work** — Manage tasks on the Board and Gantt surfaces, with bulk
   edits and undo. Browse reminders, calendars, and daily/retro reports.
-- **🧠 Memory & libraries** — Browse project sessions, local libraries, the
-  knowledge vault, and marketplace packages in one place.
+- **🧠 Memory & libraries** — Browse project sessions, local libraries, and the
+  knowledge vault in one place.
 - **🐙 GitHub triage** — Review GitHub activity, PRs, and issues inline and feed
   them straight into familiar work.
 - **🖥️ Local surfaces** — Launch desktop-local **terminal** and **browser**
   panes through the Cave sidecar, right inside the app window.
 - **📱 Mobile handoff** — Hand the app off to a phone over **Tailscale**, or run
-  the dedicated native iOS client with its own chat, code, tasks, and feed tabs.
-- **⚙️ Workflows & automations** — Run and inspect OpenCoven workflows,
-  automations, and marketplace-seeded catalog data.
+  the dedicated native iOS client for chat.
+- **⚙️ Workflows & automations** — Run and inspect OpenCoven workflows and
+  automations.
 
 ### Flow executions and Chat
 
@@ -78,8 +78,8 @@ mission, linking to that exact owner. Its guidance updates as blockers change;
 resolved work clears the notification without generating another completion.
 
 <div align="center">
-<img src="screenshots/canvas-chat.png" alt="Chat canvas" width="405">
-<img src="screenshots/workflows.png" alt="Workflows surface" width="405">
+<img src="screenshots/chat.png" alt="A chat with a familiar, showing its tool activity" width="405">
+<img src="screenshots/tasks.png" alt="The Tasks board" width="405">
 </div>
 
 ---
@@ -111,10 +111,13 @@ Choose the asset that matches your platform:
 | Platform | Published architectures | Package |
 | --- | --- | --- |
 | macOS | Apple Silicon (`aarch64`) and Intel (`x86_64`) | `.dmg` |
-| Windows | x64 only | `.msi` |
+| Windows | x64 only | `.msi` when present on that release |
 | Linux | amd64/x86_64 only | `.AppImage` |
 
-The release also includes `SHA256SUMS`, updater signatures, and update metadata.
+Check the selected release's asset list before downloading: partial releases may
+not include every platform or `SHA256SUMS`. If the release marked latest has no
+MSI, use the newest earlier release that lists one, and verify the download
+against that release's `SHA256SUMS`.
 Windows on ARM and Linux on ARM do not currently have published desktop
 artifacts.
 
@@ -145,10 +148,10 @@ integration.
 │   │   Tailwind 4 · TS      │ IPC  │  · window & updater   │  │
 │   │                        │      │  · pty terminal       │  │
 │   │  Surfaces:             │      │  · browser pane       │  │
-│   │  chat · board · gantt  │      │  · speech             │  │
-│   │  familiars · settings  │      │  · sidecar archive    │  │
-│   │  github · libraries    │      └───────────┬───────────┘  │
-│   │  reminders · workflows │                  │              │
+│   │  home · chat · tasks   │      │  · speech             │  │
+│   │  rituals · canvas      │      │  · sidecar archive    │  │
+│   │  memories · dashboard  │      └───────────┬───────────┘  │
+│   │  settings              │                  │              │
 │   └───────────┬────────────┘                  │              │
 │               │                               ▼              │
 │               │                    ┌───────────────────────┐ │
@@ -183,7 +186,6 @@ integration.
 | `src/`          | Next.js app, API routes, React components, shared libraries, sandbox    |
 | `src-tauri/`    | Tauri desktop shell + sidecar (Rust: pty, browser, speech, archive)     |
 | `apps/ios/`     | Native SwiftUI iOS client and widget targets                            |
-| `apps/`         | Additional companion apps (markdown, terminal helpers)                  |
 | `docs/`         | Design notes, audits, mobile checklists, workflows, and feature specs   |
 | `scripts/`      | Build, mobile, test, packaging, and maintenance helpers                 |
 | `marketplace/`  | Seeded OpenCoven marketplace catalog data                               |
@@ -334,11 +336,6 @@ pnpm mobile:tailscale          # browser-based mobile dogfooding over Tailscale
 pnpm mobile:tailscale:app      # pair the native iOS app to a daemon over Tailscale
 pnpm mobile:ios:sim            # build & run the native iOS app in the simulator
 ```
-
-The standalone Coven Memory iOS client uses the same **Open on phone**
-bearer/Tailscale boundary and Cave's read-only canonical-memory routes. See
-[`docs/mobile-memory.md`](docs/mobile-memory.md) for enablement, pairing,
-global credential rotation, recovery, and privacy constraints.
 
 The native SwiftUI app has its own notes in
 [`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md).

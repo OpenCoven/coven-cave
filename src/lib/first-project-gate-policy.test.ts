@@ -156,6 +156,42 @@ test("a globally registered project does not bypass the gate when the active fam
   assert.deepEqual(granted, { open: false, familiarId: "ember", blockChatLaunch: false });
 });
 
+test("an explicit Home request opens the gate for the candidate familiar without an active one", () => {
+  const policy = resolveFirstProjectGatePolicy({
+    activeFamiliarId: null,
+    visibleFamiliars,
+    registeredProjects: [],
+    accessibleProjects: [],
+    accessibleProjectsInitiallyResolved: true,
+    pendingGrant: null,
+    requestedFamiliarId: "ember",
+    onboardingResolved: true,
+    onboardingOpen: false,
+    mode: "home",
+    familiarsLoaded: true,
+    familiarRosterLoadedSuccessfully: true,
+    projectsInitiallyResolved: true,
+  });
+  assert.deepEqual(policy, { open: true, familiarId: "ember", blockChatLaunch: true });
+
+  const active = resolveFirstProjectGatePolicy({
+    activeFamiliarId: "cinder",
+    visibleFamiliars,
+    registeredProjects: [],
+    accessibleProjects: [],
+    accessibleProjectsInitiallyResolved: true,
+    pendingGrant: null,
+    requestedFamiliarId: "ember",
+    onboardingResolved: true,
+    onboardingOpen: false,
+    mode: "home",
+    familiarsLoaded: true,
+    familiarRosterLoadedSuccessfully: true,
+    projectsInitiallyResolved: true,
+  });
+  assert.equal(active.familiarId, "cinder", "an active familiar still outranks the request");
+});
+
 test("without an active familiar, the gate does not pre-select one and block launch", () => {
   const policy = resolveFirstProjectGatePolicy({
     activeFamiliarId: null,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { githubApiFailure } from "@/lib/github-activity";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { RepoItem } from "@/lib/home-feed";
 
 export const dynamic = "force-dynamic";
@@ -144,7 +145,8 @@ const byPushedDesc = (a: RepoItem, b: RepoItem) => pushedTime(b) - pushedTime(a)
 
 async function fetchOrgRepos(token: string): Promise<RepoSourceResult> {
   try {
-    const res = await fetch(
+    const res = await upstreamFetch(
+      "github",
       `https://api.github.com/orgs/${ORG}/repos?sort=pushed&per_page=${SOURCE_PAGE_SIZE}&type=public`,
       {
         headers: {
@@ -154,8 +156,8 @@ async function fetchOrgRepos(token: string): Promise<RepoSourceResult> {
           "User-Agent": "coven-cave",
         },
         cache: "no-store",
-        signal: AbortSignal.timeout(ORG_TIMEOUT_MS),
       },
+      { timeoutMs: ORG_TIMEOUT_MS },
     );
     if (!res.ok) return { items: [], error: repoSourceError(res, "OpenCoven repositories"), hasMore: false };
     const raw = (await res.json()) as RestRepo[];
@@ -178,18 +180,22 @@ async function fetchOrgRepos(token: string): Promise<RepoSourceResult> {
 
 async function fetchListRepos(token: string): Promise<RepoSourceResult> {
   try {
-    const res = await fetch("https://api.github.com/graphql", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "User-Agent": "coven-cave",
+    const res = await upstreamFetch(
+      "github",
+      "https://api.github.com/graphql",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+          "User-Agent": "coven-cave",
+        },
+        body: JSON.stringify({ query: LIST_QUERY }),
+        cache: "no-store",
       },
-      body: JSON.stringify({ query: LIST_QUERY }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
-    });
+      { timeoutMs: LIST_TIMEOUT_MS },
+    );
     if (!res.ok) {
       return { items: [], error: repoSourceError(res, "the curated repository list"), hasMore: false };
     }

@@ -52,7 +52,7 @@ assert.match(chat, /"Conversation",[\s\S]{0,200}?showsChevron: true/);
 assert.match(chat, /showSessionPicker\s*=\s*true/);
 assert.match(
   chat,
-  /\.sheet\(isPresented: \$showSessionPicker\)[\s\S]{0,500}?FamiliarThreadsView\([\s\S]*projectContext: visibleThreadContext/,
+  /\.caveSheet\(isPresented: \$showSessionPicker\)[\s\S]{0,500}?FamiliarThreadsView\([\s\S]*projectContext: visibleThreadContext/,
   "the in-chat session picker is pinned to the visible conversation",
 );
 assert.match(familiarThreads, /let projectContext: ProjectContext/);

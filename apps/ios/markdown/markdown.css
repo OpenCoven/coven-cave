@@ -159,3 +159,12 @@ pre.hljs { background: var(--code-bg) !important; }
 .hljs-deletion { color: #FCA5A5; }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
+
+/* coven:ui blocks as readable lines (#6060): plain text, no native controls. */
+.ui-block-readable {
+  margin: 0.75em 0;
+  padding-left: 0.75em;
+  border-left: 2px solid var(--hairline);
+  overflow-wrap: anywhere;
+}
+.ui-block-readable p { margin: 0.2em 0; }

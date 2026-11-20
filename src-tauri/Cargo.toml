@@ -1,13 +1,13 @@
 [package]
 name = "app"
-version = "0.5.12"
+version = "0.5.22"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
 repository = "https://github.com/OpenCoven/coven-cave"
 homepage = "https://github.com/OpenCoven/coven-cave"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +16,7 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.2", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 # build.rs generates MAX_FILE_COUNT from scripts/sidecar-runtime-budget.json.
 serde_json = "1.0"
 
@@ -27,7 +27,7 @@ log = "0.4"
 # tray-icon moved to the desktop-only target block below — mobile (iOS/
 # Android) doesn't have a tray and trying to enable the feature there
 # breaks the build.
-tauri = { version = "2.11.2", features = ["unstable", "macos-private-api"] }
+tauri = { version = "2.12.5", features = ["unstable", "macos-private-api"] }
 tauri-plugin-log = "2"
 # tauri-plugin-notification supports iOS and Android out of the box, so
 # this stays cross-platform; the JS-side `native-notify` wrapper handles
@@ -49,7 +49,7 @@ tauri-plugin-os = "2"
 # Spelling it as "not(ios) and not(android)" is equivalent to
 # `cfg(desktop)` for the platforms we care about.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-tauri = { version = "2.11.2", features = ["tray-icon", "macos-private-api"] }
+tauri = { version = "2.12.5", features = ["tray-icon", "macos-private-api"] }
 portable-pty = "0.8"
 # Desktop auto-update: the updater plugin checks/downloads/installs signed
 # release artifacts; process gives us relaunch() after an install. Both are
@@ -95,7 +95,7 @@ zstd = "0.13"
 # mobile access token a DACL, which Windows has no create-time equivalent of.
 # The feature is a cfg gate over already-vendored bindings, so it pulls in no
 # new crate and leaves Cargo.lock untouched.
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
 # behind the transparent webview on macOS (the only platform we apply it on;

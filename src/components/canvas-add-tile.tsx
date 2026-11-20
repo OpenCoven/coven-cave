@@ -37,6 +37,7 @@ import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { Tabs } from "@/components/ui/tabs";
 import { CanvasGitHubImportModal } from "@/components/canvas-github-import-modal";
 import type { CanvasArtifactSource } from "@/lib/canvas-artifacts";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 const CREATE_SUGGESTIONS = [
   "A pricing page with three plans",
@@ -91,6 +92,7 @@ export function CanvasAddTile({
   onArtifactsChanged: (artifacts: CanvasArtifact[], changedId: string) => void;
   onActiveArtifactChange: (id: string | null) => void;
 }) {
+  const keys = useKeySymbols();
   const [state, dispatch] = useReducer(addTileReducer, INITIAL_ADD_TILE_STATE);
   // Not reducer state: it survives across generations on purpose, because
   // someone building a game makes several in a row.
@@ -704,7 +706,7 @@ export function CanvasAddTile({
                 type="button"
                 className="chat-canvas-add__go focus-ring"
                 disabled={!refineText.trim() || !activeFamiliar || state.saveState === "saving"}
-                title={activeFamiliar ? "Refine preview (⌘↵)" : "Choose a familiar first"}
+                title={activeFamiliar ? platformizeHint("Refine preview (⌘↵)", keys) : "Choose a familiar first"}
                 onClick={refine}
               >
                 <Icon name="ph:sparkle" aria-hidden /> Refine preview
@@ -833,7 +835,7 @@ export function CanvasAddTile({
                 type="button"
                 className="chat-canvas-add__go focus-ring"
                 disabled={!state.prompt.trim() || !activeFamiliar}
-                title={activeFamiliar ? "Create preview (⌘↵)" : "Choose a familiar first"}
+                title={activeFamiliar ? platformizeHint("Create preview (⌘↵)", keys) : "Choose a familiar first"}
                 onClick={createPreview}
               >
                 <Icon name="ph:sparkle" aria-hidden /> Create preview
@@ -850,7 +852,7 @@ export function CanvasAddTile({
                 Choose a familiar to create a preview.
               </p>
             ) : state.prompt.trim() ? (
-              <p className="chat-canvas-add__tip">{activeFamiliarLabel} will sketch this · ⌘↵ to run</p>
+              <p className="chat-canvas-add__tip">{activeFamiliarLabel} will sketch this · {platformizeHint("⌘↵ to run", keys)}</p>
             ) : !hero ? (
               <p className="chat-canvas-add__tip">
                 Tip: name the surface and the interaction — “a settings pane with grouped toggles”.

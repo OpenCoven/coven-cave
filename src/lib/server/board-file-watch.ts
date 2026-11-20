@@ -15,7 +15,7 @@ import { markResourceChanged } from "./cave-event-plane-publisher.ts";
 import { createFamiliarRosterWatch, watchDirectoryWithFs, type FamiliarRosterWatch } from "./familiar-roster-watch.ts";
 
 export function boardSourceFile(): string {
-  return path.join(caveHome(), "board.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "board.json");
 }
 
 export function startBoardFileWatch(): FamiliarRosterWatch {

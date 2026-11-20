@@ -25,7 +25,6 @@ export function ChatThreadsSheet({
   sessions,
   reflectionSourceSessions,
   sessionsError = false,
-  sessionsDegraded = false,
   browseScope,
   outOfScopeActiveSession = null,
   activeFamiliarId,
@@ -42,7 +41,6 @@ export function ChatThreadsSheet({
   /** Unscoped rows for the rail's Reflections section. */
   reflectionSourceSessions?: SessionRow[];
   sessionsError?: boolean;
-  sessionsDegraded?: boolean;
   /** The project scope, so an empty or loading sheet says so (#5585). */
   browseScope?: ChatBrowseScope;
   outOfScopeActiveSession?: SessionRow | null;
@@ -80,7 +78,6 @@ export function ChatThreadsSheet({
           sessions={sessions}
           reflectionSourceSessions={reflectionSourceSessions}
           sessionsError={sessionsError}
-          sessionsDegraded={sessionsDegraded}
           browseScope={browseScope}
           outOfScopeActiveSession={outOfScopeActiveSession}
           activeFamiliarId={activeFamiliarId}

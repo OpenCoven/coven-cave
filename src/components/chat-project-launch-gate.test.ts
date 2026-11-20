@@ -7,7 +7,6 @@ const chat = read("./chat-view.tsx");
 const home = read("./home-composer.tsx");
 const sessionHeader = read("./chat-session-header.tsx");
 const emptyState = read("./chat-empty-state.tsx");
-const salem = read("../app/api/salem/route.ts");
 
 assert.match(
   chat,
@@ -62,6 +61,11 @@ const initialLatchIndex = chat.indexOf("initialPromptSentRef.current = true", in
 assert.ok(initialReadyIndex > initialPromptIndex, "handoff auto-send should wait for project readiness");
 assert.ok(initialReadyIndex < initialLatchIndex, "waiting for a project must not consume the prompt latch");
 
+assert.match(
+  chat,
+  /res\.status === 409 &&\s*\(refusal\?\.code === "project_root_unconfirmed" \|\| refusal\?\.code === "project_root_moved"\)\s*\)\s*\{\s*setProjectsFixNeeded\(true\);\s*surfacedMessage = refusal\.code === "project_root_moved"/,
+  "an unconfirmed or moved project folder offers Projects with code-selected safe copy (#6215)",
+);
 assert.doesNotMatch(
   chat,
   /\ballowNoProject\b/,
@@ -111,14 +115,11 @@ assert.match(
 );
 assert.match(
   home,
-  /if \(!project\) \{[\s\S]{0,160}?return;\s*\}[\s\S]{0,260}?resolveActionFamiliar\("Start voice call"\)[\s\S]{0,300}?onValidateActingFamiliar[\s\S]{0,180}?setVoiceCallPending\(true\)/,
+  // The no-project block also asks the shell for a project (#5982), so the
+  // window before `return` allows for that one extra call.
+  /if \(!project\) \{[\s\S]{0,220}?return;\s*\}[\s\S]{0,260}?resolveActionFamiliar\("Start voice call"\)[\s\S]{0,300}?onValidateActingFamiliar[\s\S]{0,180}?setVoiceCallPending\(true\)/,
   "Home voice should require the shell project and validated actor before setting mint state",
 );
 
-assert.match(
-  salem,
-  /fetch\(new URL\("\/api\/chat\/generate\/enhance"[\s\S]*familiarId:\s*args\.familiarId,[\s\S]*permissionMode:\s*"read"/,
-  "Ask Salem's hidden docs synthesis should remain projectless and read-only instead of becoming a broken Chat launch",
-);
 
 console.log("chat-project-launch-gate.test.ts: ok");

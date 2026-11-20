@@ -6,7 +6,7 @@ import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import type { ResourceManifestV1 } from "../research-resource-contracts.ts";
 import { migrateCaveHomeOnce } from "./cave-home-migration.ts";
-import { createResearchResourceIngestion } from "./research-resource-ingestion.ts";
+import { createResearchResourceMaintenance } from "./research-resource-maintenance.ts";
 import {
   rebuildResearchResourceLexicalIndex,
   openResearchResourceLexicalIndex,
@@ -63,7 +63,7 @@ type ResearchRestoreMarkerV1 = {
 const startupRecovery = new Map<string, Promise<ResearchResourceRecoveryResult | null>>();
 
 export function researchResourceRestoreMarkerPath(rootInput?: string): string {
-  return path.join(resourceRoot(rootInput), "index", RESEARCH_LEXICAL_RESTORE_MARKER);
+  return path.join(/* turbopackIgnore: true */ resourceRoot(rootInput), "index", RESEARCH_LEXICAL_RESTORE_MARKER);
 }
 
 async function readRestoreMarker(root: string): Promise<ResearchRestoreMarkerV1 | null> {
@@ -217,12 +217,12 @@ async function reconcileRestoredResearchResourcesLocked(
   const beforeJobs = await store.withOperationalTransaction(async (transaction) =>
     new Set(transaction.listJobs().map((job) => job.id)));
   const disposableIndexFile = path.join(
-    root,
+    /* turbopackIgnore: true */ root,
     "index",
     `.restore-recovery-${process.pid}-${randomBytes(8).toString("hex")}.sqlite`,
   );
   const disposableIndex = await openResearchResourceLexicalIndex({ file: disposableIndexFile });
-  const ingestion = createResearchResourceIngestion({
+  const maintenance = createResearchResourceMaintenance({
     root,
     store,
     index: disposableIndex,
@@ -235,9 +235,9 @@ async function reconcileRestoredResearchResourcesLocked(
     recoveryAlreadyHeld: true,
   });
   try {
-    await ingestion.reconcileStartup();
+    await maintenance.reconcileStartup();
   } finally {
-    await ingestion.close();
+    await maintenance.close();
     for (const suffix of ["", "-wal", "-shm"]) {
       await rm(`${disposableIndexFile}${suffix}`, { force: true });
     }
@@ -247,7 +247,7 @@ async function reconcileRestoredResearchResourcesLocked(
   await failpoint("jobs-recreated");
 
   const rebuilt = await rebuildResearchResourceLexicalIndex(
-    { file: path.join(root, "index", "research-resources.sqlite") },
+    { file: path.join(/* turbopackIgnore: true */ root, "index", "research-resources.sqlite") },
     async (index) => store.withOperationalTransaction(async (transaction) => {
       for (const manifest of transaction.listManifests()) {
         if (!readyManifest(transaction, manifest)) continue;

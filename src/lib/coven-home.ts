@@ -30,5 +30,5 @@ export function covenHomePath(
       // A diagnostic failure must not weaken the path boundary.
     }
   }
-  return path.join(homeDir, ".coven");
+  return path.join(/* turbopackIgnore: true */ homeDir, ".coven");
 }

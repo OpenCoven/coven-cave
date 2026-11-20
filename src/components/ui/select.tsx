@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
-import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
+import { Popover, PopoverBody, PopoverItem, usePopoverInitialFocus } from "@/components/ui/popover";
 
 export type StandardSelectOption<T extends string> = {
   value: T;
@@ -79,9 +79,28 @@ export function StandardSelect<T extends string>({
   "aria-invalid": ariaInvalid,
 }: StandardSelectProps<T>) {
   const [open, setOpen] = useState(false);
+  const [openedWithKeyboard, setOpenedWithKeyboard] = useState(false);
+  const menuClass = `standard-select-menu-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  usePopoverInitialFocus(open && openedWithKeyboard, `.${menuClass}`);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selected = findSelected(options, value);
   const selectedLabel = defaultOptionLabel(selected) || placeholder || value || label;
+
+  function moveMenuFocus(event: KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(
+      'button[role^="menuitem"]:not(:disabled)',
+    ));
+    if (options.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const current = options.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === "Home" ? 0
+      : event.key === "End" ? options.length - 1
+      : event.key === "ArrowDown" ? (current + 1) % options.length
+      : current < 0 ? options.length - 1 : (current - 1 + options.length) % options.length;
+    options[next].focus();
+  }
 
   return (
     <>
@@ -105,7 +124,16 @@ export function StandardSelect<T extends string>({
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen((next) => !next)}
+        onClick={(event) => {
+          setOpenedWithKeyboard(event.detail === 0);
+          setOpen((next) => !next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown") return;
+          event.preventDefault();
+          setOpenedWithKeyboard(true);
+          setOpen(true);
+        }}
       >
         {renderValue ? (
           renderValue(selected)
@@ -130,7 +158,7 @@ export function StandardSelect<T extends string>({
         ariaLabel={label}
         className={popoverClassName}
       >
-        <PopoverBody role="menu" ariaLabel={`${label} options`}>
+        <PopoverBody role="menu" ariaLabel={`${label} options`} className={menuClass} onKeyDown={moveMenuFocus}>
           {options.map((entry, index) => {
             if (isGroup(entry)) {
               return (

@@ -46,6 +46,7 @@ import {
 } from "@/lib/canvas-inspector";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import { highlightToHtml } from "@/components/message-bubble";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   initialCode: string;
@@ -71,6 +72,7 @@ export function ChatArtifactViewer({
   artifact,
   onArtifactUpdated,
 }: Props) {
+  const keys = useKeySymbols();
   const [annotationStorage] = useState<Storage | null>(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -971,7 +973,7 @@ export function ChatArtifactViewer({
             ) : null}
           </div>
           <div className="chat-artifact__refine-foot">
-            <span className="chat-artifact__refine-hint">⌘↵ to refine</span>
+            <span className="chat-artifact__refine-hint">{platformizeHint("⌘↵ to refine", keys)}</span>
             <span className="chat-artifact__spacer" />
             <button
               type="button"

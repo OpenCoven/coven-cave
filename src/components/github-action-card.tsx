@@ -4,7 +4,10 @@
  * GitHubActionCard — agent-proposed GitHub writes (design
  * docs/chat-github-integration.md §3; bead cave-fpqx.9).
  *
- * Lifecycle: proposed → firing → done | error(+retry). Agent-initiated
+ * Lifecycle: proposed → firing → done | error(+retry). A write GitHub may
+ * have received before failing (`code: "ambiguous-write"`, #6369) is an
+ * uncertain error: the card links to GitHub to check, and re-sending is an
+ * explicit "Send again anyway", never a plain Retry. Agent-initiated
  * actions ALWAYS enter at `proposed` and require a user tap regardless of
  * tier — agents propose, humans dispose. Tier-2 kinds additionally show a
  * danger-tinted Run button so the weight of merge/review/rerun/dispatch is
@@ -12,6 +15,7 @@
  */
 
 import { useState } from "react";
+import { readGitHubWriteAnswer, isUncertainGitHubWrite, UNREADABLE_GITHUB_WRITE_ANSWER } from "@/lib/github-write-answer";
 import { Icon } from "@/lib/icon";
 import { classifyGitHubAction, type GitHubActionDescriptor } from "@/lib/github-blocks";
 
@@ -50,29 +54,51 @@ export function describeGitHubAction(a: GitHubActionDescriptor): string {
   }
 }
 
-/** Fire one proposed action through the matching API route. Returns an error
- *  string, or null on success. Exported for tests. */
-export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<string | null> {
-  const post = async (url: string, payload: Record<string, unknown>, method = "POST") => {
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-    if (!res.ok || !data?.ok) {
-      return res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`);
+/** A failed action. `uncertain` means GitHub may have acted anyway (#6369). */
+export type GitHubActionFailure = { error: string; uncertain: boolean };
+
+/** Where to check the outcome of an action on GitHub. Exported for tests. */
+export function githubActionTargetUrl(a: GitHubActionDescriptor): string {
+  const repo = `https://github.com/${a.repo}`;
+  if (a.kind === "rerun" || a.kind === "dispatch") return `${repo}/actions`;
+  if (!a.number) return repo;
+  const pull = a.kind === "review" || a.kind === "merge" || a.kind === "reply" || a.kind === "resolve" || a.kind === "unresolve";
+  return `${repo}/${pull ? "pull" : "issues"}/${a.number}`;
+}
+
+/** Fire one proposed action through the matching API route. Returns the
+ *  failure, or null on success. Exported for tests. */
+export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<GitHubActionFailure | null> {
+  const fail = (error: string): GitHubActionFailure => ({ error, uncertain: false });
+  const post = async (url: string, payload: Record<string, unknown>, method = "POST"): Promise<GitHubActionFailure | null> => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      // The request may have reached the server; its outcome is unknown.
+      return { error: "Lost the connection before Cave answered.", uncertain: true };
+    }
+    const data = await readGitHubWriteAnswer(res);
+    if (!res.ok || data?.ok !== true) {
+      if (isUncertainGitHubWrite(res.status, data)) {
+        return { error: data?.error ?? UNREADABLE_GITHUB_WRITE_ANSWER, uncertain: true };
+      }
+      return fail(res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`));
     }
     return null;
   };
 
   switch (a.kind) {
     case "comment":
-      if (!a.body) return "no comment text proposed";
+      if (!a.body) return fail("no comment text proposed");
       return post("/api/github/comment", { repo: a.repo, number: a.number, body: a.body });
     case "reply":
-      if (!a.body) return "no reply text proposed";
-      if (!a.threadId) return "no review comment specified — the proposal must carry a comment id";
+      if (!a.body) return fail("no reply text proposed");
+      if (!a.threadId) return fail("no review comment specified — the proposal must carry a comment id");
       return post("/api/github/reply", {
         repo: a.repo,
         number: a.number,
@@ -84,7 +110,7 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<strin
       // The marker must name the target comment (databaseId) — resolving "the
       // first unresolved thread" on a multi-thread PR marks the wrong thread
       // (review finding, cave-jqke).
-      if (!a.threadId) return "no thread specified — the proposal must carry a thread id";
+      if (!a.threadId) return fail("no thread specified — the proposal must carry a thread id");
       try {
         const res = await fetch(
           `/api/github/comments?repo=${encodeURIComponent(a.repo)}&number=${a.number}&isPull=1`,
@@ -93,14 +119,14 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<strin
         const data = (await res.json().catch(() => null)) as
           | { ok: true; reviewThreads: { id: string; isResolved: boolean; comments?: { id: string }[] }[] }
           | null;
-        if (!data || data.ok !== true) return "could not load review threads";
+        if (!data || data.ok !== true) return fail("could not load review threads");
         const want = a.kind === "resolve";
         const thread = data.reviewThreads.find((t) => t.comments?.some((c) => c.id === a.threadId));
-        if (!thread) return "target thread not found on this PR";
-        if (thread.isResolved === want) return want ? "thread already resolved" : "thread already unresolved";
+        if (!thread) return fail("target thread not found on this PR");
+        if (thread.isResolved === want) return fail(want ? "thread already resolved" : "thread already unresolved");
         return post("/api/github/resolve-thread", { threadId: thread.id, resolved: want });
       } catch {
-        return "network error";
+        return fail("network error");
       }
     }
     case "issue-create":
@@ -124,7 +150,7 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<strin
 
 export function GitHubActionCard({ action }: { action: GitHubActionDescriptor }) {
   const [phase, setPhase] = useState<Phase>("proposed");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<GitHubActionFailure | null>(null);
   const tier = classifyGitHubAction(action.kind);
   const summary = describeGitHubAction(action);
 
@@ -172,8 +198,23 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
           </div>
         ) : null}
         {phase === "error" && error ? (
-          <div className="mt-1 text-[length:var(--text-xs)] text-[var(--color-warning)]" role="alert">
-            {error}
+          <div className="mt-1 text-[length:var(--text-xs)] text-[var(--color-warning)]" role="alert" data-gh-action-uncertain={error.uncertain || undefined}>
+            {error.uncertain ? "This may have gone through. " : null}
+            {error.error}
+            {error.uncertain ? (
+              <>
+                {" "}
+                <a
+                  className="focus-ring underline"
+                  href={githubActionTargetUrl(action)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Check on GitHub
+                </a>{" "}
+                before sending it again.
+              </>
+            ) : null}
           </div>
         ) : null}
         {phase !== "done" ? (
@@ -187,9 +228,19 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
               }`}
               onClick={run}
               disabled={phase === "firing"}
-              aria-label={`Run proposed action: ${summary}`}
+              aria-label={
+                phase === "error" && error?.uncertain
+                  ? `Send again anyway, after checking GitHub: ${summary}`
+                  : `Run proposed action: ${summary}`
+              }
             >
-              {phase === "firing" ? "Running…" : phase === "error" ? "Retry" : "Run"}
+              {phase === "firing"
+                ? "Running…"
+                : phase === "error"
+                  ? error?.uncertain
+                    ? "Send again anyway"
+                    : "Retry"
+                  : "Run"}
             </button>
             <button
               type="button"

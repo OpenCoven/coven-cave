@@ -1,134 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
-import {
-  createOnboardingBootstrapState,
-  ONBOARDING_BOOTSTRAP_BOUNDARIES,
-  type OnboardingBootstrapState,
-} from "../src/lib/onboarding-bootstrap";
+import { expect, test } from "@playwright/test";
+import { now, setup, openThread, switchProject, switchComposeProject } from "./chat-context-fixture";
+import { chatFilterAtAllChats, openChatFilter } from "./fixtures/chat-filter";
 
-const now = new Date().toISOString();
-// `cave:onboarding:dismissed` alone is not enough: the workspace still asks the
-// bootstrap endpoint whether setup is needed, and an unmocked answer mounts the
-// setup flow where .chat-surface should be. Serve a completed state instead.
-const initialBootstrap = createOnboardingBootstrapState(true);
-const completedBootstrap: OnboardingBootstrapState = {
-  ...initialBootstrap,
-  complete: true,
-  needsSetup: false,
-  status: "complete",
-  stages: initialBootstrap.stages.map((stage) => ({
-    ...stage,
-    status: "complete",
-    detail: "Ready in the chat fixture.",
-  })),
-};
-const familiars = [
-  { id: "cody", display_name: "Cody", role: "Code Familiar", status: "active", icon: "ph:code" },
-  { id: "sage", display_name: "Sage", role: "Research Familiar", status: "active", icon: "ph:book-open" },
-];
-const projects = ["alpha", "beta"].map((id) => ({
-  id, name: `Context ${id}`, root: `/context/${id}`, access: "write", createdAt: now, updatedAt: now,
-}));
-const sessions = [
-  { id: "context-a", familiarId: "cody", project_root: "/context/alpha", title: "Context thread A" },
-  { id: "context-b", familiarId: "cody", project_root: "/context/beta", title: "Context thread B" },
-].map((session) => ({
-  ...session, status: "completed", origin: "chat", harness: "codex", exit_code: null,
-  archived_at: null, created_at: now, updated_at: now,
-  attention: { state: "none", since: null, reason: null },
-}));
-
-async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promise<void>, pendingHistory?: Promise<void>) {
-  const conversationRequests: string[] = [];
-  // Next dev uses its HMR socket for hydration debug data. Block only app sockets.
-  await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
-  await page.addInitScript((betaFamiliar) => {
-    localStorage.setItem("cave:onboarding:dismissed", "1");
-    localStorage.setItem("cave:active-familiar", "cody");
-    // Chat surfaces mount lazily now (#5451), so the familiar has to already
-    // own chat as its last surface or `?mode=chat` lands on a shell that never
-    // renders .chat-surface. Same seed the split-pane spec uses.
-    localStorage.setItem("cave:familiar:cody:last-surface", "chat");
-    localStorage.setItem("cave:shell:nav-open", "1");
-    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1",
-      JSON.stringify({ "__all-projects__": ["cody"], alpha: ["cody"], beta: [betaFamiliar] }));
-  }, betaFamiliar);
-  await page.route("**/api/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (request.method() !== "GET") {
-      await route.fulfill({ status: 403, json: { ok: false, error: "Fixture forbids live mutations" } });
-      return;
-    }
-    let payload: object = { ok: true };
-    if (url.pathname === "/api/onboarding/bootstrap") {
-      payload = { ok: true, ...completedBootstrap, boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
-    }
-    else if (url.pathname === "/api/onboarding/status") payload = { ok: true, complete: true, steps: {}, tools: [] };
-    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
-    else if (url.pathname === "/api/projects") payload = { ok: true, projects };
-    else if (url.pathname === "/api/sessions/list") {
-      if (pendingSessions) await pendingSessions;
-      payload = { ok: true, sessions: pendingSessions ? sessions.map((session) => ({
-        ...session, updated_at: session.id === "context-b" ? new Date(Date.parse(now) + 1_000).toISOString() : now,
-      })) : sessions };
-    }
-    else if (url.pathname === "/api/queue/project") payload = { ok: true, projectId: "alpha", project: projects[0] };
-    else if (url.pathname === "/api/daemon/connection") payload = { ok: true, connected: true, running: true, target: { mode: "local" } };
-    else if (url.pathname === "/api/memory") payload = { ok: true, entries: [] };
-    else if (url.pathname === "/api/board") payload = { ok: true, cards: [] };
-    else if (url.pathname === "/api/inbox") payload = { ok: true, items: [] };
-    else if (url.pathname === "/api/github/tasks") payload = { ok: true, tasks: [] };
-    else if (url.pathname.startsWith("/api/chat/conversation/")) {
-      if (pendingHistory) await pendingHistory;
-      const id = url.pathname.split("/").at(-1)!;
-      conversationRequests.push(id);
-      const turns = Array.from({ length: 1_000 }, (_, index) => ({
-        id: `${id}-${index}`, parentId: index ? `${id}-${index - 1}` : null,
-        role: index % 2 ? "assistant" : "user",
-        text: `${id} message ${index}. ${index === 0 ? "Only oldest needle." : "A synthetic transcript turn."}`,
-        createdAt: now,
-      }));
-      payload = { ok: true, conversation: { id, turns, activeLeafId: turns.at(-1)!.id }, context: null };
-    }
-    await route.fulfill({ json: payload });
-  });
-  // The root route resolves bootstrap state on the SERVER, before Playwright can
-  // intercept any client API call, and it reads a cookie — not localStorage. So
-  // `cave:onboarding:dismissed` alone leaves the first-run "Set up Cave" dialog
-  // covering the surface and .chat-surface never mounts. Seed the
-  // server-readable dismissal first, exactly as onboarding-wizard.spec.ts does.
-  await page.context().addCookies([
-    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
-  ]);
-  await page.goto("/?mode=chat");
-  // The side panel is a separate conversation surface. Open the main Chat
-  // destination after hydration, as the Chat/Code workflow fixture does.
-  await page.waitForFunction(() => {
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
-    return document.querySelector(".chat-surface") !== null;
-  }, undefined, { timeout: 30_000 });
-  await expect(page.locator(".chat-surface")).toBeVisible({ timeout: 30_000 });
-  if (!pendingSessions) {
-    await expect(page.locator(".cnav__thread-main").filter({ hasText: "Context thread A" }).first()).toBeVisible();
-  }
-  return conversationRequests;
-}
-
-async function openThread(page: Page, letter: "A" | "B") {
-  await page.locator(".cnav__thread-main").filter({ hasText: `Context thread ${letter}` }).first().click();
-  await expect(page.getByTestId("chat-main").locator(`[data-turn-id="context-${letter.toLowerCase()}-999"]`)).toBeAttached();
-}
-
-async function switchProject(page: Page, projectId: "alpha" | "beta") {
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
-  await switcher.getByRole("button", { name: /^Switch project:/ }).click();
-  await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
-}
-
-test("reselecting the composer project preserves its draft across global and local selections", async ({ page }) => {
+test("composer and shared workspace project drafts stay isolated", async ({ page }) => {
   await setup(page);
   await page.keyboard.press("Alt+2");
-  await switchProject(page, "alpha");
+  await switchComposeProject(page, "alpha");
   const main = page.getByTestId("chat-main");
   const composer = main.getByRole("textbox", { name: "Message", exact: true });
   await composer.fill("Alpha draft remains Alpha");
@@ -142,10 +19,18 @@ test("reselecting the composer project preserves its draft across global and loc
   await main.getByRole("button", { name: /^Project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: "Context alpha" }).first().locator(".ui-popover-item").click();
   await expect(composer).toHaveValue("Alpha draft remains Alpha");
+  // The shared selector opens that workspace's blank-compose draft. Its
+  // storage key is separate from the All projects compose edited above.
   await switchProject(page, "beta");
-  await expect(composer).toHaveValue("Beta stays separate");
+  await expect(composer).toHaveValue("");
+  await composer.fill("Shared Beta workspace draft");
   await switchProject(page, "alpha");
-  await expect(composer).toHaveValue("Alpha draft remains Alpha");
+  await expect(composer).toHaveValue("");
+  await composer.fill("Shared Alpha workspace draft");
+  await switchProject(page, "beta");
+  await expect(composer).toHaveValue("Shared Beta workspace draft");
+  await switchProject(page, "alpha");
+  await expect(composer).toHaveValue("Shared Alpha workspace draft");
 });
 
 for (const clearFirst of [false, true]) {
@@ -185,23 +70,20 @@ for (const clearFirst of [false, true]) {
   });
 }
 
-test("explicit familiar selection navigates even when project browsing already selected it", async ({ page }) => {
+test("familiar filtering preserves the open conversation and draft", async ({ page }) => {
   await setup(page, "sage");
   await openThread(page, "A");
-  await switchProject(page, "beta");
   const main = page.getByTestId("chat-main");
-  await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
-  await expect(switcher.getByRole("button", { name: /^Switch familiar/ })).toContainText("Sage");
-  await switcher.getByRole("button", { name: /^Switch familiar/ }).click();
-  await page.getByRole("dialog", { name: "Familiars", exact: true }).getByRole("option").filter({ hasText: "Sage" }).click();
-  await expect(main.getByRole("textbox", { name: "Message", exact: true })).toHaveAttribute("placeholder", "Message Sage…");
-  await expect(main.locator("[data-turn-id]")).toHaveCount(0);
   const composer = main.getByRole("textbox", { name: "Message", exact: true });
-  await composer.fill("Sage draft survives reselection");
-  await switcher.getByRole("button", { name: /^Switch familiar/ }).click();
+  await composer.fill("Cody draft survives filtering");
+  await switchProject(page, "beta");
+  const filter = await openChatFilter(page);
+  await filter.controls.getByRole("button", { name: /^Switch familiar/ }).click();
   await page.getByRole("dialog", { name: "Familiars", exact: true }).getByRole("option").filter({ hasText: "Sage" }).click();
-  await expect(composer).toHaveValue("Sage draft survives reselection");
+  await filter.close();
+  await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
+  await expect(composer).toHaveValue("Cody draft survives filtering");
+  await expect(composer).toHaveAttribute("placeholder", "Message Cody…");
 });
 
 test("palette familiar selection opens a composer from the Projects tab", async ({ page }) => {
@@ -230,8 +112,8 @@ test("project browsing filters the rail without rebinding the open conversation 
   await switchProject(page, "alpha");
   // The project filter lists only Alpha's thread; the still-open Beta thread
   // stays reachable in its own "Outside this project" section (#5585).
-  const outside = page.locator('.chat-inner-rail section[aria-label="Open chat outside this project"]');
-  const filteredTitles = page.locator('.chat-inner-rail section:not([aria-label="Open chat outside this project"]) .cnav__thread-title');
+  const outside = page.locator('.chat-inner-rail section[aria-label="Open chat outside these filters"]');
+  const filteredTitles = page.locator('.chat-inner-rail section:not([aria-label="Open chat outside these filters"]) .cnav__thread-title');
   await expect(filteredTitles).toHaveCount(1);
   await expect(filteredTitles).toHaveAttribute("title", "Context thread A");
   await expect(outside.locator(".cnav__thread-title")).toHaveAttribute("title", "Context thread B");
@@ -282,6 +164,50 @@ test("slash completion uses the current draft after navigating between threads",
   await expect(composer).toHaveValue(/^\/help\s*$/);
 });
 
+test("Find navigation survives a queued tail scroll before the selected window commits", async ({ page }) => {
+  await page.addInitScript(() => {
+    const measure = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      const rect = measure.call(this);
+      const main = this.closest('[data-testid="chat-main"]');
+      if (this instanceof HTMLElement && this.classList.contains("cave-chat-transcript")
+        && main?.querySelectorAll(".cave-find-hit").length === 40
+        && main.querySelector('[data-turn-id="context-a-999"]')) {
+        Element.prototype.getBoundingClientRect = measure;
+        // Deliver the old tail's queued scroll after anchor capture releases
+        // follow, but before a deferred React render can replace that window.
+        // Real geometry and all application listeners remain in use.
+        this.scrollTop = this.scrollHeight;
+        queueMicrotask(() => {
+          document.documentElement.dataset.findQueuedScroll = "delivered";
+          this.dispatchEvent(new Event("scroll"));
+        });
+      }
+      return rect;
+    };
+  });
+  await setup(page);
+  await openThread(page, "A");
+  const main = page.getByTestId("chat-main");
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  const search = main.getByRole("search", { name: "Find in conversation" });
+  await composer.fill("Keep this reply while searching");
+  await composer.press("ControlOrMeta+f");
+  await search.getByRole("textbox", { name: "Find in conversation" }).fill("context-a message");
+  await expect(page.locator("html")).toHaveAttribute("data-find-queued-scroll", "delivered");
+  await expect(main.locator('[data-turn-id="context-a-0"]')).toBeAttached();
+  await expect(main.locator("[data-turn-id]")).toHaveCount(60);
+  await expect(main.locator('[data-turn-id="context-a-999"]')).toHaveCount(0);
+  await search.getByRole("button", { name: "Match case", exact: true }).press("Escape");
+  await expect(search).toHaveCount(0);
+  await expect(composer).toBeFocused();
+  await expect(composer).toHaveValue("Keep this reply while searching");
+  await expect(main.locator('[data-turn-id="context-a-0"]')).toBeAttached();
+  await main.getByRole("button", { name: "Latest", exact: true }).click();
+  await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
+  await expect(main.locator('[data-turn-id="context-a-0"]')).toHaveCount(0);
+});
+
 test("Escape closes find from its controls, results and paging without losing composer focus", async ({ page }) => {
   await setup(page);
   await openThread(page, "A");
@@ -313,12 +239,12 @@ test("blank project drafts stay isolated and first-send context freezes before s
   await page.keyboard.press("Alt+2");
   const main = page.getByTestId("chat-main");
   const composer = main.locator("textarea").first();
-  await switchProject(page, "alpha");
+  await switchComposeProject(page, "alpha");
   await composer.fill("Alpha only");
-  await switchProject(page, "beta");
+  await switchComposeProject(page, "beta");
   await expect(composer).toHaveValue("");
   await composer.fill("Beta only");
-  await switchProject(page, "alpha");
+  await switchComposeProject(page, "alpha");
   await expect(composer).toHaveValue("Alpha only");
 
   const roots: string[] = [];
@@ -350,10 +276,7 @@ test("late session recency cannot move an inferred first-send project or its pro
   const pendingSend = new Promise<void>((resolve) => { releaseSend = resolve; });
   const roots: string[] = [];
   await setup(page, "cody", pendingSessions);
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
-  await switcher.getByRole("button", { name: /^Switch project:/ }).click();
-  await page.locator(".ui-popover-item").filter({ hasText: /^All projects$/ }).click();
-  await expect(switcher.getByRole("button", { name: /^Switch project:/ })).toContainText("All projects");
+  await expect(chatFilterAtAllChats(page)).toBeVisible();
   await page.route("**/api/chat/send", async (route) => {
     roots.push(route.request().postDataJSON().projectRoot);
     await pendingSend;
@@ -430,8 +353,16 @@ test("a remote-host handoff carries follow-up text through its owned session pro
 for (const departure of ["project", "new-chat"] as const) {
   test(`a delayed runtime save cannot send or move a draft after ${departure} departure`, async ({ page }) => {
     await setup(page);
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "cody" } })));
     await switchProject(page, "alpha");
+    const priorComposer = await page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true }).elementHandle();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", {
+      detail: { familiarId: "cody", projectRoot: "/context/alpha" },
+    })));
+    // New Chat awaits project/familiar admission before replacing its composer.
+    // The old composer can already show Alpha, so the chip alone cannot prove
+    // the request finished. Begin the runtime-save scenario in the new instance.
+    await expect.poll(() => priorComposer!.evaluate((element) => element.isConnected)).toBe(false);
+    await expect(page.getByTestId("chat-main").getByRole("button", { name: /^Project: Context alpha/ })).toBeVisible();
     let releaseSave!: () => void;
     const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
     let saves = 0;

@@ -1,0 +1,106 @@
+{
+  "historicalFailure": {
+    "mergeOid": "36679dba6918618385b1ec1782b374e70af365bf",
+    "artifact": "../runtime-activity-2026-10-18/native-live-failure.json",
+    "assertion": "ActivityRecoveryUITests.swift:114 tool.isHittable",
+    "logSha256": "53438c6ff7fb89a8b739b8968587570d639d6cf572b77784f052c70d25dd54f8",
+    "disposition": "Historical failed attempt retained. Root cause was not established."
+  },
+  "attempts": [
+    {
+      "lane": "native baseline / production build",
+      "attempt": 1,
+      "exitCode": 143,
+      "result": "deliberately interrupted at 299 MB disk free",
+      "changeBeforeRetry": "Run serially after capacity recovered; no source/assertion change."
+    },
+    {
+      "lane": "native baseline",
+      "attempt": 2,
+      "exitCode": 0,
+      "result": "1 test passed, 0 failures",
+      "testSeconds": 20.37,
+      "totalSetupAndExecutionSeconds": 293.923
+    },
+    {
+      "lane": "production build",
+      "attempt": 2,
+      "exitCode": 0,
+      "result": "pnpm build passed including bundle and standalone budgets"
+    },
+    {
+      "lane": "native live-send",
+      "attempt": 1,
+      "exitCode": 1,
+      "result": "install-ui-app failed with simctl exit 149; simulator was Shutdown; no provider request or tool invocation",
+      "changeBeforeRetry": "Booted the same owned simulator and waited for bootstatus to finish. No source/assertion change."
+    },
+    {
+      "lane": "native live-send",
+      "attempt": 2,
+      "exitCode": 0,
+      "result": "Full harness passed, including XCTest and cleanup. One provider request and one tool invocation.",
+      "testSeconds": 78.728
+    },
+    {
+      "lane": "supporting navigation",
+      "attempt": 1,
+      "exitCode": 65,
+      "result": "Timeline fixture opened pairing screen. Default scheme skipped PerformanceBaselineUITests, so both requested navigation cases were unexecuted.",
+      "changeBeforeRetry": "Uninstalled only the session-owned simulator test app. Temporary xctestrun selects all three tests and removes the suite skip; no repository/test changes."
+    },
+    {
+      "lane": "supporting navigation",
+      "attempt": 2,
+      "exitCode": 0,
+      "result": "3 tests passed, 0 failures. Debug simulator behavior checks."
+    }
+  ],
+  "rawLocalArtifacts": [
+    {
+      "path": "/tmp/cave-6069-background-baseline.log",
+      "sha256": "bf683631e29be54cfb8d429472f291dce80ab85cc306bf20a503ded341a0d691"
+    },
+    {
+      "path": "/tmp/cave-6069-production-build.log",
+      "sha256": "9f5c07013b752b2934e190af4eeb195b3137c6c6b0f6a80b25552c185eacfa2a"
+    },
+    {
+      "path": "/tmp/cave-6069-background-retry1.log",
+      "sha256": "3d678d257675e8ecc7594fc933a12b47aec4f6ccc97aad96382224d41a60dad9"
+    },
+    {
+      "path": "/tmp/cave-6069-production-retry1.log",
+      "sha256": "2ac405f6181a651873d504ecdcdaa815e03aff375ad3ff4a17871c78d2a73741"
+    },
+    {
+      "path": "/tmp/cave-6069-live-baseline/result.json",
+      "sha256": "ffed6a79ca4084d6fc4ea37c3b7d8a534401b2786387d068cb7721caefa7bfa8"
+    },
+    {
+      "path": "/tmp/cave-6069-live-baseline/install-ui-app.log",
+      "sha256": "5a76947209a96086c83c0e238a53a5b1c3a4941c23ad3f3525ce11ebfaed5bd8"
+    },
+    {
+      "path": "/tmp/cave-6069-live-retry1/result.json",
+      "sha256": "ed405604a9852f3a48febdd83d8c71fc7ee20539e7ed71b231a33db7c4dd781f"
+    },
+    {
+      "path": "/tmp/cave-6069-live-retry1/native-recovery-ui.log",
+      "sha256": "b812c0a221d87de08e864404637d3ad9c43dacd604af829a53240d71296d0796"
+    },
+    {
+      "path": "/tmp/cave-6069-navigation.log",
+      "sha256": "1270de4b9961888cd6e2d59942913dfc3a3da5feb140dc51361f587adc44e45d"
+    },
+    {
+      "path": "/tmp/cave-6069-navigation-retry1.log",
+      "sha256": "23c122df5415abcf003b1211da3421e937b2b0520983dd5de2756193c6a1edfb"
+    },
+    {
+      "path": "/tmp/cave-6069-derived/Build/Products/Cave6069Navigation.xctestrun",
+      "sha256": "0f3d1aa5cfc1a48fa134dc54836102e48d03994f90058e6178dd5d42e61ddc0c"
+    }
+  ],
+  "retention": "Raw logs and xcresult bundles remain on this machine under /tmp. Digests identify them; permanent raw-log hosting is not claimed."
+}

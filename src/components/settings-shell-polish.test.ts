@@ -25,6 +25,10 @@ const shellResponsiveCss = readFileSync(
 );
 const dashboardCssUrl = new URL("../styles/dashboard.css", import.meta.url);
 const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl, "utf8") : "";
+const switchCss = readFileSync(new URL("../styles/settings-switch.css", import.meta.url), "utf8");
+const xSectionCss = readFileSync(new URL("../styles/familiar-x-section.css", import.meta.url), "utf8");
+assert.match(dashboardCss, /@import "\.\/settings-switch\.css"/, "Settings loads the shared switch");
+assert.match(xSectionCss, /@import "\.\/settings-switch\.css"/, "X recovery loads the shared switch independently");
 const aboutSource = readFileSync(
   new URL("./settings-about.tsx", import.meta.url),
   "utf8",
@@ -497,17 +501,17 @@ assert.match(
   "Phone disclosures preserve native touch targets on coarse pointers",
 );
 assert.match(
-  dashboardCss,
+  switchCss,
   /\.settings-switch \{[\s\S]{0,400}?border-radius: var\(--radius-pill\)/,
   "the minimal switch track follows the selected pill radius",
 );
 assert.match(
-  dashboardCss,
+  switchCss,
   /\.settings-switch__knob \{[\s\S]{0,220}?border-radius: var\(--radius-pill\)/,
   "the minimal switch knob follows the selected pill radius",
 );
 assert.match(
-  dashboardCss,
+  switchCss,
   /\.settings-switch::after \{[\s\S]{0,120}?inset: -12px/,
   "the small switch keeps a generous hit area",
 );
@@ -586,7 +590,7 @@ assert.match(
 );
 assert.match(
   source,
-  /shell_open_path[\s\S]{0,220}Workspace folder opened/,
+  /shell_reveal_path[\s\S]{0,220}Workspace folder opened/,
   "Browse truthfully opens the current workspace directory",
 );
 assert.match(
@@ -740,6 +744,16 @@ assert.match(
   shellSource,
   /<div className="flex min-h-0 flex-1 flex-col md:flex-row">[\s\S]{0,7000}<main[\s\S]{0,240}className="settings-shell__content min-h-0 flex-1 overflow-y-auto/,
   "Settings bounds its body and gives vertical scrolling only to the content main",
+);
+assert.match(
+  shellSource,
+  /\{showPicker \? null : \(\s*<p className="mb-1 px-4[^"]*uppercase tracking-widest[^"]*">\s*Settings\s*<\/p>\s*\)\}/,
+  "the Settings eyebrow labels the desktop rail only; the mobile picker is titled by the top bar (#6243)",
+);
+assert.match(
+  shellSource,
+  /\{showPicker \? null : \(\s*<div className="min-w-0">\s*<span className="surface-compact-title block truncate">/,
+  "the header band drops its title on the mobile picker and keeps Back (#6243)",
 );
 
 console.log("settings-shell-polish.test.ts OK");

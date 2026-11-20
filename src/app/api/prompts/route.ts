@@ -26,16 +26,16 @@ import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { writeFileAtomic } from "@/lib/server/atomic-write";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 import { PROMPT_SLUG_RE, promptSlug, serializePromptTemplate } from "@/lib/server/prompt-file";
+import { ensureMarketplacePlugin, marketplacePluginHasDirectory } from "@/lib/server/marketplace-payload";
 import { mergePrompts, scanPromptsDir } from "@/lib/server/prompt-scan";
 import type { PromptOption } from "@/lib/slash-prompt";
 
 export const dynamic = "force-dynamic";
 
-const MARKETPLACE_PLUGINS_DIR = path.join(process.cwd(), "marketplace", "plugins");
 
 export async function GET() {
   const user: PromptOption[] = [];
-  await scanPromptsDir(path.join(covenHome(), "prompts"), "user", user);
+  await scanPromptsDir(path.join(/* turbopackIgnore: true */ covenHome(), "prompts"), "user", user);
 
   const packs: PromptOption[] = [];
   try {
@@ -44,8 +44,8 @@ export async function GET() {
     // the shape guard keeps a hand-edited config from escaping the plugins dir.
     const installed = Object.keys(cfg.marketplace.installed).filter((id) => /^[\w.-]+$/.test(id));
     await Promise.all(
-      installed.map((id) =>
-        scanPromptsDir(path.join(MARKETPLACE_PLUGINS_DIR, id, "prompts"), `pack:${id}`, packs),
+      installed.map(async (id) =>
+        await marketplacePluginHasDirectory(id, "prompts") && scanPromptsDir(path.join(/* turbopackIgnore: true */ await ensureMarketplacePlugin(id), "prompts"), `pack:${id}`, packs),
       ),
     );
   } catch {
@@ -56,7 +56,7 @@ export async function GET() {
 }
 
 function userPromptsDir(): string {
-  return path.join(covenHome(), "prompts");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "prompts");
 }
 
 type SavePromptBody = {
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
   // path.basename is the CodeQL-recognized js/path-injection sanitizer; the
   // slug regex above already forbids any separator, so this is a no-op on
   // valid input and defense-in-depth against a future looser id source.
-  const file = path.join(dir, `${path.basename(id)}.md`);
+  const file = path.join(/* turbopackIgnore: true */ dir, `${path.basename(id)}.md`);
   if (raw.overwrite !== true) {
     try {
       await stat(file);
@@ -156,7 +156,7 @@ export async function DELETE(req: Request) {
   }
   try {
     // path.basename is the recognized path-injection sanitizer (see POST).
-    await unlink(path.join(userPromptsDir(), `${path.basename(id)}.md`));
+    await unlink(path.join(/* turbopackIgnore: true */ userPromptsDir(), `${path.basename(id)}.md`));
   } catch {
     return NextResponse.json({ ok: false, error: "template not found" }, { status: 404 });
   }

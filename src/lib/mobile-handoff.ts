@@ -230,7 +230,7 @@ export async function recoverStaleTailscaleServeLease({
 }
 
 export function tailscaleServeLeasePath(home = homedir()): string {
-  return path.join(home, ".coven", "cave", TAILSCALE_SERVE_LEASE_FILE);
+  return path.join(/* turbopackIgnore: true */ home, ".coven", "cave", TAILSCALE_SERVE_LEASE_FILE);
 }
 
 // Rust uses the same record and path. Linking a fully-written unique owner
@@ -655,7 +655,111 @@ function appendProtectedNonEmptySetting(
   }
 }
 
-export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[] {
+const CAVE_SERVE_HTTPS_PORT = "443";
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * The part of a node's Serve config that Cave may own: the HTTPS listener on
+ * :443, plus any listener whose handlers proxy to this backend. Other ports
+ * belong to other apps on the same node (#6518), so Cave neither judges
+ * ownership by them nor removes them. An entry without a readable port stays
+ * in scope, so malformed config keeps failing closed.
+ */
+export function caveServeScope(status: unknown, backendUrl: string): unknown {
+  if (!isPlainRecord(status)) return status;
+  const { Web: web, TCP: tcp, AllowFunnel: funnel } = status;
+  if (
+    (web !== undefined && !isPlainRecord(web))
+    || (tcp !== undefined && !isPlainRecord(tcp))
+    || (funnel !== undefined && !isPlainRecord(funnel))
+  ) {
+    return status;
+  }
+  const desired = normalizedLoopbackProxyTarget(backendUrl);
+  const ports = new Set([CAVE_SERVE_HTTPS_PORT]);
+  for (const [host, config] of Object.entries(web ?? {})) {
+    const port = serveStatusWebPort(host);
+    const handlers = isPlainRecord(config) ? config.Handlers : undefined;
+    if (!port || !desired || !isPlainRecord(handlers)) continue;
+    const proxiesHere = Object.values(handlers).some((handler) =>
+      isPlainRecord(handler)
+      && typeof handler.Proxy === "string"
+      && normalizedLoopbackProxyTarget(handler.Proxy) === desired);
+    if (proxiesHere) ports.add(port);
+  }
+  const inScope = (port: string | null) => port === null || ports.has(port);
+  const scoped: Record<string, unknown> = { ...status };
+  if (web) {
+    scoped.Web = Object.fromEntries(
+      Object.entries(web).filter(([host]) => inScope(serveStatusWebPort(host))),
+    );
+  }
+  if (tcp) {
+    scoped.TCP = Object.fromEntries(
+      Object.entries(tcp).filter(([port]) => inScope(serveStatusWebPort(`port:${port}`))),
+    );
+  }
+  if (funnel) {
+    scoped.AllowFunnel = Object.fromEntries(
+      Object.entries(funnel).filter(([hostPort]) => inScope(serveStatusWebPort(hostPort))),
+    );
+  }
+  return scoped;
+}
+
+/**
+ * The `tailscale serve … off` commands that remove only Cave's listeners.
+ * `serve reset` would also remove every other app's ports (#6518).
+ */
+export function caveServeRemovalCommands(status: unknown, backendUrl: string): string[][] {
+  const scoped = caveServeScope(status, backendUrl);
+  if (!isPlainRecord(scoped) || !isPlainRecord(scoped.Web)) return [];
+  const tcp = isPlainRecord(scoped.TCP) ? scoped.TCP : {};
+  const ports = [
+    ...new Set(
+      Object.keys(scoped.Web)
+        .map(serveStatusWebPort)
+        .filter((port): port is string => port !== null),
+    ),
+  ].sort((left, right) => Number(left) - Number(right));
+  return ports.map((port) => {
+    const listener = tcp[port];
+    const http = isPlainRecord(listener) && listener.HTTP === true && listener.HTTPS !== true;
+    return ["serve", `${http ? "--http" : "--https"}=${port}`, "off"];
+  });
+}
+
+async function runServeRemovals(
+  runTailscale: TailscaleServeOperationOptions["runTailscale"],
+  commands: string[][],
+): Promise<TailscaleServeCommandResult> {
+  let result: TailscaleServeCommandResult = {
+    ok: false,
+    status: null,
+    stdout: "",
+    stderr: "No Cave Serve listener was found to remove.",
+    cleanupFailed: false,
+  };
+  for (const args of commands) {
+    result = await runTailscale(args);
+    if (!result.ok || result.cleanupFailed) break;
+  }
+  return result;
+}
+
+/**
+ * Lists Serve proxy backends, and marks anything Cave can't attribute as
+ * protected. With `backendUrl`, only Cave's own scope is listed
+ * (`caveServeScope`).
+ */
+export function enumerateServeProxyBackends(
+  status: unknown,
+  backendUrl?: string,
+): ServeProxyBackend[] {
+  if (backendUrl !== undefined) status = caveServeScope(status, backendUrl);
   if (!status || typeof status !== "object" || Array.isArray(status)) {
     return [{ kind: "protected", raw: "<malformed status>" }];
   }
@@ -747,7 +851,7 @@ export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[
 export function serveRouteOwnedByBackend(status: unknown, backendUrl: string): boolean {
   const desired = normalizedLoopbackProxyTarget(backendUrl);
   if (!desired) return false;
-  const backends = enumerateServeProxyBackends(status);
+  const backends = enumerateServeProxyBackends(status, backendUrl);
   return backends.length > 0
     && backends.every((backend) => backend.kind === "loopback" && backend.target === desired);
 }
@@ -759,7 +863,7 @@ export async function assessServeOwnership(
   options: { takeOverHealthyLoopback?: boolean } = {},
 ): Promise<ServeOwnershipAssessment> {
   const desired = normalizedLoopbackProxyTarget(backendUrl);
-  const backends = enumerateServeProxyBackends(status);
+  const backends = enumerateServeProxyBackends(status, backendUrl);
   const targets = backends.map((backend) =>
     backend.kind === "loopback" ? backend.target : backend.raw);
   if (!desired || backends.some((backend) => backend.kind === "protected")) {
@@ -836,8 +940,8 @@ export function serveStatusFingerprint(status: unknown): string {
   return JSON.stringify(stableServeStatusValue(status));
 }
 
-function serveTargets(status: unknown): string[] {
-  return enumerateServeProxyBackends(status).map((target) =>
+function serveTargets(status: unknown, backendUrl: string): string[] {
+  return enumerateServeProxyBackends(status, backendUrl).map((target) =>
     target.kind === "loopback" ? target.target : target.raw);
 }
 
@@ -877,7 +981,7 @@ export async function claimTailscaleServeRoute({
       serveStatusFingerprint(beforeMutation.status)
       !== serveStatusFingerprint(current.status)
     ) {
-      return { kind: "conflict", targets: serveTargets(beforeMutation.status) };
+      return { kind: "conflict", targets: serveTargets(beforeMutation.status, backendUrl) };
     }
 
     const mutation = await runTailscale(["serve", "--bg", backendUrl]);
@@ -926,7 +1030,7 @@ export async function resetTailscaleServeRoute({
       if (afterVerifiedRouteRemoval) {
         const finalStatus = await readTailscaleServeStatus(runTailscale);
         if (finalStatus.kind !== "status") return finalStatus;
-        if (enumerateServeProxyBackends(finalStatus.status).length > 0) {
+        if (enumerateServeProxyBackends(finalStatus.status, backendUrl).length > 0) {
           return { kind: "verification-failed", status: finalStatus.status };
         }
       }
@@ -939,7 +1043,7 @@ export async function resetTailscaleServeRoute({
     };
     const current = await readTailscaleServeStatus(runTailscale);
     if (current.kind !== "status") return current;
-    const currentTargets = enumerateServeProxyBackends(current.status);
+    const currentTargets = enumerateServeProxyBackends(current.status, backendUrl);
     if (currentTargets.length === 0) {
       return await finishVerifiedRemoval(true);
     }
@@ -958,10 +1062,13 @@ export async function resetTailscaleServeRoute({
       !== serveStatusFingerprint(current.status)
       || !serveRouteOwnedByBackend(beforeReset.status, backendUrl)
     ) {
-      return { kind: "not-owned", targets: serveTargets(beforeReset.status) };
+      return { kind: "not-owned", targets: serveTargets(beforeReset.status, backendUrl) };
     }
 
-    const reset = await runTailscale(["serve", "reset"]);
+    const reset = await runServeRemovals(
+      runTailscale,
+      caveServeRemovalCommands(beforeReset.status, backendUrl),
+    );
     if (reset.cleanupFailed) {
       return { kind: "cleanup-failed", stderr: reset.stderr };
     }
@@ -974,7 +1081,7 @@ export async function resetTailscaleServeRoute({
         status: verified.status,
       };
     }
-    if (enumerateServeProxyBackends(verified.status).length > 0) {
+    if (enumerateServeProxyBackends(verified.status, backendUrl).length > 0) {
       return { kind: "verification-failed", status: verified.status };
     }
     return await finishVerifiedRemoval(false);
@@ -992,8 +1099,8 @@ type ResolveTailscaleBinOptions = {
 
 const TAILSCALE_APP_DIR = "/Applications/Tailscale.app/Contents/MacOS";
 const DEFAULT_TAILSCALE_PATHS = [
-  path.join(TAILSCALE_APP_DIR, "tailscale"),
-  path.join(TAILSCALE_APP_DIR, "Tailscale"),
+  path.join(/* turbopackIgnore: true */ TAILSCALE_APP_DIR, "tailscale"),
+  path.join(/* turbopackIgnore: true */ TAILSCALE_APP_DIR, "Tailscale"),
   "/opt/homebrew/bin/tailscale",
   "/usr/local/bin/tailscale",
   "/usr/bin/tailscale",
@@ -1040,7 +1147,7 @@ function pathCandidates(pathEnv: string | null | undefined) {
   return pathEnv
     .split(path.delimiter)
     .filter(Boolean)
-    .map((dir) => path.join(dir, "tailscale"));
+    .map((dir) => path.join(/* turbopackIgnore: true */ dir, "tailscale"));
 }
 
 export function resolveTailscaleBin({

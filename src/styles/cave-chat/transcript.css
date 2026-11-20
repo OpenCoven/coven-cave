@@ -248,12 +248,6 @@
   line-height: 1.2;
 }
 
-.cave-linear-turn-badge--op {
-  background: color-mix(in oklch, var(--accent-presence) 35%, var(--bg-raised));
-  color: color-mix(in oklch, var(--accent-presence) 30%, var(--text-primary));
-  text-transform: uppercase;
-}
-
 .cave-linear-turn-recency {
   color: var(--text-muted);
   /* Chat-revamp 1b: 11px muted timestamp beside the name. */
@@ -293,9 +287,9 @@
 .cave-chat-linear .cave-reasoning-block,
 .cave-chat-linear .cave-progress-group,
 .cave-chat-linear .cave-tool-group {
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-panel) 26%, transparent);
-  padding: var(--space-2) 9px;
+  padding: var(--space-2) var(--space-3);
 }
 
 /* ── Agent-work line (chat-revamp 1b) ───────────────────────────────────────
@@ -320,14 +314,22 @@
   max-width: 100%;
   align-items: center;
   gap: var(--space-2);
+  margin: 0;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   padding: 0 var(--space-3);
   color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-tool-group.cave-work-line > .cave-tool-summary:hover {
+  border-color: color-mix(in oklch, var(--border-strong) 70%, var(--border-hairline));
+  color: var(--text-secondary);
 }
 
 .cave-tool-group.cave-work-line[open] {
@@ -335,13 +337,18 @@
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-panel) 26%, transparent);
-  padding: var(--space-2) 9px;
+  padding: var(--space-2) var(--space-3);
 }
 
+/* Open, the chip becomes the panel's header row and takes the shared
+   summary grammar back: no border, the bleed margin, the hover fill. */
 .cave-tool-group.cave-work-line[open] > .cave-tool-summary {
+  min-height: var(--space-6);
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
   border: 0;
-  border-radius: 0;
-  padding: 0;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
 }
 
 .cave-work-line__label {
@@ -360,6 +367,15 @@
 
 .cave-chat-linear .cave-composer-dock {
   padding: var(--space-5) clamp(16px, 3vw, 34px) var(--space-4);
+}
+
+/* The top padding is headroom for the floating Tools tab. On desktop Tools
+   lives in the action cluster (#5954), so with nothing overhanging the panel
+   the dock keeps only a small gap above it. */
+@media (min-width: 1024px) {
+  .cave-chat-linear .cave-composer-dock:not(:has(.cave-composer-edge-actions:not(:empty))) {
+    padding-top: var(--space-3);
+  }
 }
 
 /* Typed assistant suggestions keep their effect legible before activation.
@@ -540,10 +556,16 @@
 }
 
 
+/* The composer spans the reading column and centers under it, so the input
+   lines up with the conversation (#5950). */
 .cave-chat-linear .cave-composer-shell {
   width: 100%;
-  max-width: 100%;
+  max-width: var(--cave-chat-measure);
 }
+
+/* Prose fills the column like code blocks and tables. The narrower
+   reading-width settings (Settings → Appearance → Typography) cap the whole
+   .cave-md and still win; "Full", the default, leaves it uncapped. */
 
 .cave-chat-linear .cave-composer-panel {
   border-radius: var(--radius-panel);
@@ -655,6 +677,11 @@
     box-shadow var(--duration-fast) var(--ease-standard);
 }
 
+/* Latest sits at the reading column's right edge, not the pane's. */
+.cave-chat-linear .cave-new-response-content {
+  margin-right: max(0px, calc((100% - var(--cave-chat-measure)) / 2));
+}
+
 .cave-new-response-content:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
@@ -739,8 +766,33 @@
      yields to the header's MobileHeaderTask chip (the band keeps project ·
      runtime · git, which have no mobile twin). */
   .cave-chat-meta-line,
-  .cave-chat-linked-context {
+  .cave-chat-linked-context,
+  .cave-chat-header-row > .cave-chat-meta-line,
+  .cave-chat-header-row > .cave-chat-session-actions {
     display: none;
+  }
+
+  /* Desktop's two fixed rows must not reserve blank phone chrome. Only the
+     surviving activity strip contributes a mobile row. */
+  .cave-chat-header-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    row-gap: 0;
+  }
+
+  /* Keep run details reachable when the desktop identity is folded away. */
+  .cave-chat-header-row > .cave-chat-meta-line,
+  .cave-chat-meta-line__details {
+    display: contents;
+  }
+
+  .cave-chat-header-row > .cave-chat-meta-line > :not(.cave-chat-meta-line__details),
+  .cave-chat-header-row .cave-chat-meta-line__meta {
+    display: none;
+  }
+
+  .cave-chat-header-status {
+    max-width: 100%;
   }
 
   /* No header context strip to re-show here any more (cave-zfmqm): the

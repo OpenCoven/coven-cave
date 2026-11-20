@@ -16,6 +16,60 @@ private func reminder(link: Reminder.Link? = nil) -> Reminder {
 /// UNUserNotificationCenter plumbing is intentionally not under test.
 final class ChatNotificationsTests: XCTestCase {
 
+    func testLiveActivityStateWithholdsTraceTitlesBeforeEncoding() throws {
+        for title in ["PRIVATE_TOOL_ARGUMENT", "PRIVATE_REASONING_SUMMARY", "PRIVATE_OPAQUE_SIGNATURE"] {
+            let state = ChatActivityAttributes.ContentState(statusLabel: title)
+            let encoded = try JSONEncoder().encode(state)
+            XCTAssertEqual(state.statusLabel, "Working…")
+            XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains(title))
+        }
+    }
+
+    func testRestoredLiveActivityStateDoesNotRediscloseAnOldTraceTitle() throws {
+        let sentinel = "PRIVATE_RESTORED_TOOL_TITLE"
+        let saved = try JSONSerialization.data(withJSONObject: ["statusLabel": sentinel])
+        let state = try JSONDecoder().decode(ChatActivityAttributes.ContentState.self, from: saved)
+        XCTAssertEqual(state.statusLabel, "Working…")
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(state), as: UTF8.self).contains(sentinel))
+    }
+
+    /// golden-13 (#6061): the shared tool sentinels, folded through the real
+    /// stream decoder, reach neither the final-reply banner nor the Live
+    /// Activity state. Tool payloads fold into steps, never the reply text.
+    func testToolPayloadSentinelsStayOutOfFinalReplyBannerAndLiveActivity() throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "runtime-activity-v1", withExtension: "json"))
+        let corpus = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let section = try XCTUnwrap(corpus["reasoningPrivacySentinels"] as? [String: Any])
+        let sentinels = try XCTUnwrap(section["tool"] as? [String: String]).values.sorted()
+        XCTAssertEqual(sentinels.count, 3)
+        let frames: [[String: Any]] = [
+            ["kind": "tool_use", "id": "golden13", "name": sentinels[0], "status": "running",
+             "input": "{\"note\":\"\(sentinels[1])\"}"],
+            ["kind": "tool_use", "id": "golden13", "name": sentinels[0], "status": "ok",
+             "input": "{\"note\":\"\(sentinels[1])\"}", "output": sentinels[2]],
+        ]
+        var steps: [ActivityStep] = []
+        var labels: [String] = []
+        for frame in frames {
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: frame), as: UTF8.self)
+            steps = try XCTUnwrap(ActivityFold.fold(steps, event: try XCTUnwrap(StreamEvent.decode(json))))
+            if let title = steps.last?.title { labels.append(title) }
+        }
+        XCTAssertFalse(labels.isEmpty)
+        let reply = "The comparison is complete."
+        var surfaces = [ChatNotifications.preview(text: reply, isError: false),
+                        ChatNotifications.preview(text: "", isError: true)]
+        for label in labels {
+            let state = ChatActivityAttributes.ContentState(statusLabel: label)
+            surfaces.append(state.statusLabel)
+            surfaces.append(String(decoding: try JSONEncoder().encode(state), as: UTF8.self))
+        }
+        XCTAssertEqual(surfaces[0], reply)
+        for surface in surfaces {
+            for sentinel in sentinels { XCTAssertFalse(surface.contains(sentinel), sentinel) }
+        }
+    }
+
     // MARK: - Notify/suppress decision
 
     func testNotifiesWhenBackgroundedUnmutedAndEnabled() {

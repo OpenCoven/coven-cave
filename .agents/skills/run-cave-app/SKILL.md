@@ -7,40 +7,37 @@ description: Launch the Coven Cave app (Next.js web build) and drive a real brow
 
 Cave is a Next.js app served by a custom Node server (`server.ts` → bundled `server.mjs`), also packaged as a Tauri desktop app. To *see a surface*, run the web server and drive it with Playwright/chromium (both already installed: `@playwright/test`). **Do not** screenshot a blank frame and call it done — look at the image.
 
-## 0. Work in a throwaway worktree, never the primary checkout
+## 0. Use an owned worktree, never the primary checkout
 
-The primary checkout often has another live session's uncommitted work and concurrent git ops. Build/run from a fresh worktree on a unique port.
+The primary checkout often has another live session's uncommitted work and concurrent Git operations. Reuse an explicitly authorized owned verification unit, or create a fresh throwaway worktree on a unique port. A throwaway run needs no issue record, but still counts toward the 28-worktree budget; inspect [GitHub work tracking](../../../docs/workflows/github-work-tracking.md#worktrees) before allocation.
 
-**Use a session-UNIQUE worktree name, and make `add` fail-fast.** Fixed names like `run-tmp`/`verify-*` collide with other live sessions doing the same thing. The dangerous part isn't the collision itself — it's that when `git worktree add` fails (`'.worktrees/<name>' already exists`) a naive script *keeps going* and `cd`s into the pre-existing directory, which may be **another session's dirty worktree**, and then builds/serves from it. Guard against every collision vector:
-
-- **Unique name** (`$RANDOM$RANDOM`) so clashes are near-impossible.
-- **`prune` first** to clear stale admin entries left by crashed runs.
-- **Confirm the path is free** before adding (a leftover dir from a crash blocks `add`).
-- **Treat `add` as fatal** — abort the whole run if it fails; never fall through to `cd`.
-- **`cd` ONLY into the path `add` just created**, and sanity-check `HEAD`.
+Use a session-unique name and make creation fail-fast. A failed add must never fall through into a directory belonging to another session. Inspect capacity immediately before creation; raw Git does not enforce the budget, and missing paths or old registrations do not authorize pruning.
 
 ```bash
-MAIN=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
-git -C "$MAIN" worktree prune                        # drop stale entries from crashed runs
-# Pick a name that is neither an existing dir nor a registered worktree.
+set -euo pipefail
+CAVE_PRIMARY=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+git -C "$CAVE_PRIMARY" fetch --no-prune origin main
+CAVE_RUN_COUNT=$(git -C "$CAVE_PRIMARY" worktree list --porcelain | awk '/^worktree / { n++ } END { print n+0 }')
+[ "$CAVE_RUN_COUNT" -lt 28 ] || { echo "worktree budget reached; preserve units and resolve capacity"; exit 1; }
+CAVE_RUN_BASE=$(git -C "$CAVE_PRIMARY" rev-parse refs/remotes/origin/main)
 WT=""; for _ in 1 2 3 4 5; do
   cand="run-$RANDOM$RANDOM"
-  [ -e "$MAIN/.worktrees/$cand" ] && continue
-  git -C "$MAIN" worktree list --porcelain | grep -q "/.worktrees/$cand\$" && continue
+  [ -e "$CAVE_PRIMARY/.worktrees/$cand" ] && continue
+  [ -L "$CAVE_PRIMARY/.worktrees/$cand" ] && continue
+  git -C "$CAVE_PRIMARY" worktree list --porcelain | grep -Fqx "worktree $CAVE_PRIMARY/.worktrees/$cand" && continue
   WT="$cand"; break
 done
-[ -n "$WT" ] || { echo "could not find a free worktree name — aborting"; exit 1; }
-# --detach for read/measure (no branch); use -b "$WT" only if you'll commit.
-git -C "$MAIN" worktree add --detach "$MAIN/.worktrees/$WT" origin/main \
-  || { echo "worktree add failed for $WT — ABORT (do NOT cd into a pre-existing dir)"; exit 1; }
-cd "$MAIN/.worktrees/$WT" || exit 1
-git rev-parse --short HEAD                            # sanity: this is YOUR fresh worktree
-pnpm install                                         # ~6s (pnpm CAS)
+[ -n "$WT" ] || { echo "could not find a free worktree name; aborting"; exit 1; }
+git -C "$CAVE_PRIMARY" worktree add --no-track --detach "$CAVE_PRIMARY/.worktrees/$WT" "$CAVE_RUN_BASE" \
+  || { echo "worktree add failed; do not enter an existing directory"; exit 1; }
+cd "$CAVE_PRIMARY/.worktrees/$WT"
+[ "$(git rev-parse HEAD)" = "$CAVE_RUN_BASE" ] || exit 1
+pnpm install --frozen-lockfile
 ```
 
-Every later step keys off `$WT` (server log `/tmp/cave-$WT.log`, `pkill -f "$WT/server.mjs"`, cleanup `git worktree remove ".worktrees/$WT"`), so nothing ever touches another session's worktree.
+Retain this run's exact worktree path, HEAD, server session handle and log path. A matching process-name pattern or a familiar-looking directory is not ownership proof. Stop at the budget and resolve capacity through [branch-curator](../branch-curator/SKILL.md); do not remove another unit to make room.
 
-## 1. Build (required — dev mode needs Tauri; prod server is simplest)
+## 1. Build the production artifact
 
 ```bash
 pnpm build      # next build + build:server (server.mjs) + prebuild (icons, PWA, sandbox/*.js)
@@ -50,21 +47,16 @@ pnpm build      # next build + build:server (server.mjs) + prebuild (icons, PWA,
 
 ## 2. Run the server on a unique port
 
-**Clear the stale Next dev singleton lock first.** `node server.mjs` aborts with *"Another next dev server is already running"* if a previous server was killed without cleaning `.next/dev` — a very common failure after a `pkill`. Always `rm -rf .next/dev` before starting. Pick a unique port too (a fixed `3300` collides with other sessions' servers).
+Use production mode to serve the artifact from step 1. `server.ts` selects development mode unless `NODE_ENV=production`, and its port resolver prefers `COVEN_CAVE_PORT` over `PORT`; set both port variables to this run's selected value. Inspect any existing Next dev lock before starting. If it belongs to a live or uncertain writer, preserve it and use a different authorized unit. Clear only this run's proven stale generated lock state; a lock error alone does not authorize a recursive delete or a broad process kill.
 
 ```bash
-rm -rf .next/dev                                    # drop any stale singleton lock
-pkill -f "$WT/server.mjs" 2>/dev/null || true       # kill a prior server for THIS worktree only
-PORT=$((3300 + RANDOM % 500))                        # unique-ish; avoids cross-session port clashes
-PORT=$PORT node server.mjs > "/tmp/cave-$WT.log" 2>&1 &
-# Boot takes ~5–15s (Next prepare). POLL — don't fixed-sleep:
-until curl -s -m3 -o /dev/null "http://127.0.0.1:$PORT/api/canvas"; do sleep 2; done
-echo "up on $PORT"
+CAVE_RUN_PORT=$((3300 + RANDOM % 500))
+NODE_ENV=production COVEN_CAVE_PORT=$CAVE_RUN_PORT PORT=$CAVE_RUN_PORT node server.mjs
 ```
 
-**Background/lifecycle gotcha:** start the server with a trailing `&` inside a *normal* Bash call (it stays alive, disowned to the session). Do **not** launch it via the tool's `run_in_background` with a trailing `&` — the outer command returns immediately and the backgrounded child gets reaped, so the server dies before you can drive it. If you want it in `run_in_background`, run `node server.mjs` as the task's *foreground* process (no `&`).
+Keep the server attached to a terminal/tool session and retain its handle. Poll the exact loopback origin from a separate session until the intended API responds; do not infer readiness from elapsed time or a log line. Stop only the server session created by this run when verification ends.
 
-- **Access gate**: `server.ts` only enforces token auth when `COVEN_CAVE_ACCESS_TOKEN` is set. Plain loopback (`127.0.0.1`) requests are open — no token needed. (The gate in `server.ts` is for the `/api/pty-ws` WebSocket upgrade only; HTTP is ungated locally.)
+- **Access gates**: `server.ts` marks verified direct-loopback peers before dispatching HTTP requests, and `src/proxy.ts` applies the request gates. WebSocket upgrades have their own checks. Verify the observed loopback origin and its API response before using it; a listening port alone does not establish readiness or access.
 - **Data without a daemon**: most surfaces read JSON straight from `~/.coven/*.json` (no daemon). Add `?demo=1` to seed curated in-memory demo data (`DEMO_BOARD_CARDS`, demo familiars) for a clean, dependency-free view.
 
 ## 3. Drive with Playwright (run the script from INSIDE the worktree so `@playwright/test` resolves)
@@ -84,8 +76,10 @@ Key moves:
 - **Frame canvas/graph nodes**: click `.react-flow__controls-fitview` after switching, then screenshot.
 
 ```js
-// .worktrees/run-tmp/__shoot.mjs   (delete after)
+// ./__shoot.mjs in this run's owned worktree (retain or remove only this file after use)
 import { chromium } from "@playwright/test";
+const caveOrigin = process.env.CAVE_RUN_ORIGIN;
+if (!caveOrigin) throw new Error("Set CAVE_RUN_ORIGIN to this run's observed loopback origin");
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
 await ctx.addInitScript(() => {
@@ -93,7 +87,7 @@ await ctx.addInitScript(() => {
   localStorage.setItem("cave:canvas:layer", "triage"); // or "sketch" — Canvas-only
 });
 const page = await ctx.newPage();
-await page.goto("http://127.0.0.1:3300/?demo=1", { waitUntil: "domcontentloaded" });
+await page.goto(new URL("/?demo=1", caveOrigin).href, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(1500);
 await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "canvas" } })));
 await page.waitForSelector(".canvas-view", { timeout: 8000 });
@@ -103,7 +97,7 @@ await page.waitForTimeout(1500);
 await page.screenshot({ path: "/tmp/cave.png" });
 await b.close();
 ```
-Run: `node ./__shoot.mjs` (from the worktree dir). Then `Read /tmp/cave.png`.
+Run: `CAVE_RUN_ORIGIN="http://127.0.0.1:$CAVE_RUN_PORT" node ./__shoot.mjs` from the owned worktree, using the actual observed port. Then inspect `/tmp/cave.png`.
 
 ### Surface mode identifiers (`cave:navigate-mode` detail.mode)
 `home` · `chat` · `board` · `canvas` · `calendar` · `inbox` (Schedules) · `library` · `browser` · `terminal` · `code` · `github` · `roles` · `workflows` · `capabilities`
@@ -119,44 +113,31 @@ Run: `node ./__shoot.mjs` (from the worktree dir). Then `Read /tmp/cave.png`.
   ```
   Artifacts persist to `~/.coven/cave-canvas.json`.
 
-## 3.5 Seeding into a REAL store — BACK UP FIRST (non-negotiable)
+## 3.5 Seeding a real store
 
-Surfaces read live data from `~/.coven/*` (journal, board/`cave-board.json`, inbox, canvas/`cave-canvas.json`, …). If you POST to seed a record so a feature has something to show, you can **silently overwrite a real record** — and most of these stores have **no undo/history** (the journal is one file per day; a bad POST is unrecoverable). This has bitten before (overwrote a real journal entry, couldn't restore it — see memory `feedback_backup_before_overwriting_data_stores`).
+Surfaces read live data from `~/.coven/*`. Prefer an isolated synthetic Cave home or demo data. If a real-store fixture is necessary, use a disposable key and save the complete current response before any mutation. A familiar-looking record may belong to another session.
 
-Rules before any seeding POST:
+1. Choose a key that does not collide with existing user or test data. A historical date or fake ID is only a candidate, not proof of absence.
+2. Require an authoritative successful read with `exists: false` before creating the fixture. Any failed request, invalid JSON, missing field or existing record stops the seed; never turn an error into an automatic POST. For a date-keyed journal, the read-only preflight is:
 
-1. **Prefer a throwaway key** that can't collide with real data (e.g. a clearly-fake past date `2000-01-01`, an obviously-fake id). Then no restore is needed — just delete it.
-2. **If you must use a live key** (e.g. "today"), `GET` it and **save the full body to a file FIRST**, and only overwrite if it didn't already exist:
    ```bash
-   TODAY=$(node -e "const d=new Date(),p=n=>String(n).padStart(2,'0');console.log(`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`)")
-   curl -s "http://127.0.0.1:$PORT/api/journal?date=$TODAY" -o /tmp/seed-backup.json
-   node -e "process.exit(require('/tmp/seed-backup.json').exists?0:1)" \
-     && echo "REAL ENTRY EXISTS — do NOT overwrite; use a throwaway date instead" \
-     || curl -s -X POST .../api/journal -d '{"date":"'$TODAY'",...}'   # safe: nothing was there
+   : "${CAVE_RUN_PORT:?Set the observed loopback port for this run}"
+   CAVE_SEED_DATE=2000-01-01
+   CAVE_SEED_BACKUP=$(mktemp "${TMPDIR:-/tmp}/cave-seed-backup.XXXXXX")
+   curl --fail --silent --show-error "http://127.0.0.1:$CAVE_RUN_PORT/api/journal?date=$CAVE_SEED_DATE" -o "$CAVE_SEED_BACKUP" || exit 1
+   node -e 'const r=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); if(r?.exists!==false) throw new Error("Existing or unverified record; choose another key");' "$CAVE_SEED_BACKUP" || exit 1
    ```
-   Treat **every `exists:true` as precious** — ~10 concurrent sessions share these stores, so "looks like a leftover seed" may be someone's real data.
-3. **Restore/clean in step 4**: if a backup existed, re-POST it; if you seeded where nothing existed, DELETE your seed so no fabricated content is left behind.
 
-## 4. Clean up (always)
+3. After that check, create only the named fixture through the store API and retain its request/read-back evidence. Do not overwrite a real record to make a screenshot.
+4. At cleanup, remove only the fixture key created by this run through the same API and verify the resulting state. If separately authorized work modified an existing record, restore its exact saved content and read it back. Never remove the whole live store file as a shortcut.
 
-```bash
-pkill -f "$WT/server.mjs" 2>/dev/null || true
-# Restore any store you seeded: if a backup existed, re-POST /tmp/seed-backup.json's record;
-# if there was NO prior store, DELETE your seed (leave nothing fabricated behind):
-rm -f "$HOME/.coven/cave-canvas.json"     # only if it didn't exist before you seeded
-# (journal/board/inbox: DELETE your seeded key, or re-POST the backup you saved in 3.5)
-# Remove ONLY your own uniquely-named worktree — never another session's. Refuse
-# if $WT is somehow empty (an unguarded `rm .worktrees/` would nuke every
-# session's worktree).
-[ -n "$WT" ] || { echo "WT unset — refusing to remove worktrees"; exit 1; }
-cd "$MAIN"
-git worktree remove --force ".worktrees/$WT" 2>/dev/null || rm -rf ".worktrees/$WT"
-git branch -D "$WT" 2>/dev/null || true             # only if you used -b (not --detach)
-git worktree prune
-git worktree list                                   # verify: only your $WT is gone
-```
+## 4. Stop the run and complete guarded retirement
 
-**Never** `git worktree remove` a path you didn't create, and never bulk-remove `.worktrees/*` — other live sessions keep active, dirty worktrees there (removing one loses their unpushed work). If your own `remove` fails because the tree is dirty, investigate — a clean throwaway shouldn't be dirty; if it is, you're likely pointed at the wrong (foreign) worktree.
+Stop the retained server session first and complete the store cleanup from section 3.5. Keep screenshots, logs and source/artifact identities needed for the handoff.
+
+Run [branch-curator](../branch-curator/SKILL.md) before any worktree, registration or branch removal. It must select the authorized deletion profile, hold the required lease, revalidate the exact OID and owner/disposition, inspect tracked/untracked/ignored and recovery state, verify live remote retention, and obtain the strict worktree guard's allow result immediately before non-forced removal. A throwaway name or an ancestor of main is not a substitute for those proofs.
+
+If the guard, retention query or removal fails, preserve the unit and its evidence and record its owner, exact path/HEAD, blocker and next step. Do not retry with force, fall back to deleting the directory, compare-delete a branch without its separate proof, or prune registration/reflog state to make cleanup pass. Re-inventory after any verified removal and report what was actually removed.
 
 ## Gotchas
 - React 19 has no UMD → the Sketch React preview uses a bundled runtime in `public/sandbox/` (React + sucrase) + `@tailwindcss/browser`; all offline. Must be built (step 1) or React tiles blank.
@@ -165,5 +146,5 @@ git worktree list                                   # verify: only your $WT is g
 - Server "Ready on…" in the log can precede actual readiness by a second or two — poll the HTTP endpoint, don't trust the log line alone.
 - Even after the server answers, the FIRST request to each API route is slow (cold compile/warm-up) — probe data-dependent UI with `waitForFunction` on the data itself, not fixed sleeps (see "Wait for DATA, not time" in step 3). This has produced false "feature broken" verdicts.
 - A second `pnpm dev`/server on port 3000 collides — always use a unique PORT.
-- `node server.mjs` fails with *"Another next dev server is already running"* when a prior server left a stale `.next/dev` lock. `rm -rf .next/dev` before starting (step 2).
+- A Next dev singleton-lock error needs the ownership check in step 2; it is not permission to delete another session's lock or stop its server.
 - **Measuring top-bar elements:** the app renders TWO menubars — the desktop `.menu-bar` (`FamiliarMenuBar`, shown ≥1024px) and the mobile `.top-bar` (shown ≤1023px); only one is visible per viewport but BOTH can be in the DOM. `querySelector` may return the hidden one (0×0 rect). Select the VISIBLE instance: `[...document.querySelectorAll(sel)].find(el => el.getBoundingClientRect().width > 0)`. Some top-bar buttons also report 0×0 themselves — measure a leaf child (e.g. the icon `<svg>`) for a real box. Verify UI that lives in a menubar at the width where that menubar actually shows (desktop ≥1024, mobile ≤1023).

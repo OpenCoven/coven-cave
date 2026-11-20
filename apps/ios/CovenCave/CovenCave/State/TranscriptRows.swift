@@ -43,6 +43,27 @@ enum TranscriptRow: Identifiable, Equatable {
     }
 }
 
+extension TranscriptRow {
+    /// The most rows the current turn keeps out of the lazy stack, so an
+    /// unusually long turn (a wide group fan-out) never mounts eagerly in full.
+    static let maximumCurrentTurnRows = 8
+
+    /// Where the current turn begins (#5933): the latest user message, with
+    /// the day divider directly above it when that message opens a new day.
+    /// Rows from here on stay eagerly mounted, so a send never inserts the
+    /// message just sent or its pending replies into the lazy stack. Without
+    /// a user message only the latest row is eager.
+    static func currentTurnStart(in rows: [TranscriptRow]) -> Int {
+        let latestRow = max(rows.count - 1, 0)
+        guard var start = rows.lastIndex(where: { row in
+            if case .message(let message) = row { return message.role == .user }
+            return false
+        }) else { return latestRow }
+        if start > 0, case .day = rows[start - 1] { start -= 1 }
+        return max(start, rows.count - maximumCurrentTurnRows)
+    }
+}
+
 /// O(1) message-id → array-position lookup for the stream's hot mutation
 /// path. Rebuilt after structural changes; text-only mutations reuse the
 /// same index.

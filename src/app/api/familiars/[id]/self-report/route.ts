@@ -4,6 +4,7 @@ import {
   autoArchiveReflectedSessionLocal,
   autoArchiveReviewRunLocal,
   loadConfig,
+  loadState,
 } from "@/lib/cave-config";
 import {
   normalizeChatAutoArchivePolicy,
@@ -218,6 +219,7 @@ function normalizePayload(payload: Record<string, unknown>, meta: {
       name: text(item.name),
       importance: enumValue(item.importance, IMPORTANCE, "capabilitiesLacking.importance"),
       detail: text(item.detail),
+      blockerId: optionalText(item.blockerId),
     })).filter((item) => item.name && item.detail),
     capabilitiesVital: objectArray(payload.capabilitiesVital).map((item) => ({
       name: text(item.name),
@@ -273,12 +275,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   try {
+    // Local ownership is authoritative. Daemon-only sessions use Cave's
+    // persisted familiar mapping; missing ownership is not write permission.
+    const conversation = await loadConversation(sessionId);
+    const owner = conversation?.familiarId || (await loadState()).sessionFamiliar[sessionId];
+    if (owner !== id) {
+      return NextResponse.json({ ok: false, error: "session not owned" }, { status: 403 });
+    }
     const report = redactSelfReport(normalizePayload(parseSelfReportJsonObject(raw), {
       familiarId: id,
       sessionId,
       threadTitle: optionalText(body.threadTitle),
     }));
-    await appendSelfReport(id, report);
+    const accepted = await appendSelfReport(id, report, { onlyIfAbsent: body.trigger === "auto" });
+    if (!accepted) {
+      return NextResponse.json({ ok: false, error: "duplicate_auto_report" }, { status: 409 });
+    }
     // "Unless there is a CTA": a report that asks the human for something
     // keeps the reflected thread visible until they act on it.
     const requiresHumanAction = selfReportRequiresHumanAction(report);

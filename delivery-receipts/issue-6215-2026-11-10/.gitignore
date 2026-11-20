@@ -1,0 +1,6 @@
+# Retain raw logs and full browser captures locally; publish only scoped receipts.
+*
+!.gitignore
+!README.md
+!confirm-folder-legacy.png
+!confirm-folder-confirmed.png

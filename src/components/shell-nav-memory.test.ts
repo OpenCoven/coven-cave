@@ -27,13 +27,15 @@ const resolveShellNavPolicyHandoff =
 const resolveShellNavSwipe =
 shellLayout.resolveShellNavSwipe ?? (() => null);
 
-assert.equal(resolveShellNavWidth("300"), 300, "a valid persisted nav width is retained");
-assert.equal(resolveShellNavWidth("999"), 420, "nav width is clamped to the desktop maximum");
-assert.equal(resolveShellNavWidth("not-a-width"), 240, "invalid nav widths use the desktop default");
-assert.equal(resolveShellNavWidth(null), 240, "missing nav widths use the desktop default");
-assert.equal(resolveShellNavWidth("Infinity"), 240, "infinite nav widths use the desktop default");
-assert.equal(resolveShellNavWidth("0"), 220, "zero nav widths are clamped to the desktop minimum");
-const storedNavWidth = resolveShellNavWidth("300");
+assert.equal(resolveShellNavWidth("220"), 220, "a valid persisted nav width is retained");
+assert.equal(resolveShellNavWidth("999"), 220, "nav width is clamped to the desktop maximum");
+assert.equal(resolveShellNavWidth("420"), 220, "a width saved under the old 420px maximum clamps to the new one");
+assert.equal(resolveShellNavWidth("240"), 220, "a width saved at the old 240px default clamps to the new maximum");
+assert.equal(resolveShellNavWidth("not-a-width"), 188, "invalid nav widths use the desktop default");
+assert.equal(resolveShellNavWidth(null), 188, "missing nav widths use the desktop default");
+assert.equal(resolveShellNavWidth("Infinity"), 188, "infinite nav widths use the desktop default");
+assert.equal(resolveShellNavWidth("0"), 188, "zero nav widths are clamped to the desktop minimum");
+const storedNavWidth = resolveShellNavWidth("220");
 
 assert.deepEqual(
   resolveShellNavOpenPreference(null, false),
@@ -177,7 +179,7 @@ assert.deepEqual(
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  { nav: 24, detail: 76 },
+  { nav: 18.8, detail: 81.2 },
   "Chat projects the shared nav width without inheriting a normal group's detail layout",
 );
 
@@ -191,8 +193,8 @@ assert.deepEqual(
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  { nav: 30, detail: 70 },
-  "Chat applies the stored 300px nav width in its contextual two-panel group",
+  { nav: 22, detail: 78 },
+  "Chat applies the stored 220px nav width in its contextual two-panel group",
 );
 
 assert.deepEqual(
@@ -205,8 +207,8 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  { nav: 30, list: 26, detail: 44 },
-  "Home applies the stored 300px nav width while retaining its saved list allocation",
+  { nav: 22, list: 26, detail: 52 },
+  "Home applies the stored 220px nav width while retaining its saved list allocation",
 );
 
 assert.deepEqual(
@@ -233,7 +235,7 @@ assert.deepEqual(
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  { nav: 24, detail: 76 },
+  { nav: 18.8, detail: 81.2 },
   "Chat falls back to the shared default when no nonzero saved Chat width exists",
 );
 
@@ -247,7 +249,7 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  { nav: 24, list: 26, detail: 50 },
+  { nav: 18.8, list: 26, detail: 55.2 },
   "a fresh normal group restores both left-panel defaults without borrowing Chat or corrupting detail",
 );
 
@@ -261,7 +263,7 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  { nav: 24, detail: 76 },
+  { nav: 18.8, detail: 81.2 },
   "a legacy collapsed rail layout restores an expanded default before applying the remembered open preference",
 );
 
@@ -275,7 +277,7 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  { nav: 20, detail: 80 },
+  { nav: 15.667, detail: 84.333 },
   "rounded persisted rail percentages are still recognized as collapsed layouts",
 );
 
@@ -300,7 +302,7 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  { nav: 24, list: 26, detail: 50 },
+  { nav: 18.8, list: 26, detail: 55.2 },
   "legacy collapsed layouts reconstruct a safe complete expanded fallback",
 );
 
@@ -361,7 +363,7 @@ assert.deepEqual(
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  { nav: 24, list: 31, detail: 45 },
+  { nav: 18.8, list: 31, detail: 50.2 },
   "normal navigation restores its merged list width while projecting the shared nav width",
 );
 assert.equal(
@@ -393,7 +395,7 @@ assert.deepEqual(
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  { nav: 24, detail: 76 },
+  { nav: 18.8, detail: 81.2 },
   "Chat projects the shared nav width across contextual transitions",
 );
 
@@ -481,7 +483,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: navOpenWidth,[\s\S]*?collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
@@ -491,8 +493,8 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
-  "normal destination restoration applies the remembered state before paint while retaining the expanded layout",
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;[\s\S]{0,200}?applyPanelOpenState\(\s*navRef\.current,\s*rememberedNavOpen && !chatRailNavRef\.current\.autoCollapsed,\s*\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
+  "normal destination restoration applies the remembered state before paint (unless the nav is yielding to the chat list) while retaining the expanded layout",
 );
 assert.match(
   destinationLayoutEffect,
@@ -501,12 +503,12 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*desktopRightChat,\s*preferredNavWidth,\s*preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/,
+  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*desktopRightChat,\s*preferredNavWidth,\s*navOpenWidth,\s*preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/,
   "destination restoration reruns with the active nav policy, shared nav width, and right chat width",
 );
 assert.match(
   shell,
-  /onLayoutChanged=\{\(layout, meta\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?onLayoutChanged\(persistedLayout, meta\);[\s\S]*?const pixelWidth = navRef\.current\?\.getSize\(\)\.inPixels;[\s\S]*?!isMobile &&\s*meta\.isUserInteraction &&\s*!navCollapsed &&\s*Number\.isFinite\(pixelWidth\) &&\s*!railAutoCollapsedNavRef\.current[\s\S]*?writeNavWidthPref\(normalizedWidth\);[\s\S]*?setPreferredNavWidth\(normalizedWidth\);/,
+  /onLayoutChanged=\{\(layout, meta\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?onLayoutChanged\(persistedLayout, meta\);[\s\S]*?const pixelWidth = navRef\.current\?\.getSize\(\)\.inPixels;[\s\S]*?!isMobile &&\s*!iconRail &&\s*meta\.isUserInteraction &&\s*!navCollapsed &&\s*Number\.isFinite\(pixelWidth\) &&\s*!railAutoCollapsedNavRef\.current[\s\S]*?writeNavWidthPref\(normalizedWidth\);[\s\S]*?setPreferredNavWidth\(normalizedWidth\);/,
   "nav width persists only after a completed user separator interaction and retains group, desktop, open, and code-rail guards",
 );
 const navResizeHandler =
@@ -611,10 +613,11 @@ assert.match(
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
-// churn is programmatic) and the code-rail auto-collapse must not be active.
+// churn is programmatic), and neither the code-rail auto-collapse nor the
+// chat-list yield (#5956) may be holding the nav closed.
 assert.match(
   shell,
-  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current\s*\n?\s*\) \{[\s\S]*?writeNavOpenPref\(open, "user"\);/,
+  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current &&\s*\n\s*!chatRailNavRef\.current\.autoCollapsed\s*\n?\s*\) \{[\s\S]*?writeNavOpenPref\(open, "user"\);/,
   "onResize persists the state only for user-driven changes on the armed group",
 );
 // The code-rail coupling raises its flag BEFORE collapsing, so the resulting

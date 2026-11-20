@@ -17,18 +17,21 @@ test("short pauses get no divider", () => {
 
 test("the threshold agrees with the timestamp reveal the transcript already uses", () => {
   assert.equal(CHAT_TURN_GAP_MIN_MS, 10 * 60 * 1000);
-  assert.equal(chatTurnGapLabel(at(0), at(CHAT_TURN_GAP_MIN_MS)), "10 min gap");
+  assert.equal(chatTurnGapLabel(at(0), at(CHAT_TURN_GAP_MIN_MS)), "10 minutes later");
 });
 
 test("labels round to the unit a reader acts on", () => {
-  assert.equal(chatTurnGapLabel(at(0), at(18 * 60_000)), "18 min gap");
-  assert.equal(chatTurnGapLabel(at(0), at(59 * 60_000)), "59 min gap");
-  // 2h47m reads as "3 hr" — the divider's job is the shape of the pause, and
-  // spending its width on minutes nobody acts on is what the rounding avoids.
-  assert.equal(chatTurnGapLabel(at(0), at(167 * 60_000)), "3 hr gap");
-  assert.equal(chatTurnGapLabel(at(0), at(23 * 3_600_000)), "23 hr gap");
-  assert.equal(chatTurnGapLabel(at(0), at(25 * 3_600_000)), "1 day gap");
-  assert.equal(chatTurnGapLabel(at(0), at(72 * 3_600_000)), "3 days gap");
+  // #5954: the divider says when the next turn came, in words ("5 hours
+  // later"), not an abbreviation ("5 HR GAP").
+  assert.equal(chatTurnGapLabel(at(0), at(18 * 60_000)), "18 minutes later");
+  assert.equal(chatTurnGapLabel(at(0), at(59 * 60_000)), "59 minutes later");
+  // 2h47m reads as "3 hours" — the divider's job is the shape of the pause,
+  // and spending its width on minutes nobody acts on is what the rounding avoids.
+  assert.equal(chatTurnGapLabel(at(0), at(167 * 60_000)), "3 hours later");
+  assert.equal(chatTurnGapLabel(at(0), at(60 * 60_000)), "1 hour later");
+  assert.equal(chatTurnGapLabel(at(0), at(23 * 3_600_000)), "23 hours later");
+  assert.equal(chatTurnGapLabel(at(0), at(25 * 3_600_000)), "1 day later");
+  assert.equal(chatTurnGapLabel(at(0), at(72 * 3_600_000)), "3 days later");
 });
 
 test("missing, unparseable or backwards timestamps produce no divider", () => {

@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 async function readIdentity(workspacePath: string): Promise<string | null> {
   try {
-    return await readFile(path.join(workspacePath, "IDENTITY.md"), "utf8");
+    return await readFile(path.join(/* turbopackIgnore: true */ workspacePath, "IDENTITY.md"), "utf8");
   } catch {
     return null;
   }
@@ -18,15 +18,15 @@ async function readIdentity(workspacePath: string): Promise<string | null> {
 
 export async function GET() {
   const home = homedir();
-  const agentsRoot = path.join(home, ".openclaw", "agents");
-  const workspaceRoot = path.join(home, ".openclaw", "workspace");
+  const agentsRoot = path.join(/* turbopackIgnore: true */ home, ".openclaw", "agents");
+  const workspaceRoot = path.join(/* turbopackIgnore: true */ home, ".openclaw", "workspace");
   const registeredAgents = await listOpenClawAgents();
 
   const agents = await Promise.all(
     registeredAgents
       .map(async (agent) => {
         const id = agent.id;
-        const workspacePath = agent.workspace?.trim() || path.join(workspaceRoot, id);
+        const workspacePath = agent.workspace?.trim() || path.join(/* turbopackIgnore: true */ workspaceRoot, id);
         // Workspaces live under the user's `~/.openclaw`, resolved at runtime.
         const exists = await stat(/* turbopackIgnore: true */ workspacePath)
           .then((s) => s.isDirectory())

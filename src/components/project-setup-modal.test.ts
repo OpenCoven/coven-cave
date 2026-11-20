@@ -2,7 +2,7 @@
 // ProjectSetupModal — the in-place "register this ad-hoc folder" flow (spec
 // 2026-07-24). It must explain what registering entails, default the chat's
 // familiar to write (the chat needs to keep running here) and groups to no
-// access, honor Supreme's all-access status, and sequence create → familiar
+// access, grant the supreme familiar like any other (#6473), and sequence create → familiar
 // grant → group patches with a single registry emit — retrying after a
 // partial failure without duplicating the project.
 import assert from "node:assert/strict";
@@ -18,8 +18,9 @@ assert.match(src, /changed later in Projects and Permissions/, "reversibility ca
 // ── Preference defaults ─────────────────────────────────────────────────────
 assert.match(src, /useState<AccessChoice>\("write"\)/, "familiar access defaults to write");
 assert.match(src, /groupLevels\[group\.id\] \?\? "none"/, "groups default to no access");
-assert.match(src, /familiar\.id === supremeFamiliarId/, "Supreme is detected and grant-skipped");
-assert.match(src, /has access to every project/, "Supreme renders as all-access, not a select");
+assert.doesNotMatch(src, /supremeFamiliarId/, "the supreme familiar is not grant-skipped (#6473)");
+assert.doesNotMatch(src, /has access to every project/, "and is offered the same access select");
+assert.match(src, /if \(familiar\.id && familiarAccess !== "none"\) \{/, "any familiar with a chosen level is granted it");
 
 // ── Submit sequence ─────────────────────────────────────────────────────────
 assert.match(src, /emitMutation: false/, "creation suppresses its own emit (single fan-out)");

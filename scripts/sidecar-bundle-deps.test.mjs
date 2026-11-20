@@ -5,6 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { buildServer } from "./build-server.mjs";
 
 const [
   src,
@@ -25,21 +26,16 @@ const [
   readFile(new URL("./sidecar-runtime-smoke.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/src/sidecar_archive_manifest.rs", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
-  readFile(new URL("../server.mjs", import.meta.url), "utf8"),
+  buildServer({ write: false }).then((result) => result.outputFiles[0].text),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
 const packageJson = JSON.parse(packageSource);
 
-assert.match(
+assert.equal(
   packageJson.scripts["build:server"],
-  /--alias:yaml=\.\/node_modules\/yaml\/dist\/index\.js/,
-  "server builds must bundle yaml instead of depending on platform-specific Next traces",
-);
-assert.match(
-  packageJson.scripts["build:server"],
-  /--banner:js="import \{ createRequire as __covenCreateRequire \} from 'node:module'; const require = __covenCreateRequire\(import\.meta\.url\);"/,
-  "the ESM server bundle must provide CommonJS require for yaml's Node entry",
+  "node scripts/build-server.mjs",
+  "production and security tests must use the same server builder",
 );
 assert.doesNotMatch(
   serverBundleSource,
@@ -49,7 +45,7 @@ assert.doesNotMatch(
 assert.match(
   serverBundleSource,
   /^import \{ createRequire as __covenCreateRequire \} from 'node:module'; const require = __covenCreateRequire\(import\.meta\.url\);/,
-  "the committed server must initialize require before bundled CommonJS modules execute",
+  "the generated server must initialize require before bundled CommonJS modules execute",
 );
 
 assert.match(
@@ -135,6 +131,7 @@ assert.match(closureSource, /\.nft\.json/, "runtime closure must consume Next fi
 for (const runtimeRoot of [
   ".agents/skills",
   "marketplace/catalog.json",
+  "marketplace/payloads.json",
   "marketplace/exports",
   "marketplace/marketplace.json",
   "marketplace/plugins",
@@ -183,10 +180,10 @@ assert.ok(
 );
 const sidecarMeasurement = declaredSidecarBudget.measurement;
 const measuredPlatforms = ["windows", "ubuntu", "macos"];
-assert.equal(sidecarMeasurement.on, "2026-09-22", "the release-candidate budget review date must not drift");
+assert.equal(sidecarMeasurement.on, "2026-10-25", "the release-candidate budget review date must not drift");
 assert.equal(
   sidecarMeasurement.reference,
-  "v0.5.0-rc.2 / GitHub Actions run 35743277066",
+  "v0.5.15-rc.1 / GitHub Actions run 40147550311",
   "the release-candidate budget must retain its governing evidence reference",
 );
 const governingMeasurement = Math.max(
@@ -241,36 +238,49 @@ assert.equal(
   true,
   "the governing Windows count must be identified as observed candidate evidence",
 );
+const releaseDelta = sidecarMeasurement.releaseDelta;
+assert.equal(releaseDelta.nextTraceFileCount, 8, "the release delta must retain the measured Next trace growth");
 assert.equal(
-  sidecarMeasurement.releaseDelta.nextTraceFileCount,
-  7,
-  "the release delta must retain the measured Next trace growth",
-);
-assert.equal(
-  sidecarMeasurement.releaseDelta.tracedPackageCountChanged,
+  releaseDelta.bundledNodeModulesChanged,
   false,
   "the release delta must not be reclassified as dependency-subtree growth",
 );
+assert.deepEqual(
+  releaseDelta.tracedPackageInputs,
+  { baseline: { windows: 26, ubuntu: 27, macos: 26 }, measured: { windows: 25, ubuntu: 25, macos: 25 } },
+  "the traced-package input counts must retain their observed values",
+);
+assert.deepEqual(
+  releaseDelta.baseline,
+  { windows: 8736, ubuntu: 8732, macos: 8728 },
+  "the release delta must start from the observed v0.5.14 release-run counts",
+);
 for (const platform of measuredPlatforms) {
   assert.equal(
-    sidecarMeasurement[platform] - sidecarMeasurement.releaseDelta.baseline[platform],
-    sidecarMeasurement.releaseDelta.fileCount,
-    `${platform} must move by exactly the reviewed v0.5.0 candidate delta`,
+    sidecarMeasurement[platform] - releaseDelta.baseline[platform],
+    releaseDelta.platformDeltas[platform],
+    `${platform} must move by exactly its recorded v0.5.14 → v0.5.15 candidate delta`,
   );
 }
 assert.deepEqual(
-  sidecarMeasurement.releaseDelta.generatedFileDeltas,
+  releaseDelta.inventoryDeltas,
   {
-    ".next/server/app": 39,
-    ".next/server/chunks": 89,
-    ".next/static/chunks": 63,
+    ".next/server/chunks": 107,
+    ".next/server/app": 40,
+    ".next/static/chunks": 13,
+    "public/marketplace-logos": 1,
   },
   "the release delta must retain the reviewed per-directory inventory counts",
 );
 assert.equal(
-  Object.values(sidecarMeasurement.releaseDelta.generatedFileDeltas).reduce((total, count) => total + count, 0),
-  sidecarMeasurement.releaseDelta.fileCount,
-  "the same-machine generated-output inventory must account for the complete file-count delta",
+  Object.values(releaseDelta.inventoryDeltas).reduce((total, count) => total + count, 0),
+  releaseDelta.platformDeltas[releaseDelta.inventoryPlatform],
+  "the same-machine inventory diff must account for the complete file-count delta",
+);
+assert.equal(
+  releaseDelta.routes.added.length - releaseDelta.routes.removed.length,
+  releaseDelta.nextTraceFileCount,
+  "the added and removed routes must account for the Next trace growth",
 );
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [

@@ -33,6 +33,7 @@ const sharp = (await import("sharp")).default;
 const { POST } = await import("./route.ts");
 const { projectTint } = await import("@/lib/comux-projects");
 const { projectIconRateLimiter } = await import("@/lib/server/project-icon-rate-limit");
+const { resetUpstreamHealth } = await import("@/lib/server/upstream-fetch");
 
 const ROOT = "/Users/dev/coven-cave";
 const OPENAI_KEY = "sk-test-openai-key";
@@ -97,7 +98,12 @@ function request(body: unknown, contentType = "application/json"): Request {
   });
 }
 
-beforeEach(() => projectIconRateLimiter.reset());
+beforeEach(() => {
+  projectIconRateLimiter.reset();
+  // A provider 429 in one test opens upstreamFetch's cooldown on the host;
+  // that window is the primitive's own contract, not this route's.
+  resetUpstreamHealth("openai");
+});
 
 /** Run `fn` with exactly the given vault keys present in the environment. */
 async function withKeys<T>(keys: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
@@ -228,7 +234,7 @@ test("generates an icon whose prompt hue is the hue projectTint paints", async (
     assert.equal(net.calls.length, 1);
     assert.equal(net.calls[0].url, "https://api.openai.com/v1/images/generations");
     assert.equal(net.calls[0].headers.get("authorization"), `Bearer ${OPENAI_KEY}`);
-    assert.equal(net.calls[0].body.model, "gpt-image-1");
+    assert.equal(net.calls[0].body.model, "gpt-image-2.5-flare");
     assert.equal(net.calls[0].body.output_format, "webp");
     assert.equal(net.calls[0].body.quality, "low");
 

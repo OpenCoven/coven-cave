@@ -57,7 +57,11 @@ const URL_CANDIDATE_PATTERN = /(?:https?:)?\/\/[^\s<>"'`]+|[/?#][^\s<>"'`]+/gi;
 const URL_PARAMETER_PATTERN = /([?#&])([^=&?#]+)=([^&#\s]*)/g;
 const URL_PARSE_BASE = "https://secret-redaction.invalid";
 
-export function redactSecretText(text: string): string {
+export function redactSecretText(text: string, knownSecrets: readonly string[] = []): string {
+  // Provider errors may echo arbitrary configured credentials without a recognizable prefix.
+  for (const secret of [...new Set(knownSecrets)].filter(Boolean).sort((a, b) => b.length - a.length)) {
+    text = text.split(secret).join(REDACTED_SECRET);
+  }
   const jsonRedaction = redactJsonText(text);
   if (jsonRedaction !== undefined) return jsonRedaction;
   return redactSecretTextPlain(text);

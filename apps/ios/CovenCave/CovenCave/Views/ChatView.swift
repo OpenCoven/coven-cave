@@ -2,13 +2,6 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
-/// Message count keyed by thread, so shrink recovery can tell a removed
-/// message from switching to a shorter thread.
-private struct TranscriptCount: Equatable {
-    let threadId: String
-    let count: Int
-}
-
 /// An image chosen in the composer, pending send.
 struct PendingImage: Identifiable {
     let id = UUID()
@@ -34,10 +27,14 @@ private struct EmptyChatSuggestion: Identifiable {
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
+    /// Files picked from the `@` menu for this draft (#6104). Only these are
+    /// sent, and only while their `@path` is still in the text.
+    @State private var pickedFileMentions: [String] = []
     /// The suggestion row a hardware keyboard has highlighted (#5879).
     @State private var suggestionIndex = 0
     /// The draft Escape dismissed the suggestion menu for; editing reopens it.
@@ -45,6 +42,18 @@ struct ChatView: View {
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
     @FocusState private var composerFocused: Bool
+    private struct ScheduledReplyLaunch: Identifiable {
+        let id = UUID()
+        let client: CaveClient
+        let sessionId: String
+        let message: CaveClient.SendBody?
+        let draft: String
+        let imageIds: [UUID]
+        let replyId: String?
+        let lease: AppModel.ConnectionDispatchLease
+    }
+    @State private var scheduledReplyLaunch: ScheduledReplyLaunch?
+
     @State private var showCommands = false
     @State private var showNewChat = false
     @State private var showFamiliarPicker = false
@@ -76,6 +85,7 @@ struct ChatView: View {
     @Namespace private var pickerZoomNamespace
     @State private var scrollState = ChatScrollState()
     @State private var viewportRecovery = ChatViewportRecovery()
+    @State private var scrollAnchor = ChatScrollAnchorCoordinator()
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
     @State private var streamScroll = ScrollCoalescer()
@@ -121,7 +131,7 @@ struct ChatView: View {
     // surface at a time: command list → argument picker → mention picker
     // (see `ComposerIntent`).
     private var composerIntent: ComposerIntent {
-        ComposerIntent.detect(draft, allowsMentions: thread.isGroup)
+        ComposerIntent.detect(draft, allowsMentions: thread.isGroup || fileMentionRoot != nil)
     }
     private var slashMatches: [SlashCommand] {
         guard case .commands(let prefix) = composerIntent else { return [] }
@@ -162,19 +172,45 @@ struct ChatView: View {
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty && argumentCommand == nil }
 
+    // @-file mentions (one-to-one chats with a project, #6104): the trailing
+    // `@token` filters the project's files the way the desktop picker does.
+    /// The root a one-to-one chat's `@` lists files from, or nil in a group
+    /// chat (whose `@` names familiars) or a chat without a project.
+    private var fileMentionRoot: String? {
+        guard !thread.isGroup, !thread.isFlowRun,
+              let root = thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !root.isEmpty else { return nil }
+        return root
+    }
+    /// The root whose file index the open `@` picker needs, so it loads the
+    /// first time the picker opens rather than with the chat.
+    private var fileIndexToLoad: String? {
+        guard case .mention = composerIntent else { return nil }
+        return fileMentionRoot
+    }
+    private var fileMentionMatches: [String] {
+        guard let root = fileMentionRoot, case .mention(let partial) = composerIntent else { return [] }
+        return FileMention.filter(app.composerSuggestions.files(for: root), query: partial)
+    }
+
     /// The one suggestion menu for the draft (#5879): commands, a command's
     /// argument picker, or mentions, unless Escape dismissed it for this draft.
     private var suggestionList: ComposerSuggestionList? {
         guard suggestionsDismissedFor != draft else { return nil }
         return ComposerSuggestionList.make(
             intent: composerIntent, commands: slashMatches,
-            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [])
+            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [],
+            files: fileMentionMatches)
     }
     private var suggestionIds: [String] { suggestionList?.items.map(\.id) ?? [] }
 
-    /// The composer placeholder says how to reach the menus.
+    /// The composer placeholder says how to reach the menus, and mentions
+    /// `@` only where it opens one.
     private var composerPlaceholder: String {
-        thread.isGroup ? "Write a message… / for commands, @ to mention" : "Write a message… / for commands"
+        if thread.isGroup { return "Write a message… / for commands, @ to mention" }
+        return fileMentionRoot == nil
+            ? "Write a message… / for commands"
+            : "Write a message… / for commands, @ for files"
     }
 
     // A voice call targets a single familiar, so the call button only appears
@@ -272,7 +308,8 @@ struct ChatView: View {
     }
 
     private func writeDraftPersistence(_ value: String, threadId: String) {
-        app.persistThreadDraft(threadId, text: value)
+        app.persistThreadDraft(threadId, text: value,
+                               mentionedFiles: FileMention.picked(pickedFileMentions, in: value))
     }
 
     private func scheduleDraftPersistence(_ value: String) {
@@ -302,6 +339,9 @@ struct ChatView: View {
 
     private func scrollToLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
         guard scrollState.isFollowingLatest, !scrollState.isUserScrolling else { return }
+        #if DEBUG
+        ChatScrollTrace.shared.note("scrollToLatest animated=\(animation != nil)")
+        #endif
         let target = thread.messages.last?.id ?? "bottom"
         if let animation, !reduceMotion {
             withAnimation(animation) { proxy.scrollTo(target, anchor: .bottom) }
@@ -310,6 +350,15 @@ struct ChatView: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) { proxy.scrollTo(target, anchor: .bottom) }
         }
+    }
+
+    private var transcriptTail: ChatTranscriptTail {
+        ChatTranscriptTail(threadId: thread.id, count: thread.messages.count,
+                           lastMessageId: thread.messages.last?.id)
+    }
+
+    private var showsDayChip: Bool {
+        ChatDayChipPolicy.showsChip(active: dayChipActive, followingLatest: scrollState.isFollowingLatest)
     }
 
     private func requestFollowLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
@@ -321,6 +370,10 @@ struct ChatView: View {
         streamScroll.cancel()
         scrollState = ChatScrollState()
         viewportRecovery = ChatViewportRecovery()
+        scrollAnchor.reset()
+        // A fresh scroll state follows latest, and the follow observer only
+        // fires on a change, so the fresh recovery is told directly.
+        viewportRecovery.noteFollowingLatest(scrollState.isFollowingLatest && !scrollState.isUserScrolling)
         unreadDividerId = nil
         unreadComputed = false
         daysAboveTop.removeAll()
@@ -366,11 +419,13 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .groupedBackNavigation(canGoBack: $canGoBack)
         .toolbar {
-            if app.isPerformanceFixture && CaveTimelinePerformanceFixture.isEnabled {
+            if CaveTimelinePerformanceFixture.isEnabled {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Capture metrics") {
                         CaveTimelinePerformanceFixture.capture(threadID: thread.id,
-                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder)
+                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder,
+                            messageCount: thread.messages.count,
+                            activityCount: thread.messages.reduce(0) { $0 + $1.activitySteps.count })
                     }
                     .accessibilityIdentifier("Capture timeline metrics")
                 }
@@ -454,17 +509,17 @@ struct ChatView: View {
                     .zIndex(20)
             }
         }
-        .sheet(isPresented: $showCommands) {
+        .caveSheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
         }
-        .sheet(isPresented: $showNewChat) {
+        .caveSheet(isPresented: $showNewChat) {
             NewChatView(initialFamiliarIds: thread.familiarIds) { fresh in
                 showNewChat = false
                 flushDraftPersistence()
                 _ = app.requestOpen(fresh)
             }
         }
-        .sheet(isPresented: $showModelPicker) {
+        .caveSheet(isPresented: $showModelPicker) {
             ModelPickerSheet(
                 options: presentedModelPickerOptions,
                 current: modelPresentationIsCurrent ? modelPickerCurrent : "",
@@ -475,22 +530,22 @@ struct ChatView: View {
                 _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
         }
-        .sheet(isPresented: $showFamiliarPicker) {
+        .caveSheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { familiar in
                 showFamiliarPicker = false
                 switchTo(familiar)
             }
         }
-        .sheet(item: $forwardingMessage) { message in
+        .caveSheet(item: $forwardingMessage) { message in
             FamiliarPickerSheet(title: "Forward to familiar") { familiar in
                 forwardingMessage = nil
                 forward(message, to: familiar)
             }
         }
-        .sheet(item: $permissionsFamiliar) { familiar in
+        .caveSheet(item: $permissionsFamiliar) { familiar in
             FamiliarPermissionsSheet(familiar: familiar)
         }
-        .sheet(isPresented: $showPermissionFamiliarPicker) {
+        .caveSheet(isPresented: $showPermissionFamiliarPicker) {
             FamiliarPickerSheet(
                 title: "Choose a familiar",
                 familiarIds: thread.familiarIds
@@ -499,10 +554,11 @@ struct ChatView: View {
                 permissionsFamiliar = familiar
             }
         }
-        .sheet(item: $responseReader) { item in
+        .caveSheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
+                .presentationDetents([.large])
         }
-        .sheet(item: $toolOutputTarget) { target in
+        .caveSheet(item: $toolOutputTarget) { target in
             if target.scope == toolOutputScope {
                 ToolOutputDetailView(target: target)
                     .id(target.id)
@@ -514,7 +570,7 @@ struct ChatView: View {
                 toolOutputTarget = nil
             }
         }
-        .fullScreenCover(item: $voiceCall) { model in
+        .caveFullScreenCover(item: $voiceCall) { model in
             LiveVoiceCallView(model: model,
                               avatarSource: app.client?.familiarAvatarSource(for: model.familiar))
         }
@@ -541,6 +597,7 @@ struct ChatView: View {
         .onAppear {
             if draft.isEmpty, let saved = app.persistedThreadDraft(thread.id) {
                 draft = saved
+                pickedFileMentions = app.persistedThreadDraftMentions(thread.id)
             }
             // Place the "New messages" divider from the seen boundary BEFORE
             // marking viewed moves it.
@@ -572,11 +629,11 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: .caveZoomContent)) { note in
             if let target = note.object as? ZoomTarget { zoomTarget = target }
         }
-        .fullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
+        .caveFullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
             ZoomableContentView(target: target)
                 .onAppear { CavePerformanceFixture.recordZoomFootprint(.presented) }
         }
-        .sheet(isPresented: $showSessionPicker) {
+        .caveSheet(isPresented: $showSessionPicker) {
             if let familiarId = thread.familiarIds.first,
                let familiar = app.familiar(familiarId) {
                 NavigationStack {
@@ -788,13 +845,13 @@ struct ChatView: View {
 
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
-            if pendingModelOverride.isEmpty { return "Runtime default (unresolved)" }
+            if pendingModelOverride.isEmpty { return "Runtime default (not reported yet)" }
             return pendingModelOverride
         }
         guard let state = presentedSessionModelState else {
             return thread.isGroup ? "Per familiar" : "Loading…"
         }
-        if state.effectiveModel.isEmpty { return "Runtime default (unresolved)" }
+        if state.effectiveModel.isEmpty { return "Runtime default (not reported yet)" }
         return state.effectiveModel
     }
 
@@ -970,6 +1027,12 @@ struct ChatView: View {
         }
     }
 
+    /// While following, the follow path owns the offset; anchoring both would
+    /// move it twice. Read when a layout pass settles, not when a row reports.
+    private func scrollAnchorRow(_ id: String) -> ChatScrollAnchorRowModifier {
+        ChatScrollAnchorRowModifier(id: id, coordinator: scrollAnchor) { !scrollState.isFollowingLatest }
+    }
+
     private func recoverTranscriptViewportIfNeeded(_ proxy: ScrollViewProxy) {
         guard viewportRecovery.hasPendingRecovery, !scrollState.isUserScrolling else { return }
         // Re-check after one runloop turn: a settling layout frame that brings
@@ -977,6 +1040,9 @@ struct ChatView: View {
         DispatchQueue.main.async {
             guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
             streamScroll.cancel()
+            #if DEBUG
+            ChatScrollTrace.shared.note("viewportRecovery")
+            #endif
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -990,32 +1056,30 @@ struct ChatView: View {
     private var messageScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let rows = thread.transcriptRows
                 VStack(spacing: 10) {
-                    // Keep history lazy, but never virtualize the latest row.
-                    // Its large WebView must be mounted on cold/repeated opens
-                    // and must survive a sharp shrink while reading above it
-                    // (#5613). This retains at most one extra message renderer.
-                    LazyVStack(spacing: 10) {
-                        ForEach(thread.transcriptRows.dropLast()) { row in
-                            VStack(spacing: 10) {
-                                transcriptRow(row, proxy: proxy)
-                            }
-                            .id(row.id)
-                        }
-                    }
-                    if let row = thread.transcriptRows.last {
+                    // Keep row geometry and identity stable. A nested lazy
+                    // history estimates its height independently of the eager
+                    // latest turn, rebasing the viewport as rows realize.
+                    // Virtualize historical WebKit content inside the retained
+                    // rows instead; the latest renderer remains mounted (#5613).
+                    ForEach(rows) { row in
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
-                            .id(row.id)
+                        .accessibilityElement(children: .contain)
+                        .id(row.id)
+                        .modifier(scrollAnchorRow(row.id))
                             .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in
+                                guard row.id == rows.last?.id else { return nil }
                                 guard let viewport = geometry.bounds(of: .scrollView) else { return nil }
                                 return ChatScrollGeometry(
                                     contentHeight: geometry.size.height,
                                     visibleBottom: viewport.maxY
                                 )
                             } action: { previous, geometry in
-                                guard let geometry else { return }
+                                guard row.id == rows.last?.id, let geometry else { return }
+                                scrollAnchor.noteLatestGeometry(row.id, geometry)
                                 if previous?.contentHeight != geometry.contentHeight {
                                     // Only the latest reply's own shrink may arm
                                     // offset recovery (#5613), never a lazy
@@ -1023,8 +1087,10 @@ struct ChatView: View {
                                     viewportRecovery.noteLatestRow(id: row.id, height: geometry.contentHeight)
                                     recoverTranscriptViewportIfNeeded(proxy)
                                 }
-                                if scrollState.isAtBottom != geometry.isAtBottom {
-                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom)
+                                let movedAway = previous.map { geometry.visibleBottom < $0.visibleBottom } ?? false
+                                if scrollState.isAtBottom != geometry.isAtBottom
+                                    || (scrollState.isUserScrolling && movedAway) {
+                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom, movedAway: movedAway)
                                 }
                                 if scrollState.isFollowingLatest, !geometry.isAtBottom {
                                     streamScroll.request { scrollToLatest(proxy) }
@@ -1036,9 +1102,13 @@ struct ChatView: View {
                 .scrollTargetLayout()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 14)
+                .chatScrollAnchorContent(scrollAnchor)
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .accessibilityIdentifier("Chat transcript")
+            .chatScrollTrace(following: scrollState.isFollowingLatest,
+                             userScrolling: scrollState.isUserScrolling,
+                             atBottom: scrollState.isAtBottom)
             .onScrollGeometryChange(for: ChatViewportGeometry.self) { geometry in
                 ChatViewportGeometry(
                     contentHeight: geometry.contentSize.height,
@@ -1104,33 +1174,51 @@ struct ChatView: View {
             // day the reader is inside — the newest day whose separator has
             // passed the top edge. Fades out shortly after scrolling settles.
             .overlay(alignment: .top) {
-                if dayChipActive, let day = daysAboveTop.max() {
+                if showsDayChip, let day = daysAboveTop.max() {
                     DayChip(date: day)
                         .padding(.top, 8)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: dayChipActive)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showsDayChip)
             .onScrollPhaseChange { _, newPhase in
                 switch newPhase {
                 case .tracking, .interacting, .decelerating:
                     scrollState.beginUserScroll()
                     streamScroll.cancel()
                 case .idle:
-                    scrollState.endUserScroll()
+                    let latestID = thread.transcriptRows.last?.id
+                    let currentGeometry = latestID.flatMap { scrollAnchor.geometry(for: $0) }
+                    let previousGeometry = latestID.flatMap { scrollAnchor.reportedGeometry(for: $0) }
+                    #if DEBUG
+                    if scrollState.isUserScrolling, let currentGeometry {
+                        ChatScrollTrace.shared.note("idleGeometry height=\(currentGeometry.contentHeight) "
+                            + "visibleBottom=\(currentGeometry.visibleBottom) "
+                            + "previousBottom=\(previousGeometry?.visibleBottom ?? .nan)")
+                    }
+                    #endif
+                    scrollState.endUserScroll(currentGeometry: currentGeometry, previousGeometry: previousGeometry)
                     recoverTranscriptViewportIfNeeded(proxy)
                 default: break
                 }
                 dayChipIdleTask?.cancel()
-                if newPhase == .idle {
+                if ChatDayChipPolicy.revealsChip(on: newPhase) {
+                    if !dayChipActive { dayChipActive = true }
+                } else if dayChipActive {
                     dayChipIdleTask = Task {
                         try? await Task.sleep(nanoseconds: 900_000_000)
                         guard !Task.isCancelled else { return }
                         dayChipActive = false
                     }
-                } else if !dayChipActive {
-                    dayChipActive = true
                 }
+            }
+            // Following latest wants the end of the transcript, so an offset
+            // beyond that end is never a place the reader chose (#5933).
+            .onChange(of: scrollState.isFollowingLatest && !scrollState.isUserScrolling,
+                      initial: true) { _, following in
+                if following { scrollAnchor.cancelPendingCorrection() }
+                viewportRecovery.noteFollowingLatest(following)
+                recoverTranscriptViewportIfNeeded(proxy)
             }
             // Follow the stream only while the reader is parked at the bottom.
             // Scrolling up to reread must never be yanked back down by each
@@ -1140,7 +1228,11 @@ struct ChatView: View {
             // final flush of a completed stream still lands its scroll.
             .onChange(of: thread.messages.last?.text) { _, _ in
                 guard scrollState.isFollowingLatest else { return }
-                streamScroll.request { scrollToLatest(proxy, animation: .easeOut(duration: 0.15)) }
+                // Streaming also changes the target's height asynchronously.
+                // An animation keeps chasing an obsolete target while WebKit
+                // measures the next render. Coalesce immediate follow requests;
+                // explicit jumps and sends keep their separate motion policy.
+                streamScroll.request { scrollToLatest(proxy) }
             }
             // A new message reveals itself when it's the user's own send (you
             // always watch your message leave) or when already at the bottom —
@@ -1148,15 +1240,18 @@ struct ChatView: View {
             // A removed message shortens the transcript under a new last-row
             // id, which the latest row's same-id height check cannot see.
             // Keyed by thread so switching to a shorter thread is not removal.
-            .onChange(of: TranscriptCount(threadId: thread.id, count: thread.messages.count)) { old, new in
-                guard old.threadId == new.threadId, new.count < old.count else { return }
-                viewportRecovery.noteRowsRemoved()
-                recoverTranscriptViewportIfNeeded(proxy)
-            }
-            .onChange(of: thread.messages.count) { _, _ in
-                let ownSend = thread.messages.last?.role == .user
+            .onChange(of: transcriptTail) { old, new in
+                if old.threadId == new.threadId, new.count < old.count {
+                    viewportRecovery.noteRowsRemoved()
+                    recoverTranscriptViewportIfNeeded(proxy)
+                }
+                guard old.count != new.count else { return }
+                let ownSend = ChatOwnSend.isOwnSend(from: old, to: new, messages: thread.messages)
                 guard scrollState.isFollowingLatest || ownSend else { return }
-                requestFollowLatest(proxy, animation: .snappy(duration: 0.25))
+                // A send or a reply eases in; a batch of loaded history jumps,
+                // for the same stale-target reason as above (#6205).
+                let batch = new.count - old.count > 2
+                requestFollowLatest(proxy, animation: batch ? nil : .snappy(duration: 0.25))
             }
             .onAppear {
                 computeUnreadDividerIfNeeded()
@@ -1217,6 +1312,8 @@ struct ChatView: View {
                 : nil
             MessageBubble(message: message,
                           isGroup: thread.isGroup,
+                          colorScheme: colorScheme,
+                          chrome: chrome,
                           familiar: bubbleFamiliar,
                           isLast: message.id == thread.messages.last?.id,
                           onDelete: bubbleDelete,
@@ -1230,6 +1327,9 @@ struct ChatView: View {
                           operatorAvatarSource: app.operatorAvatarSource,
                           familiarAvatarSource: bubbleAvatarSource,
                           onContentHeightChange: {
+                              #if DEBUG
+                              ChatScrollTrace.shared.note("heightChange \(message.id) following=\(scrollState.isFollowingLatest)")
+                              #endif
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }
                           },
@@ -1440,6 +1540,11 @@ struct ChatView: View {
             guard let kind = suggestionKindToLoad else { return }
             await loadSuggestions(kind)
         }
+        // The project's files load when `@` first opens their picker (#6104).
+        .task(id: fileIndexToLoad) {
+            guard let root = fileIndexToLoad else { return }
+            await loadProjectFiles(root: root)
+        }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .background(chrome.bgBase)
@@ -1455,6 +1560,16 @@ struct ChatView: View {
         }
         // The "+" menu's attach destinations. The pickers hang off the composer
         // (not the menu rows) so the menu can dismiss before they present.
+        .caveSheet(item: $scheduledReplyLaunch) { launch in
+            ScheduledChatSheet(client: launch.client, sessionId: launch.sessionId, message: launch.message,
+                canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
+                onScheduled: {
+                    if draft == launch.draft && pendingImages.map(\.id) == launch.imageIds && replyingTo?.id == launch.replyId {
+                        draft = ""; pickedFileMentions = []; pendingImages = []; replyingTo = nil
+                    }
+                    app.showToast("Reply scheduled", systemImage: "clock")
+                })
+        }
         .photosPicker(isPresented: $showPhotosPicker,
                       selection: $photoItems,
                       maxSelectionCount: maxAttachments,
@@ -1482,6 +1597,7 @@ struct ChatView: View {
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
             FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
+            FloatingAction(id: "send-later", systemImage: "clock", label: "Send later") { openSendLater() },
         ]
     }
 
@@ -1514,6 +1630,34 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
         }
+    }
+
+    private func openSendLater() {
+        guard !thread.isGroup, !thread.isFlowRun, !isRecoveryOnlyThread,
+              let familiarId = thread.familiarIds.first,
+              let sessionId = thread.sessionIds[familiarId], !sessionId.isEmpty else {
+            app.showToast("Open an existing single-familiar chat to schedule a reply", systemImage: "clock", style: .warning)
+            return
+        }
+        guard let client = app.client, app.connectionState == .connected, requireChatAccess() else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.hasPrefix("/") else {
+            app.showToast("Send commands directly. Only replies can be scheduled.", systemImage: "clock", style: .warning)
+            return
+        }
+        let attachments = pendingImages.map { CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl) }
+        let binding = turnModelBinding
+        var message = thread.makeSendBody(familiarId: familiarId,
+            prompt: replyingTo.map { replyQuote($0) + text } ?? text,
+            attachments: attachments, runId: UUID().uuidString,
+            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope,
+            mentionedFiles: FileMention.picked(pickedFileMentions, in: text))
+        message?.runId = nil
+        scheduledReplyLaunch = ScheduledReplyLaunch(client: client, sessionId: sessionId,
+            message: text.isEmpty && attachments.isEmpty ? nil : message,
+            draft: draft, imageIds: pendingImages.map(\.id), replyId: replyingTo?.id,
+            lease: app.captureConnectionDispatchLease())
+        composerFocused = false
     }
 
     private func startDictation() {
@@ -1729,9 +1873,11 @@ struct ChatView: View {
                 }
             }
             draft = ""
+            pickedFileMentions = []
             dispatch(command, args: args)
         case .unknown(let token):
             draft = ""
+            pickedFileMentions = []
             thread.appendSystem("Unknown command \(token). Tap ⌘ or type /help for the full list.",
                                 isError: true)
             app.touch(thread)
@@ -1749,7 +1895,9 @@ struct ChatView: View {
             // Prepend the quoted message when replying, so the familiar sees
             // exactly what's being answered.
             let outgoing = replyingTo.map { replyQuote($0) + text } ?? text
+            let mentionedFiles = FileMention.picked(pickedFileMentions, in: text)
             draft = ""
+            pickedFileMentions = []
             pendingImages = []
             replyingTo = nil
             Haptics.tap()
@@ -1761,7 +1909,8 @@ struct ChatView: View {
                 thread.enqueue(outgoing, attachments: attachments,
                                modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
-                               modelOverrideScope: modelBinding.scope)
+                               modelOverrideScope: modelBinding.scope,
+                               mentionedFiles: mentionedFiles)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
@@ -1772,6 +1921,7 @@ struct ChatView: View {
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
+                        mentionedFiles: mentionedFiles,
                         onConnectionFailure: { app.noteConnectionFailure($0) },
                         liveDispatchLeaseIsCurrent: {
                             dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
@@ -1880,6 +2030,10 @@ struct ChatView: View {
         case .mention(let familiar):
             draft = MentionInput.insert(name: familiar.displayName, into: draft)
             composerFocused = true
+        case .file(let path):
+            if !pickedFileMentions.contains(path) { pickedFileMentions.append(path) }
+            draft = MentionInput.insert(name: path, into: draft)
+            composerFocused = true
         }
     }
 
@@ -1923,6 +2077,13 @@ struct ChatView: View {
             draft = ""
             dispatch(command, args: row.value)
         }
+    }
+
+    private func loadProjectFiles(root: String) async {
+        guard let client = app.client, let familiarId = thread.familiarIds.first else { return }
+        await app.composerSuggestions.ensureProjectFiles(
+            root: root, host: app.connection?.host,
+            load: { root in try await client.projectFiles(root: root, familiarId: familiarId) })
     }
 
     private func loadSuggestions(_ kind: ComposerSuggestionStore.Kind) async {
@@ -2900,6 +3061,7 @@ private struct UnreadDividerView: View {
 
 struct ResponseReaderView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     let item: ResponseReaderItem
     @State private var mdHeight: CGFloat = 0
     @AppStorage("cave:reader:fontScale") private var fontScale: Double = 1.0
@@ -2922,6 +3084,7 @@ struct ResponseReaderView: View {
                             scrollCommand: scrollCommand,
                             onHeadings: { headings = $0 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("Response reader content")
                 .background(theme.background.ignoresSafeArea())
                 .navigationTitle(item.title)
                 .navigationBarTitleDisplayMode(.inline)
@@ -2932,10 +3095,9 @@ struct ResponseReaderView: View {
     @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
-                UIPasteboard.general.string = item.markdown
-                Haptics.tap()
+                app.navigationDrawerOpen = true
             } label: {
-                Label("Copy response", systemImage: "doc.on.doc")
+                Label("Open navigation", systemImage: "line.3.horizontal")
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
@@ -2957,6 +3119,12 @@ struct ResponseReaderView: View {
                 .accessibilityLabel("Table of contents")
             }
             Menu {
+                Button {
+                    UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
+                    Haptics.tap()
+                } label: {
+                    Label("Copy response", systemImage: "doc.on.doc")
+                }
                 Section("Text size") {
                     Button { fontScale = min(fontScale + 0.1, 1.8) } label: {
                         Label("Larger", systemImage: "textformat.size.larger")

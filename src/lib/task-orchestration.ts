@@ -616,9 +616,11 @@ export function repairRecommendations(
         code: "blocked_requires_dependency",
         field: "dependencies",
         action:
-          deps.length === 0
-            ? "Name what blocks this task, or move it out of Blocked."
-            : "Every dependency here is resolved — move this task out of Blocked.",
+          deps.length > 0
+            ? "Every dependency here is resolved — move this task out of Blocked."
+            : card.predatesDependencies === true
+              ? "This task predates dependency tracking — name what blocks it, or move it out of Blocked."
+              : "Name what blocks this task, or move it out of Blocked.",
       });
     } else {
       const primary = deps.find((dep) => dep.id === card.primaryBlockerId);

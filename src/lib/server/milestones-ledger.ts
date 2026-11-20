@@ -11,7 +11,7 @@ import type { MilestoneAward } from "../milestone-defs.ts";
  * re-awarded until the next genuine crossing of a *new* key).
  */
 
-const LEDGER_PATH = () => path.join(caveHome(), "milestones.json");
+const LEDGER_PATH = () => path.join(/* turbopackIgnore: true */ caveHome(), "milestones.json");
 
 type LedgerFile = {
   version: 1;

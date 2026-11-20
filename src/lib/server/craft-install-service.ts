@@ -1,3 +1,4 @@
+import { prepareMarketplaceRegistry, marketplaceRegistryOverrides } from "./marketplace-registry.ts";
 import {
   installMarketplacePlugin,
   loadConfig,
@@ -15,7 +16,11 @@ import { roleCraftService } from "./role-crafts.ts";
 import { withCraftTransaction } from "./keyed-transaction-lock.ts";
 
 export const craftInstallService = createCraftInstallService({
-  runner: defaultCraftCommandRunner,
+  runner: async (command, args, options) => {
+    const installId = args[0] === "plugin" && args[1] === "add" ? args[2]?.split("@")[0] : undefined;
+    const root = await prepareMarketplaceRegistry(installId);
+    return defaultCraftCommandRunner(command, [...marketplaceRegistryOverrides(root), ...args], options);
+  },
   catalog: { get: loadCraftDefinition },
   withTransaction: withCraftTransaction,
   beforeUninstall: async (definition) => {

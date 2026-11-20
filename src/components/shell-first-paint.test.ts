@@ -43,14 +43,14 @@ assert.match(
 
 assert.match(
   shell,
-  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_COLLAPSED_PX\}px`/,
+  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{iconRail \? navOpenWidth : NAV_OPEN_PX\}px` : `\$\{NAV_COLLAPSED_PX\}px`/,
   "Chat and restored desktop nav first paint at the shared expanded width while fresh nav starts fully closed",
 );
 
 assert.match(
   shell,
   /const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;/,
-  "the shared first-paint expanded width is the 240px shell-nav default",
+  "the shared first-paint expanded width is the 188px shell-nav default",
 );
 
 assert.match(

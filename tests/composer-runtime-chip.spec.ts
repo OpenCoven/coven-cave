@@ -358,6 +358,15 @@ test.describe("composer runtime picker (context chips)", () => {
   });
   test("Home shows the same Thinking and Speed chips and carries a pick into the first chat send (#5902)", async ({ page }) => {
     const state = await seed(page, true, "claude");
+    // This case inspects controls after an authorized send. The shared capture
+    // fixture returns 403, which correctly revokes access and removes them.
+    await page.route("**/api/chat/send", (route) => {
+      state.sendBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      return route.fulfill({ contentType: "text/event-stream", body: [
+        { kind: "assistant_chunk", text: "Controlled Home speed response." },
+        { kind: "done" },
+      ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+    });
     const PROJECT = { id: "p1", name: "Cave", root: "/repo/cave", access: "write" };
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify("p1"));
@@ -389,8 +398,9 @@ test.describe("composer runtime picker (context chips)", () => {
     expect(sent.prompt).toBe("Start thorough from home");
     expect(sent.modelControls).toEqual({ performance: "thorough" });
 
-    // The opened chat's chips start from the same pick.
+    // The opened chat's chips start from the same pick after the response.
     const chat = page.getByTestId("chat-main");
+    await expect(chat.getByText("Controlled Home speed response.", { exact: true })).toBeVisible();
     await chat.getByRole("button", { name: "More composer options", exact: true }).click();
     await expect(chat.getByRole("button", { name: /change speed/ })).toContainText("Speed · Thorough", { timeout: 15_000 });
   });

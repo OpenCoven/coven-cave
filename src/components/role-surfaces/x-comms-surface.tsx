@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
+import dynamic from "next/dynamic";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon, type IconName } from "@/lib/icon";
@@ -71,6 +72,11 @@ import { SlotPicker } from "./x-comms/slot-picker";
 import type { XComposerActions, XGenerateState } from "./x-comms/types";
 
 import "@/styles/globals/surface-x-comms.css";
+
+const FamiliarXSection = dynamic(
+  () => import("@/components/familiar-x-section").then((module) => module.FamiliarXSection),
+  { loading: () => <p className="role-surface-hint">Loading X settings…</p> },
+);
 
 const UNDO_SECONDS = 8;
 
@@ -771,7 +777,11 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
         }
       >
         <SurfaceCanvas label="Live X publishing">
-          <XPublishPanel key={context.activeFamiliar.id} familiarId={context.activeFamiliar.id} />
+          <XPublishPanel
+            key={context.activeFamiliar.id}
+            familiarId={context.activeFamiliar.id}
+            connectionSettings={<FamiliarXSection familiar={context.activeFamiliar} />}
+          />
         </SurfaceCanvas>
       </SurfaceRoom>
     );

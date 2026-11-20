@@ -6,10 +6,9 @@ function read(file: string) {
   return readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
 }
 
-// 1. Salem no longer renders a floating perch. It lives in the sidepanel and
-// context-aware search, so the old perch markup must not reappear.
+// 1. Retired Salem has no floating assistant or answering controls.
 {
-  const src = read("salem/salem-widget.tsx");
+  const src = read("salem/ask-salem-view.tsx");
   assert.doesNotMatch(
     src,
     /salem-perch|export function SalemWidget/,

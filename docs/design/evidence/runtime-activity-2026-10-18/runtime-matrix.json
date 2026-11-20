@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-18T08:23:25.103Z",
+  "head": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+  "classification": "Passive local launch inventory; no provider turns, daemon starts, trust publication or support promotion.",
+  "runtimes": [
+    {
+      "runtime": "codex",
+      "version": "0.163.0",
+      "path": "coven-fallback",
+      "schema": null,
+      "diagnostic": "unsupported-version",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable",
+      "clients": "Shared TypeScript compatibility fixtures; no real-provider client qualification."
+    },
+    {
+      "runtime": "opencode",
+      "version": "1.17.16",
+      "path": "direct-cli",
+      "schema": "opencode-run-json-v1",
+      "admission": "structured",
+      "probeStatus": "verified",
+      "diagnostic": null,
+      "readOnly": "unsupported: send route refuses with 501",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable",
+      "clients": "Shared TypeScript compatibility fixtures; no real-provider client qualification."
+    },
+    {
+      "runtime": "grok",
+      "version": "1.0.46",
+      "path": "direct-cli",
+      "schema": null,
+      "admission": "plain",
+      "diagnostic": "no-compatible-schema",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable",
+      "clients": "Shared TypeScript compatibility fixtures; no real-provider client qualification."
+    },
+    {
+      "runtime": "hermes",
+      "path": "api",
+      "schema": "hermes-responses-v1",
+      "version": null,
+      "model": "served-fixture-v3",
+      "qualification": "fixture-conformant, real-daemon-verified, packaged-desktop/browser/native-recovery verified; real-provider unverified",
+      "servedModel": "Read from response.runtime.model; request alias does not prove the served model.",
+      "approvalAuthority": "unavailable",
+      "clients": "Shared TypeScript adapter fixtures; Hermes additionally real browser, packaged desktop and native recovery."
+    }
+  ],
+  "admissionScope": "Fresh scratch installation using bundled schemas; remote registry and persisted trust cache disabled."
+}

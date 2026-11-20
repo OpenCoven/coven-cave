@@ -55,6 +55,7 @@ import {
   terminalPaneThreadId,
   type TerminalLayoutNode,
 } from "@/lib/code-terminal-tree";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 /** Floors that keep a split pane wide/tall enough to read a shell in. Below
  *  these a terminal wraps into letter soup, so the divider stops rather than
@@ -108,6 +109,7 @@ export function CodeTerminalWorkspace({
   trailingActions,
   releaseKey,
 }: CodeTerminalWorkspaceProps) {
+  const keys = useKeySymbols();
   const { announce } = useAnnouncer();
   const panes = useMemo(() => listTerminalPanes(layout), [layout]);
   const paneCount = panes.length;
@@ -360,7 +362,7 @@ export function CodeTerminalWorkspace({
                   type="button"
                   className="focus-ring code-terminal-pane__action"
                   aria-label={`Close ${label}`}
-                  title={`Close terminal (${CODE_ROOM_SHORTCUT_HINTS["close-terminal"]})`}
+                  title={`Close terminal (${platformizeHint(CODE_ROOM_SHORTCUT_HINTS["close-terminal"], keys)})`}
                   onClick={() => handleClose(paneId)}
                 >
                   <Icon name="ph:x" width={12} height={12} />
@@ -456,7 +458,7 @@ export function CodeTerminalWorkspace({
             aria-label="Split terminal right"
             title={
               canSplitRight
-                ? `Split right (${CODE_ROOM_SHORTCUT_HINTS["split-right"]})`
+                ? `Split right (${platformizeHint(CODE_ROOM_SHORTCUT_HINTS["split-right"], keys)})`
                 : splitBlockedTitle
             }
             disabled={!canSplitRight}
@@ -471,7 +473,7 @@ export function CodeTerminalWorkspace({
             aria-label="Split terminal down"
             title={
               canSplitDown
-                ? `Split down (${CODE_ROOM_SHORTCUT_HINTS["split-down"]})`
+                ? `Split down (${platformizeHint(CODE_ROOM_SHORTCUT_HINTS["split-down"], keys)})`
                 : splitBlockedTitle
             }
             disabled={!canSplitDown}
@@ -488,7 +490,7 @@ export function CodeTerminalWorkspace({
             // would leave a pressed toggle that does nothing.
             disabled={paneCount < 2}
             aria-label="Broadcast input"
-            title={`Type once, send to every terminal (${CODE_ROOM_SHORTCUT_HINTS["toggle-broadcast"]})`}
+            title={`Type once, send to every terminal (${platformizeHint(CODE_ROOM_SHORTCUT_HINTS["toggle-broadcast"], keys)})`}
             onClick={handleToggleBroadcast}
           >
             <Icon name="ph:broadcast" width={12} height={12} />

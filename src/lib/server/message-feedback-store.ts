@@ -1,7 +1,7 @@
 // Per-message thumbs feedback — LOCAL ONLY, for later quality analytics.
 // Records which assistant message got a thumbs up/down (or had its vote toggled
 // off), which familiar produced it, and when. Privacy (mirrors
-// salem/pathfinder-feedback.ts §"Privacy And Logging"): nothing leaves the
+// the former Salem pathfinder feedback store): nothing leaves the
 // machine; only the whitelisted fields below are stored — arbitrary keys
 // (message content, prompts, secrets) are dropped, so nothing sensitive can
 // leak in. These local traces can later seed a sanitized analytics set after
@@ -12,7 +12,7 @@ import path from "node:path";
 import { caveHome } from "@/lib/coven-paths";
 import { isFeedbackReason, type FeedbackReason } from "@/lib/message-feedback";
 
-export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
+export const MESSAGE_FEEDBACK_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "message-feedback.json");
 
 export type MessageFeedbackVote = "up" | "down";
 

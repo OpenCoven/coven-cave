@@ -1,0 +1,9 @@
+{
+  "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+  "serverSha256": "625582608ba181610f9564eb7b9696b28139171802c62a7f05ef5569e6ca60eb",
+  "compiledFileCount": 6747,
+  "compiledManifestSha256": "209ca11caa7cc9573b0c975fd0d0a86cb9d42310fc0d94e9858ed7adfd403dc6",
+  "bundleAndRestoredBuildIdentical": true,
+  "excluded": "Next cache directories; package node_modules is pinned by lockfile and executable receipt.",
+  "rawReportSha256": "1494e87bba780641b1289a4029eceb5afa7b502573c03f94a3caecdb7e063b15"
+}

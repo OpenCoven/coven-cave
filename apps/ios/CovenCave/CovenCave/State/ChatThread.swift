@@ -97,6 +97,11 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Wire scope retained only while a queued message waits to send. Optional
     /// for snapshots written before turn-scoped model binding shipped.
     var modelOverrideScope: ChatModelOverrideScope?
+    /// Project files picked from the `@` menu whose `@path` was still in the
+    /// sent text (#6104), at most `FileMention.maxPerSend`. Persisted so a
+    /// retry or queued replay sends exactly these files, never paths re-read
+    /// from the prompt. Optional so earlier snapshots decode.
+    var mentionedFiles: [String]?
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
@@ -298,10 +303,17 @@ final class ChatThread: Identifiable, Hashable {
     nonisolated func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 
     let id: String
-    var title: String
+    private(set) var isAccessRevoked = false
+    var title: String {
+        didSet { if isAccessRevoked && title != "Chat" { title = "Chat" } }
+    }
     var familiarIds: [String]
-    var sessionIds: [String: String]
-    var projectRoot: String?
+    var sessionIds: [String: String] {
+        didSet { if isAccessRevoked && !sessionIds.isEmpty { sessionIds = [:] } }
+    }
+    var projectRoot: String? {
+        didSet { if isAccessRevoked && projectRoot != nil { projectRoot = nil } }
+    }
     /// Thread-owned so two unsent chats never share a view-local model choice.
     var pendingModelOverride: String?
     /// Structural changes (append/insert/remove/replace — here or from
@@ -309,6 +321,9 @@ final class ChatThread: Identifiable, Hashable {
     /// deltas go through `mutate`, which updates one row in place instead.
     var messages: [DisplayMessage] {
         didSet {
+            // A held view or an already-started history read can outlive removal
+            // from AppModel. Never let either restore a revoked transcript.
+            if isAccessRevoked && !messages.isEmpty { messages = [] }
             guard !inPlaceMutation else { return }
             rebuildTranscript()
         }
@@ -395,6 +410,7 @@ final class ChatThread: Identifiable, Hashable {
               modelControls: [String: String] = [:],
               modelOverride: String? = nil,
               modelOverrideScope: ChatModelOverrideScope? = nil,
+              mentionedFiles: [String] = [],
               onStreamResult: ((ChatSendResult) -> Void)? = nil,
               onConnectionFailure: ((Error) -> Void)? = nil,
               liveDispatchLeaseIsCurrent: @escaping () -> Bool,
@@ -426,7 +442,8 @@ final class ChatThread: Identifiable, Hashable {
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
-            modelOverrideScope: modelOverrideScope)
+            modelOverrideScope: modelOverrideScope,
+            mentionedFiles: mentionedFiles.isEmpty ? nil : mentionedFiles)
         messages.append(userMessage)
         updatedAt = Date()
         onChange()
@@ -497,6 +514,7 @@ final class ChatThread: Identifiable, Hashable {
                         modelControls: modelControls,
                         modelOverride: modelOverride,
                         modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
+                        mentionedFiles: mentionedFiles,
                         runId: delivery.runId,
                         activeDeliveryClaimed: true,
                         liveDispatchLeaseIsCurrent: liveDispatchLeaseIsCurrent,
@@ -521,7 +539,8 @@ final class ChatThread: Identifiable, Hashable {
                  responseSpeed: ChatResponseSpeed? = nil,
                  modelControls: [String: String] = [:],
                  modelOverride: String? = nil,
-                 modelOverrideScope: ChatModelOverrideScope? = nil) {
+                 modelOverrideScope: ChatModelOverrideScope? = nil,
+                 mentionedFiles: [String] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         guard requireSendProvenance(to: familiarIds) else { return }
@@ -533,7 +552,8 @@ final class ChatThread: Identifiable, Hashable {
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
-            modelOverrideScope: modelOverrideScope)
+            modelOverrideScope: modelOverrideScope,
+            mentionedFiles: mentionedFiles.isEmpty ? nil : mentionedFiles)
         message.queued = true
         messages.append(message)
         updatedAt = Date()
@@ -808,6 +828,7 @@ final class ChatThread: Identifiable, Hashable {
                     modelControls: modelControls,
                     modelOverride: queuedMessage.modelOverride,
                     modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
+                    mentionedFiles: queuedMessage.mentionedFiles ?? [],
                     runId: runId,
                     liveDispatchLeaseIsCurrent: mayDispatchTarget,
                     persistAfterProvablyUnsentRollback: persistAfterRollback,
@@ -1519,6 +1540,7 @@ final class ChatThread: Identifiable, Hashable {
                     modelControls: source?.modelControls ?? [:],
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    mentionedFiles: source?.mentionedFiles ?? [],
                     liveDispatchLeaseIsCurrent: mayDispatch,
                     client: client,
                     onChange: onChange,
@@ -1582,6 +1604,23 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    /// Invalidate the object too: a view or suspended task may still retain it
+    /// after AppModel removes the row. This fence lasts for this object lifetime.
+    func revokeAccess() {
+        isAccessRevoked = true
+        pendingServerDelete?.cancel()
+        pendingServerDelete = nil
+        activeDeliveries.removeAll()
+        replayingQueued = false
+        clearMessages()
+        sessionIds.removeAll()
+        flowSessionIds.removeAll()
+        pendingModelOverride = nil
+        projectRoot = nil
+        title = "Chat"
+        needsProjectSelection = false
+    }
+
     /// Re-fetch this thread's conversation from the server and replace the local
     /// messages — backs pull-to-refresh, so a chat advanced on another device
     /// catches up. A group is N independent sessions with no shared turn
@@ -1593,6 +1632,7 @@ final class ChatThread: Identifiable, Hashable {
     /// failure so the caller (pull to refresh) can surface it instead of
     /// failing silently.
     func reload(client: CaveClient) async throws {
+        guard !isAccessRevoked else { return }
         guard !isStreaming else { return }
         if isGroup {
             try await reloadGroup(client: client)
@@ -1908,6 +1948,7 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     private func canSend(to familiarIds: [String]) -> Bool {
+        guard !isAccessRevoked else { return false }
         guard !isFlowRun else { return false }
         if normalizedProjectRoot != nil { return true }
         return familiarIds.allSatisfy {
@@ -1933,8 +1974,10 @@ final class ChatThread: Identifiable, Hashable {
         responseSpeed: ChatResponseSpeed? = nil,
         modelControls: [String: String] = [:],
         modelOverride: String? = nil,
-        modelOverrideScope: ChatModelOverrideScope? = nil
+        modelOverrideScope: ChatModelOverrideScope? = nil,
+        mentionedFiles: [String] = []
     ) -> CaveClient.SendBody? {
+        guard !isAccessRevoked else { return nil }
         guard !isFlowRun else { return nil }
         let rawSessionID = sessionIds[familiarId]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1955,6 +1998,14 @@ final class ChatThread: Identifiable, Hashable {
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         )
+        // `@path` mentions (#6104) are the files picked from the `@` menu, as
+        // stored on the user message, so first sends, retries and queued
+        // replays all carry the same ones. A group chat's `@` names familiars,
+        // and a chat without a project has no root the paths are relative to.
+        if !isGroup, let projectRoot, !mentionedFiles.isEmpty {
+            body.mentionedFiles = Array(mentionedFiles.prefix(FileMention.maxPerSend))
+            body.mentionedFilesRoot = projectRoot
+        }
         #if DEBUG
         if NativeActivityRecoveryPreview.configuration?.providerCanary == true {
             body.permissionMode = "read"
@@ -1993,6 +2044,7 @@ final class ChatThread: Identifiable, Hashable {
                         modelControls: [String: String] = [:],
                         modelOverride: String? = nil,
                         modelOverrideScope: ChatModelOverrideScope? = nil,
+                        mentionedFiles: [String] = [],
                         runId suppliedRunId: String? = nil,
                         activeDeliveryClaimed: Bool = false,
                         liveDispatchLeaseIsCurrent: (() -> Bool)? = nil,
@@ -2066,7 +2118,8 @@ final class ChatThread: Identifiable, Hashable {
             responseSpeed: responseSpeed,
             modelControls: modelControls,
             modelOverride: modelOverride,
-            modelOverrideScope: modelOverrideScope
+            modelOverrideScope: modelOverrideScope,
+            mentionedFiles: mentionedFiles
         ) else {
             mutate(messageId) {
                 $0.text = "Cave couldn’t start this delivery. It will retry when its chat context is available."
@@ -2089,7 +2142,7 @@ final class ChatThread: Identifiable, Hashable {
         do {
             for try await frame in client.sendStream(
                 body,
-                preflight: { liveDispatchLeaseIsCurrent?() ?? true },
+                preflight: { !self.isAccessRevoked && (liveDispatchLeaseIsCurrent?() ?? true) },
                 onRequestStarted: {
                     ChatTurnNotifier.shared.turnStarted(
                         thread: self,
@@ -2098,6 +2151,7 @@ final class ChatThread: Identifiable, Hashable {
                     )
                 }
             ) {
+                guard !isAccessRevoked else { throw CancellationError() }
                 receivedAnyEvent = true
                 apply(frame.event, into: messageId, familiarId: familiarId,
                       userMessageId: userMessageId, connection: client.connection,
@@ -2343,6 +2397,7 @@ final class ChatThread: Identifiable, Hashable {
     private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
                        userMessageId: String?, connection: CaveConnection,
                        sawDone: inout Bool, coalescer: StreamCoalescer, onChange: @escaping () -> Void) {
+        guard !isAccessRevoked else { _ = coalescer.drain(); return }
         switch event {
         case .session(let sid):
             if !sid.isEmpty {
@@ -2497,7 +2552,8 @@ final class ChatThread: Identifiable, Hashable {
             }
             try Task.checkCancellation()
             do {
-                for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
+                for try await frame in client.resumeStream(runId: runId, cursor: nextCursor,
+                                                          sessionId: sessionIds[familiarId]) {
                     try Task.checkCancellation()
                     recovery.accepted = true
                     if Self.isResumeGap(frame.event) { sawResumeGap = true }
@@ -2587,7 +2643,8 @@ final class ChatThread: Identifiable, Hashable {
         var sawResumeGap = false
         let coalescer = StreamCoalescer()
         do {
-            for try await frame in client.resumeStream(runId: runId, cursor: 0) {
+            for try await frame in client.resumeStream(runId: runId, cursor: 0,
+                                                      sessionId: sessionIds[familiarId]) {
                 try Task.checkCancellation()
                 if Self.isResumeGap(frame.event) { sawResumeGap = true }
                 apply(
@@ -2849,6 +2906,7 @@ final class ChatThread: Identifiable, Hashable {
     /// O(n) scan, and patches the matching row without re-deriving separators
     /// (a mutate never changes `createdAt`, so separators can't move).
     private func mutate(_ messageId: String, _ body: (inout DisplayMessage) -> Void) {
+        guard !isAccessRevoked else { return }
         guard let idx = transcriptIndex.position(of: messageId),
               idx < messages.count, messages[idx].id == messageId else { return }
         var message = messages[idx]

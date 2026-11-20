@@ -2,27 +2,57 @@ import type { ToolActivity } from "./chat-activity.ts";
 
 /** Display states describe producer observations, never approval or committed
  * side effects. Missing results remain unknown even if the enclosing turn ends. */
-export type ToolOutcome = "ok" | "error" | "rejected";
-export type ToolStatus = "requested" | "running" | ToolOutcome | "unknown";
+export type ToolOutcome = "ok" | "error" | "rejected" | "policy-rejected" | "user-rejected" | "cancelled";
+export type ToolStatus = "requested" | "approval-requested" | "cancel-requested" | "running" | ToolOutcome | "unknown";
 
 export function isKnownToolOutcome(status: ToolStatus | undefined): status is ToolOutcome {
-  return status === "ok" || status === "error" || status === "rejected";
+  return status === "ok" || status === "error" || status === "rejected" || status === "policy-rejected" || status === "user-rejected" || status === "cancelled";
 }
 
 export function normalizeToolStatus(value: unknown): ToolStatus {
-  return value === "requested" || value === "running" || value === "ok" || value === "error" || value === "rejected" ? value : "unknown";
+  return value === "requested" || value === "approval-requested" || value === "cancel-requested" || value === "running" || value === "ok" || value === "error" || value === "rejected" || value === "policy-rejected" || value === "user-rejected" || value === "cancelled" ? value : "unknown";
 }
 
 export function isToolActive(status: ToolStatus): boolean {
-  return status === "requested" || status === "running";
+  return status === "requested" || status === "approval-requested" || status === "cancel-requested" || status === "running";
 }
 
 export function toolStatusLabel(status: ToolStatus): string {
   status = normalizeToolStatus(status);
+  if (status === "approval-requested") return "Approval requested";
+  if (status === "cancel-requested") return "Cancellation requested";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "policy-rejected") return "Rejected by policy";
+  if (status === "user-rejected") return "Rejected by user";
   return status === "unknown" ? "Outcome unknown"
     : status === "requested" ? "Requested"
       : status === "running" ? "Running"
         : status === "ok" ? "Succeeded" : status === "rejected" ? "Rejected" : "Failed";
+}
+
+export type ToolStatusCounts = { running: number; requested: number; ok: number; error: number; rejected: number; cancelled: number; unknown: number };
+
+/** Compact counters group exact states into the families a summary shows;
+ * per-call rows keep toolStatusLabel's exact state. A requested cancellation
+ * may still be executing, and an approval request has not executed. */
+export function toolStatusCounts(statuses: Iterable<ToolStatus>): ToolStatusCounts {
+  const counts: ToolStatusCounts = { running: 0, requested: 0, ok: 0, error: 0, rejected: 0, cancelled: 0, unknown: 0 };
+  for (const raw of statuses) {
+    const status = normalizeToolStatus(raw);
+    if (status === "running" || status === "cancel-requested") counts.running += 1;
+    else if (status === "requested" || status === "approval-requested") counts.requested += 1;
+    else if (status === "rejected" || status === "policy-rejected" || status === "user-rejected") counts.rejected += 1;
+    else counts[status] += 1;
+  }
+  return counts;
+}
+
+/** Progress-row state: only success is done, and no terminal state reads as running. */
+export function toolProgressStatus(status: ToolStatus): "running" | "done" | "error" | "notice" {
+  status = normalizeToolStatus(status);
+  if (status === "ok") return "done";
+  if (status === "error") return "error";
+  return isToolActive(status) ? "running" : "notice";
 }
 
 /** The first known outcome wins. An unknown outcome can be resolved by a
@@ -30,7 +60,9 @@ export function toolStatusLabel(status: ToolStatus): string {
 export function retainToolStatus(previous: ToolStatus | undefined, incoming: ToolStatus): ToolStatus {
   if (isKnownToolOutcome(previous)) return previous;
   if (previous === "unknown" && isToolActive(incoming)) return previous;
-  if (previous === "running" && incoming === "requested") return previous;
+  if (previous === "cancel-requested" && isToolActive(incoming)) return previous;
+  if (previous === "running" && incoming === "approval-requested") return previous;
+  if ((previous === "running" || previous === "approval-requested") && incoming === "requested") return previous;
   return incoming;
 }
 

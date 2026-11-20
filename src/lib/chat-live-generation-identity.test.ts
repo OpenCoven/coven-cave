@@ -103,3 +103,48 @@ test("cleanup for a replaced run preserves a newer run under its origin alias", 
   assert.equal(readLiveChatGeneration(origin)?.runId, newRunId);
   assert.equal(readLiveChatGeneration(replacement), null);
 });
+
+test("revocation invalidates every stable alias's cached history and presentation", async () => {
+  const { invalidateChatAccess, subscribeChatAccessInvalidation } = await import("./chat-access-invalidation.ts");
+  const { storeConversation, readConversationForPaint } = await import("./conversation-cache.ts");
+  const first = snapshot("revoked-origin", "revoked-run");
+  recordLiveChatGeneration(first);
+  recordLiveChatGeneration({ ...first, sessionId: "revoked-replacement" });
+  storeConversation("revoked-replacement", { ok: true, conversation: { turns: [] } });
+  const seen: string[] = [];
+  const unsubscribe = subscribeChatAccessInvalidation((change) => {
+    if (change.sessionId) seen.push(change.sessionId);
+  });
+  try {
+    invalidateChatAccess({ sessionId: "revoked-origin", reason: "denied" });
+    assert.equal(readLiveChatGeneration("revoked-replacement"), null);
+    assert.equal(readConversationForPaint("revoked-replacement"), null);
+    assert.ok(seen.includes("revoked-replacement"), "a view already displaying the replacement alias must clear");
+  } finally { unsubscribe(); }
+});
+
+test("project policy publication clears admitted history and live owners before notifying views", async () => {
+  const { publishProjectAccessChanged, PROJECT_ACCESS_CHANGED_EVENT } = await import("./project-access-events.ts");
+  const { storeConversation, readConversationForPaint } = await import("./conversation-cache.ts");
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const target = new EventTarget();
+  Object.defineProperty(globalThis, "window", { configurable: true, value: target });
+  const live = snapshot("policy-session", "policy-run");
+  recordLiveChatGeneration(live);
+  storeConversation(live.sessionId, { ok: true, conversation: { turns: [] } });
+  let notified = false;
+  target.addEventListener(PROJECT_ACCESS_CHANGED_EVENT, () => {
+    notified = true;
+    assert.equal(readConversationForPaint(live.sessionId), null);
+    assert.equal(readLiveChatGeneration(live.sessionId), null);
+    assert.equal(live.controller.signal.aborted, true);
+  });
+  try {
+    publishProjectAccessChanged("  project-policy  ");
+    assert.equal(notified, true);
+    assert.equal(recordLiveChatGeneration(live), null, "late owner publication stays revoked");
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});

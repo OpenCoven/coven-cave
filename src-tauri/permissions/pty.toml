@@ -24,6 +24,11 @@ description = "Allows listing active PTY sessions."
 commands.allow = ["pty_list"]
 
 [[permission]]
+identifier = "allow-pty-snapshot"
+description = "Allows replaying recent output of the caller's own PTY session after a terminal view remounts."
+commands.allow = ["pty_snapshot"]
+
+[[permission]]
 identifier = "allow-pty-diagnose"
 description = "Allows running a one-shot PTY diagnostic."
 commands.allow = ["pty_diagnose"]
@@ -74,14 +79,39 @@ description = "Allows opening a URL in the system browser."
 commands.allow = ["shell_open"]
 
 [[permission]]
+identifier = "allow-shell-pick-directory"
+description = "Allows asking the person to choose a folder in the system folder picker. Only the folder they choose is returned."
+commands.allow = ["shell_pick_directory"]
+
+[[permission]]
+identifier = "allow-open-tailscale-app"
+description = "Allows opening the installed Tailscale app with fixed, platform-owned arguments."
+commands.allow = ["open_tailscale_app"]
+
+[[permission]]
+identifier = "allow-shell-reveal-path"
+description = "Allows showing an existing local file or folder in the system file manager, without opening the file."
+commands.allow = ["shell_reveal_path"]
+
+[[permission]]
 identifier = "allow-open-x-oauth-url"
 description = "Allows opening only a validated X OAuth authorization URL."
 commands.allow = ["open_x_oauth_url"]
 
 [[permission]]
+identifier = "allow-open-update-release-url"
+description = "Allows opening only a Coven Cave GitHub release page or release asset in the system browser."
+commands.allow = ["open_update_release_url"]
+
+[[permission]]
 identifier = "allow-set-traffic-lights-visible"
 description = "Allows trusted app chrome to synchronize macOS traffic-light visibility with the navigation rail."
 commands.allow = ["set_traffic_lights_visible"]
+
+[[permission]]
+identifier = "allow-open-chat-window"
+description = "Allows the trusted main app webview to pop its Chat panel out into the detached Chat window."
+commands.allow = ["open_chat_window"]
 
 [[permission]]
 identifier = "allow-browser-report-title"
@@ -100,15 +130,35 @@ commands.allow = ["browser_report_user_navigation"]
 
 [[permission]]
 identifier = "allow-sidecar-startup-status"
-description = "Allows the bundled local startup page to read sidecar preparation status."
+description = "Allows the bundled local startup page and the trusted main app webview to read sidecar preparation status."
 commands.allow = ["sidecar_startup_status"]
 
 [[permission]]
 identifier = "allow-retry-sidecar-startup"
-description = "Allows the bundled local startup page to retry sidecar preparation."
+description = "Allows the bundled local startup page and the trusted main app webview to retry sidecar preparation."
 commands.allow = ["retry_sidecar_startup"]
 
 [[permission]]
 identifier = "allow-cancel-sidecar-startup"
 description = "Allows the bundled local startup page to cancel sidecar preparation at a safe boundary."
 commands.allow = ["cancel_sidecar_startup"]
+
+[[permission]]
+identifier = "allow-arm-update-install-recovery"
+description = "Allows the trusted desktop UI to arm Windows recovery immediately before an explicit Restart & install."
+commands.allow = ["arm_update_install_recovery"]
+
+[[permission]]
+identifier = "allow-disarm-update-install-recovery"
+description = "Allows the trusted desktop UI to disarm Windows install recovery when install returns an error. If the updater's teardown already ran, the app exits or restarts."
+commands.allow = ["disarm_update_install_recovery"]
+
+[[permission]]
+identifier = "allow-update-install-outcome"
+description = "Allows the trusted desktop UI to read why the last Windows update install did not complete."
+commands.allow = ["update_install_outcome"]
+
+[[permission]]
+identifier = "allow-clear-update-install-outcome"
+description = "Allows the trusted desktop UI to clear a shown Windows update install outcome."
+commands.allow = ["clear_update_install_outcome"]

@@ -50,11 +50,33 @@ test("background refresh retains values and exposes partial failure independentl
   await act(async () => data.refresh());
   expect(data.sync.value).toEqual(sync);
   await respond(2, { ...workspace, workspacePath: "/fresh" });
-  await respond(3, { ok: false }, 503);
+  await respond(3, { ok: false, error: "Update Cave before changing scheduled backup settings." }, 503);
   expect(data.workspace.value.workspacePath).toBe("/fresh");
   expect(data.workspace.status).toBe("ready");
   expect(data.sync.status).toBe("error");
   expect(data.sync.value).toEqual(sync);
+  expect(data.sync.error).toBe("Update Cave before changing scheduled backup settings.");
+});
+
+test("initial backup errors show recovery guidance and clear after a successful retry", async () => {
+  await mount(); await respond(0, workspace);
+  await respond(1, { ok: false, error: "Restore a valid backup-sync.json backup before changing settings." }, 500);
+  expect(data.sync.value).toBeNull();
+  expect(data.sync.error).toBe("Restore a valid backup-sync.json backup before changing settings.");
+  await act(async () => { void data.sync.refresh(); });
+  await respond(2, sync);
+  expect(data.sync.status).toBe("ready");
+  expect(data.sync.error).toBeNull();
+});
+
+test("a successful save clears an error and ignores a stale rejected read", async () => {
+  await mount(); await respond(0, workspace); await respond(1, { ok: false, error: "Old error" }, 500);
+  await act(async () => { void data.sync.refresh(); });
+  await act(async () => data.sync.publish(sync));
+  await respond(2, { ok: false, error: "Stale error" }, 500);
+  expect(data.sync.status).toBe("ready");
+  expect(data.sync.value).toEqual(sync);
+  expect(data.sync.error).toBeNull();
 });
 
 test("backup refresh events only reload backup state", async () => {

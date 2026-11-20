@@ -62,13 +62,13 @@ export function mobileAccessSecretFile(
   const stateRoot =
     env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
     path.join(
-      env.XDG_STATE_HOME?.trim() || path.join(homedir(), ".local", "state"),
+      /* turbopackIgnore: true */ env.XDG_STATE_HOME?.trim() || path.join(/* turbopackIgnore: true */ homedir(), ".local", "state"),
       "coven-cave",
     );
   const stateDir =
     env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() ||
-    path.join(stateRoot, `mobile-tailscale-${port}`);
-  return path.join(stateDir, "access-token");
+    path.join(/* turbopackIgnore: true */ stateRoot, `mobile-tailscale-${port}`);
+  return path.join(/* turbopackIgnore: true */ stateDir, "access-token");
 }
 
 function provisioningAllowed(env: Record<string, string | undefined>): boolean {

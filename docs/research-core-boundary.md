@@ -1,0 +1,59 @@
+# Research core boundary
+
+Decision for [#5993](https://github.com/OpenCoven/coven-cave/issues/5993): Research is an optional application subsystem. Its desk, mission engine, ingestion, indexing, and media processing are outside the baseline shell startup path. The extraction preserved existing data formats and made Research installation and activation explicit. It shipped in PR #6025 (merged 2026-10-15); [#5997](https://github.com/OpenCoven/coven-cave/issues/5997) is closed, and the [verification report](research-extraction-verification.md) records the evidence.
+
+The Research UI already loads on demand through `researcher-surface-loader.tsx`. Moving that UI alone is therefore unlikely to materially reduce ordinary typing lag. The performance opportunity is its server startup and background work; the surface reduction requires extracting the implementation and its tests together.
+
+The retained core contracts are:
+
+- Keep generic run references, chat links, execution admission, approvals, and session authority in core. Flow execution and attention handling already consume these contracts.
+- Move shared GitHub SHA validation and project-path helpers to neutral modules. GitHub review, merge, and diff routes must not depend on an optional Research package.
+- Keep authentication and media access checks in core, with an explicit capability boundary for Research routes.
+- Preserve backup/restore compatibility and interrupted-restore recovery for existing Research data, including when the feature is disabled. Do not silently drop archived data.
+- Register ingestion, indexing, media workers, and mission recovery explicitly when Research is enabled; retain necessary privacy/expiry cleanup for existing data.
+
+Acceptance requires: core launches with Research absent; ordinary chat, Flow, GitHub, security, and backup tests pass in that configuration; enabling Research restores existing missions/resources without migration loss; startup and idle work are measured before claiming a lag reduction. Removing the speculative surface warmup and blanket route preload is the immediate responsiveness change in #5993.
+
+Current proof (2026-10-30, #6334): absence, startup disablement and
+reinstallation were re-proved on one commit with one persistent synthetic home
+in [#6312](https://github.com/OpenCoven/coven-cave/issues/6312) (PR #6313).
+Absent and disabled refuse with 503 `research-not-installed` or
+`research-disabled`, start no Research timer, and exit 0 on SIGTERM; a link
+stored before removal returns after reinstall; the absent standalone output is
+about 13 MiB and 1,146 files smaller. Build-time detection reads only the
+project's own `node_modules`, so a parent checkout cannot make a nested
+worktree look installed. The hot-disable teardown contract is #6332. The
+startup and idle measurements that would support a lag claim are the #6119
+baselines, not the historical
+[extraction report](research-extraction-verification.md).
+
+
+## Persistence retained by the optional package boundary
+
+The extraction in #5997 keeps the lexical and semantic SQLite storage modules
+in core. They own persisted formats, authority validation, safe file replacement,
+restore coordination, deletion, and compaction. Interrupted restore rebuilds the
+lexical database from verified snapshots; deletion must purge semantic rows and
+residual files even when Research is absent. Recovery closes the maintenance
+and rebuilt-index handles, including their restore-marker timers, before return.
+
+Research owns ingestion, the embedding HTTP provider, semantic job execution,
+resource retrieval orchestration, mission execution, and media workers. None is
+needed to open or repair an archive. `research-maintenance-boundary.test.ts`
+checks the actual backup bundle dependency graph excludes those implementations.
+The package consumes explicit storage adapters; it does not duplicate or change
+the on-disk formats. Moving the storage backend itself would make offline
+recovery depend on the optional package and is outside this boundary.
+
+The package dispatch gate runs before loading implementation. It preserves the
+existing scoped native-media ticket and validated run-stream GET credentials;
+other endpoints retain the ordinary local-request guard. Handler-level HTTP
+contracts live with Research, while Cave checks route inventory, exact dispatch,
+authorization before loading, and absent/disabled responses.
+
+Activation is Cave's as well. One process-local owner starts the runtime once,
+drains it at process shutdown beside the other startup workers, and can disable
+it while the server runs: admission closes before the package stops, and the
+stop outcome is retained. The package-side stop is optional under host
+contract 2 and absent from the shipped 0.2.0 package. See the
+[host contract](research-host-contract.md#activation-and-hot-disable) (#6332).

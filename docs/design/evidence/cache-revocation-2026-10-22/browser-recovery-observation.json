@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "buildId": "ukbio8raWS63ofFRQoE_o",
+  "browser": "Google Chrome for Testing (chromium-1234)",
+  "interaction": "Native accessibility and screenshot inspection via cua_repl; actual composer send, transparent SSE fault proxy, reload and tool disclosure reopen",
+  "fixture": "real-client-reconnect.json",
+  "observations": [
+    {
+      "phase": "before interruption",
+      "tool": "increment_counter",
+      "output": "1",
+      "provenance": "Runtime report \u00b7 hermes \u00b7 version unavailable",
+      "authority": "Approval and change confirmation unavailable."
+    },
+    {
+      "phase": "after recovery",
+      "reply": "Done: 1",
+      "status": "Completed",
+      "toolOutput": "1"
+    },
+    {
+      "phase": "after browser reload and tool reopen",
+      "reply": "Done: 1",
+      "toolOutput": "1",
+      "authority": "Approval and change confirmation unavailable."
+    }
+  ],
+  "sendActions": 1,
+  "retryActions": 0,
+  "fixtureTabClosed": false,
+  "screenshots": "Inspected in the tool transcript, with only the dedicated scratch fixture window visible. No screenshot files published.",
+  "limits": [
+    "Controlled external provider and durable counter; no real provider or protected effect authority",
+    "No human accessibility or physical-device acceptance",
+    "Revocation rendering separately covered by the 14-case production Playwright run"
+  ],
+  "dispatchedSends": 1,
+  "windowDisposition": "Dedicated scratch tab intentionally left open; fixture server and daemon stopped and scratch root removed."
+}

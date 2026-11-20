@@ -21,12 +21,14 @@ export function normalizeRuntimeActivity(value: unknown): ChatRuntimeActivity | 
     tools: activity.tools as RuntimeDetailAvailability, reasoning: activity.reasoning as RuntimeDetailAvailability };
 }
 
+/** Plain words for the reader (#6039): what they will see, not the adapter's
+ *  support vocabulary. iOS mirrors these in Models.swift. */
 const labels: Record<RuntimeDetailAvailability, string> = {
-  supported: "supported on this path",
-  partial: "partially supported on this path",
-  unsupported: "not supported on this path",
-  unknown: "support unverified on this path",
-  disabled: "decoding disabled for this turn",
+  supported: "available",
+  partial: "partly available",
+  unsupported: "not available on this path",
+  unknown: "not verified on this path",
+  disabled: "off for this turn",
 };
 const pathLabels: Record<ChatRuntimeActivity["path"], string> = {
   direct: "Direct runtime", coven: "Coven relay", ssh: "SSH relay", api: "API",
@@ -50,7 +52,7 @@ export function runtimeActivityForAdapter(path: ChatRuntimeActivity["path"], too
 
 export function runtimeActivityStatusLines(value: unknown): string[] {
   const activity = normalizeRuntimeActivity(value);
-  if (!activity) return ["Activity support: not recorded"];
+  if (!activity) return ["Activity: not recorded for this turn"];
   return [`Runtime path: ${pathLabels[activity.path]}`, `Tool details: ${labels[activity.tools]}`,
     `Reasoning summaries: ${labels[activity.reasoning]}`];
 }

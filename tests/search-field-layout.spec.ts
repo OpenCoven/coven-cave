@@ -2,6 +2,17 @@ import { expect, test } from "@playwright/test";
 
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const requirePackage = createRequire(join(process.cwd(), "package.json"));
+let researchStyles: string[] = [];
+try {
+  const packageRoot = dirname(requirePackage.resolve("@opencoven/research/package.json"));
+  researchStyles = [join(packageRoot, "dist/styles/globals/surface-research-prompt.css")];
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND") throw error;
+}
 
 // Render the real controls without a daemon or application server. This catches
 // CSS geometry regressions independently of workspace data and onboarding.
@@ -15,7 +26,7 @@ const styles = [
   "src/styles/journal.css",
   "src/styles/globals/desktop-chrome.css",
   "src/styles/globals/shared-pickers-and-toasts.css",
-  "src/styles/globals/surface-research-prompt.css",
+  ...researchStyles,
 ].map((file) => readFileSync(file, "utf8")).join("\n");
 
 test.beforeAll(async () => {
@@ -135,7 +146,7 @@ test("specialized native search fields retain touch sizing over surface styles",
     "drd-ship-search-input",
     "familiar-switcher__search",
     "cave-project-picker__filter",
-    "research-quick-saves__search",
+    ...(researchStyles.length ? ["research-quick-saves__search"] : []),
   ];
   await page.locator("main").waitFor();
   await page.locator("main").evaluate((main, classes) => {

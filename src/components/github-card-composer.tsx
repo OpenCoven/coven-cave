@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readGitHubWriteAnswer, isUncertainGitHubWrite } from "@/lib/github-write-answer";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -43,6 +44,7 @@ import { clearDraft, readDraft, writeDraft } from "@/lib/gh-card-draft";
 import { generateReviewDraft, type GhDraftScopes } from "@/lib/gh-review-draft";
 import { OWN_PR_REVIEW_NOTE } from "@/lib/own-pr-review";
 import "@/styles/gh-card-composer.css";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 export type GhComposerItem = {
   repo: string;
@@ -137,7 +139,7 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; stat
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const data = await readGitHubWriteAnswer(res);
     return { ok: res.ok && data?.ok === true, status: res.status, data };
   } catch {
     return { ok: false, status: 0, data: null };
@@ -166,6 +168,7 @@ export function GitHubCardComposer({
   onRefreshThreads?: () => void;
   onOpenUrl?: (url: string) => void;
 }) {
+  const keys = useKeySymbols();
   const { announce } = useAnnouncer();
   const { repo, number } = item;
 
@@ -181,7 +184,9 @@ export function GitHubCardComposer({
   const [labels, setLabels] = useState<string[]>(item.labels.map((l) => l.name));
   const [pick, setPick] = useState<"" | "people" | "labels">("");
   const [nudge, setNudge] = useState<"" | "arm" | "body">("");
-  const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
+  // `uncertain`: GitHub may have done this before the failure (#6369), so
+  // the panel offers a refresh to check instead of a blind re-send.
+  const [failure, setFailure] = useState<{ code: string; message: string; uncertain?: boolean } | null>(null);
   const [merged, setMerged] = useState<{ sha: string | null; branchDeleted: boolean } | null>(null);
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -423,16 +428,20 @@ export function GitHubCardComposer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo, number, ...patch }),
       });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      const data = await readGitHubWriteAnswer(res);
       if (!res.ok || !data?.ok) {
-        setFailure({ code: String(res.status), message: data?.error ?? "update failed" });
+        setFailure({
+          code: String(res.status),
+          message: data?.error ?? "update failed",
+          uncertain: isUncertainGitHubWrite(res.status, data),
+        });
         setPhase("error");
         return false;
       }
       onMutated();
       return true;
     } catch {
-      setFailure({ code: "0", message: "network error" });
+      setFailure({ code: "0", message: "network error", uncertain: true });
       setPhase("error");
       return false;
     } finally {
@@ -457,7 +466,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/rerun", { repo, number, failedOnly });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed" });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed", uncertain: isUncertainGitHubWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -470,7 +479,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/resolve-thread", { threadId, resolved: true });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed" });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed", uncertain: isUncertainGitHubWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -566,7 +575,7 @@ export function GitHubCardComposer({
         ...(delBranch && item.pull?.headRef ? { deleteBranch: true } : {}),
       });
       if (!ok) {
-        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed" });
+        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed", uncertain: isUncertainGitHubWrite(status, data) });
         setPhase("error");
         return;
       }
@@ -603,7 +612,11 @@ export function GitHubCardComposer({
           });
 
     if (!result.ok) {
-      setFailure({ code: String(result.status), message: (result.data?.error as string) ?? "send failed" });
+      setFailure({
+        code: String(result.status),
+        message: (result.data?.error as string) ?? "send failed",
+        uncertain: isUncertainGitHubWrite(result.status, result.data),
+      });
       setPhase("error");
       return;
     }
@@ -858,8 +871,21 @@ export function GitHubCardComposer({
           </span>
           <span className="ghc-status__msg">
             <span className="ghc-status__code">{failure.code}</span> {failure.message}
+            {failure.uncertain ? " This may have gone through. Refresh to check before sending again." : null}
           </span>
-          {mode !== "comment" ? (
+          {failure.uncertain ? (
+            <button
+              type="button"
+              className="ghc-mini focus-ring"
+              onClick={() => {
+                setFailure(null);
+                setPhase("open");
+                onMutated();
+              }}
+            >
+              Refresh to check
+            </button>
+          ) : mode !== "comment" ? (
             <button type="button" className="ghc-mini focus-ring" onClick={() => void send(true)}>
               Send as comment instead
             </button>
@@ -1086,7 +1112,7 @@ export function GitHubCardComposer({
                     <span className="ghc-pal__ghost">{slash.ghost}</span>
                   </span>
                   <span className="ghc-pal__hint">
-                    <span className="ghc-pal__foot-key">↵</span> run ·{" "}
+                    <span className="ghc-pal__foot-key">{keys.enter}</span> run ·{" "}
                     <span className="ghc-pal__foot-key">esc</span> prose
                   </span>
                 </div>
@@ -1259,7 +1285,7 @@ export function GitHubCardComposer({
           >
             {isMergeVerb ? `${method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge"} and merge` : VERB[mode]}
             <span aria-hidden className="ghc-cta__hint">
-              {isMergeVerb && !armed ? "— type to arm" : "⌘↵"}
+              {isMergeVerb && !armed ? "— type to arm" : platformizeHint("⌘↵", keys)}
             </span>
           </button>
         </div>

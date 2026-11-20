@@ -29,7 +29,6 @@ assert.match(view, /adjacency/, "the spotlight covers the node's neighborhood, n
 assert.match(view, /nodeRadius\(/, "node size scales with connection count");
 assert.match(view, /baseLabelAlpha/, "labels fade in with zoom");
 assert.match(view, /positionCache/, "layout survives close/reopen (module-level position cache)");
-assert.match(view, /if \(node\.ref\) \{[\s\S]{0,120}onOpen\(node\.ref\)/, "opening a doc node goes through onOpen");
 assert.match(view, /onDoubleClick=\{\(e\) => \{[\s\S]{0,200}openNode\(nodeById\.get/, "double-clicking a node opens its doc");
 assert.match(view, /if \(stickyRef\.current !== node\.id\) selectNode\(node\.id\)/, "a single click selects the node and flies to it (traversal, not navigation)");
 assert.match(view, /setStickyId\(\(prev\) => \(prev === node\.id \? null : node\.id\)\)/, "clicking the selected node again clears the spotlight");

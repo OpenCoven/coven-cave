@@ -1,0 +1,230 @@
+{
+  "contract": {
+    "status": "qualified",
+    "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+    "evidence": [
+      "verification.json",
+      "http-parallel-expiry.json",
+      "desktop-hostile.json",
+      "desktop-hostile-ui.json"
+    ]
+  },
+  "server-disclosure": {
+    "status": "qualified",
+    "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+    "evidence": [
+      "http-disclosure.json",
+      "verification.json"
+    ]
+  },
+  "runtime-matrix": {
+    "status": "qualified",
+    "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+    "evidence": [
+      "runtime-matrix.json",
+      "verification.json",
+      "http-parallel-expiry.json"
+    ]
+  },
+  "recovery": {
+    "status": "qualified",
+    "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+    "evidence": [
+      "http-cancel.json",
+      "http-parallel-expiry.json",
+      "http-eviction.json",
+      "http-unsaved.json",
+      "browser-reconnect.json",
+      "native-recovery.json"
+    ]
+  },
+  "rendered": {
+    "status": "qualified",
+    "scope": "Packaged desktop and real-browser observed summary/tool ordering, untrusted content, unavailable authority and saved history; source/rendered fixture suites cover component contracts.",
+    "evidence": [
+      "desktop-hostile-ui.json",
+      "desktop-cancel-ui.json",
+      "browser-ui.json",
+      "verification.json"
+    ]
+  },
+  "native-contract": {
+    "status": "qualified",
+    "scope": "Shared native decoder/reducer and preference contracts, actual native TCP and scene-supervisor recovery, generated markdown assets. Full native acceptance is separately deferred.",
+    "evidence": [
+      "native-recovery.json",
+      "verification.json"
+    ]
+  },
+  "harness": {
+    "status": "qualified",
+    "scope": "External provider/tool boundary only; real production routes, scratch daemon, durable child-process counter and independent duplicate-effect control. UI receipts are separate from backend assertions.",
+    "evidence": [
+      "http-parallel-expiry.json",
+      "browser-reconnect.json",
+      "desktop-cancel.json",
+      "native-recovery.json"
+    ]
+  },
+  "golden-05": {
+    "status": "qualified",
+    "scope": "Cancellation after an actual durable effect passes HTTP and packaged-client live/history checks. The tool remains succeeded, the response remains stopped, and the counter stays one. Retry/error distinction additionally has shared fixture coverage; no automatic side-effect retry is authorized.",
+    "evidence": [
+      "http-cancel.json",
+      "desktop-cancel.json",
+      "desktop-cancel-ui.json",
+      "verification.json"
+    ]
+  },
+  "golden-06": {
+    "status": "qualified",
+    "scope": "Real browser disconnects before and after the tool result, requests real replay, loses the held final frame while switched away, then recovers from saved history and ten reloads without redispatch. Native scene recovery independently passes.",
+    "evidence": [
+      "browser-reconnect.json",
+      "browser-ui.json",
+      "native-recovery.json"
+    ]
+  },
+  "golden-11": {
+    "status": "qualified",
+    "scope": "Known and guessed IDs at the managed-device boundary: pending/refused, allowed live stream, active revocation, denied replay/history/detail; delayed old-session completion is not adopted by a new browser draft. Physical ingress, multiple principals, projects and familiar revisions are not claimed.",
+    "evidence": [
+      "http-cancel.json",
+      "browser-ui.json",
+      "browser-reconnect.json"
+    ]
+  },
+  "golden-12": {
+    "status": "qualified",
+    "scope": "Packaged Release renders script/HTML/JavaScript URL/forged receipt literally as quoted tool output live and after history reopen; no callback or follow-on execution and no trusted approval/effect chrome.",
+    "evidence": [
+      "desktop-hostile.json",
+      "desktop-hostile-ui.json",
+      "desktop-hostile.jpeg"
+    ]
+  },
+  "packet": {
+    "status": "qualified",
+    "scope": "One frozen main-source product build with separate harness digests, first-attempt/retry ledger, runtime versions, commands and bounded qualification. No signed/notarized distribution-release claim.",
+    "evidence": [
+      "packet.json",
+      "attempts.json",
+      "verification.json"
+    ]
+  },
+  "diagnostics": {
+    "status": "qualified",
+    "scope": "Content-minimized first-activity/tool/terminal timings, replay-gap and projection-save statuses, and browser task/script/layout measurements. Artificial provider gates are identified; causal influence is not inferred.",
+    "evidence": [
+      "http-eviction.json",
+      "http-unsaved.json",
+      "performance.json"
+    ]
+  },
+  "performance": {
+    "status": "qualified",
+    "scope": "Identical controlled production fixture, four alternating measured baseline/candidate samples plus two warmups. This PR changes harness/docs only, so both cohorts use identical main application bytes. Existing build budgets pass; no speedup or large-trace claim.",
+    "evidence": [
+      "performance.json",
+      "verification.json",
+      "renderer-measurement.js"
+    ]
+  },
+  "rollout-docs": {
+    "status": "qualified",
+    "scope": "Existing reviewed runtime/schema capability gates and presentation preference preserved; unsupported approval authority stays unavailable. Documented rollback cannot relax disclosure/authentication. #4892 obsolete clause recorded in an issue comment, body unchanged.",
+    "evidence": [
+      "../../runtime-activity-supported-paths.md",
+      "runtime-matrix.json",
+      "val-deferral.json"
+    ]
+  },
+  "approval-producer": {
+    "status": "deferred",
+    "scope": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+    "evidence": [
+      "val-deferral.json",
+      "desktop-hostile-ui.json"
+    ],
+    "owner": "Coven/Threads producer owners with Val acceptance; existing #5762, #5763, #5765, #5766",
+    "nextStep": "Obtain the authoritative producer contract and run Permit/Degrade/Reject plus stale/revoked/revised/replayed approval goldens before enabling those controls.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "delegated-access": {
+    "status": "deferred",
+    "scope": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+    "evidence": [
+      "http-cancel.json",
+      "browser-ui.json"
+    ],
+    "owner": "#5764 and #5765 owners",
+    "nextStep": "Define the supported delegated-principal/project boundary and run adversarial real-client cases for each claimed scope; keep that broader support claim withheld.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "privacy-export": {
+    "status": "deferred",
+    "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+    "evidence": [
+      "http-disclosure.json",
+      "verification.json"
+    ],
+    "owner": "#5762, #5765 and #5766 owners",
+    "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "native-live-layout": {
+    "status": "deferred",
+    "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+    "evidence": [
+      "native-recovery.json",
+      "native-live-failure.json",
+      "verification.json"
+    ],
+    "owner": "#5766 owner",
+    "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "human-accessibility": {
+    "status": "deferred",
+    "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+    "evidence": [
+      "verification.json",
+      "desktop-hostile-ui.json"
+    ],
+    "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+    "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "large-trace": {
+    "status": "deferred",
+    "scope": "Payload/reducer limits and lazy-output component tests pass, but the performance fixture contains one tool and two summaries. Full large/deep/long-trace production-client responsiveness is unqualified.",
+    "evidence": [
+      "performance.json",
+      "verification.json"
+    ],
+    "owner": "#5765 and #5766 owners",
+    "nextStep": "Run the bounded large-output/long-trace production fixture and measure render/scroll costs on each claimed client.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "preference-hydration": {
+    "status": "deferred",
+    "scope": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+    "evidence": [
+      "desktop-hostile-ui.json",
+      "verification.json"
+    ],
+    "owner": "#5765 and #5766 owners",
+    "nextStep": "Exercise absent, explicit-on and explicit-off preferences against legacy and new transcripts in real-client hydration.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  },
+  "composite": {
+    "status": "deferred",
+    "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+    "evidence": [
+      "packet.json"
+    ],
+    "owner": "Val and the existing child-issue owners",
+    "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+    "supportClaim": "Not qualified or enabled by this packet."
+  }
+}

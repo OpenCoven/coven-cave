@@ -6,6 +6,7 @@
 // PowerShell ACL probe on Windows. What is pinned here is the trade that
 // replaced it: the server boots, and the FEATURE fails closed.
 
+import { buildServer } from "../../../../scripts/build-server.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
@@ -212,7 +213,7 @@ test("close is safe when nothing ever opened, and closes what did", async () => 
   assert.equal(closed, true);
 });
 
-test("server.ts no longer blocks boot on device access", () => {
+test("server.ts no longer blocks boot on device access", async () => {
   const server = readFileSync(new URL("../../../../server.ts", import.meta.url), "utf8");
   assert.doesNotMatch(
     server,
@@ -221,9 +222,10 @@ test("server.ts no longer blocks boot on device access", () => {
   );
   assert.match(server, /deferDeviceAccessStore\(/, "boot goes through the deferred wrapper");
 
-  // server.mjs is the built artifact the packaged sidecar actually runs, and it
-  // is committed. A source fix that never reached it would fix nothing.
-  const built = readFileSync(new URL("../../../../server.mjs", import.meta.url), "utf8");
+  // Inspect the artifact produced for the packaged sidecar from current source.
+  const { outputFiles } = await buildServer({ write: false });
+  assert.ok(outputFiles?.[0], "server builder produces an in-memory artifact");
+  const built = outputFiles[0].text;
   assert.match(built, /deferDeviceAccessStore/, "the built server carries the fix");
   assert.doesNotMatch(built, /await createDeviceAccessStore\(\)/, "and not the blocking await");
   for (const source of [server, built]) {

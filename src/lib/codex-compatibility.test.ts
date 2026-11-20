@@ -169,6 +169,27 @@ assert.deepEqual(
   { kind: "failure", authKind: "configuration" },
   "a generic outer message cannot hide the nested credential verdict",
 );
+// #5938: a spent plan allowance or throttling is a verdict, never a payload.
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", error: { message: "You've hit your usage limit. Upgrade to Pro or try again in 2 hours" } }, selected.schema),
+  { kind: "failure", usageLimit: "quota" },
+  "a nested quota notice retains only the usage-limit verdict",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "error", message: "429 Too Many Requests: rate_limit_exceeded for /private/secret" }, selected.schema),
+  { kind: "failure", usageLimit: "rate" },
+  "a top-level 429 retains only the rate verdict",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", message: "Not logged in. Run codex login.", error: { message: "usage_limit_reached" } }, selected.schema),
+  { kind: "failure", authKind: "login", usageLimit: "quota" },
+  "auth and usage-limit verdicts are independent",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.failed", error: { message: "Codex ran out of room in the model's context window" } }, selected.schema),
+  { kind: "failure" },
+  "a context-window limit is not a usage limit",
+);
 assert.deepEqual(
   parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } }, selected.schema),
   { kind: "usage", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } },

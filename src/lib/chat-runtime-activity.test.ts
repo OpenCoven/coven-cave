@@ -12,9 +12,9 @@ for (const value of [null, [], { schemaVersion: 99, path: "direct", tools: "supp
   { schemaVersion: 1, path: "ssh", tools: "executed", reasoning: "supported" },
   { schemaVersion: 1, path: "api", tools: "supported", reasoning: { toString: () => "supported" } }]) {
   assert.equal(normalizeRuntimeActivity(value), undefined);
-  assert.deepEqual(runtimeActivityStatusLines(value), ["Activity support: not recorded"]);
+  assert.deepEqual(runtimeActivityStatusLines(value), ["Activity: not recorded for this turn"]);
 }
-assert.match(runtimeActivityStatusLines({ schemaVersion: 1, path: "ssh", tools: "unknown", reasoning: "unknown" }).join(" "), /SSH relay.*unverified/);
+assert.match(runtimeActivityStatusLines({ schemaVersion: 1, path: "ssh", tools: "unknown", reasoning: "unknown" }).join(" "), /SSH relay.*not verified on this path/);
 assert.deepEqual(runtimeActivityForAdapter("ssh"), { schemaVersion: 1, path: "ssh", tools: "unknown", reasoning: "unknown" });
 assert.deepEqual(runtimeActivityForAdapter("coven", false, undefined, true), { schemaVersion: 1, path: "coven", tools: "partial", reasoning: "unknown" });
 assert.deepEqual(runtimeActivityForAdapter("api", true, true), { schemaVersion: 1, path: "api", tools: "supported", reasoning: "supported" });

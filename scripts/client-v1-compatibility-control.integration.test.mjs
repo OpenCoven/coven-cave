@@ -193,6 +193,14 @@ function isolatedEnvironment(root, port, selector) {
   return env;
 }
 
+// These builds exist only to be launched below. The candidate and release
+// workflows type-check the same commit in their frontend job, and on macos-15
+// Next's own TypeScript pass alone took 32.7 min of the 20-minute build limit
+// (#6036).
+function buildEnvironment(root) {
+  return { ...isolatedEnvironment(root), COVEN_CAVE_SKIP_BUILD_TYPECHECK: "1" };
+}
+
 async function requestHealth(origin) {
   const response = await fetch(`${origin}${healthPath}`, {
     signal: AbortSignal.timeout(requestTimeoutMs),
@@ -342,7 +350,7 @@ test("builds and launches normal and conformance packaged Client v1 artifacts", 
   await mkdir(path.join(root, "coven", "cave"), { recursive: true });
 
   try {
-    await runBuild("normal build", ["build"], isolatedEnvironment(root));
+    await runBuild("normal build", ["build"], buildEnvironment(root));
     await snapshotBuild(normalArtifact);
 
     let server;
@@ -354,7 +362,7 @@ test("builds and launches normal and conformance packaged Client v1 artifacts", 
       if (server) await stopArtifact(server);
     }
 
-    await runBuild("conformance build", ["build:conformance"], isolatedEnvironment(root));
+    await runBuild("conformance build", ["build:conformance"], buildEnvironment(root));
     await snapshotBuild(conformanceArtifact);
 
     for (const [selector, apiVersion, minimumClientVersion] of [

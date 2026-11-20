@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "issues": [
+    6057,
+    6061,
+    5767,
+    5761
+  ],
+  "scope": "golden-02: no, disabled, unverified and provider-withheld reasoning, plus opaque continuation state, across display, replay, history, copy/export, logs, notifications, analytics and caches. Exact-candidate evidence for the golden-02 candidate Val nominated; not a full #5767 packet acceptance.",
+  "candidateNomination": {
+    "candidate": "4588a3d253bfbdd00b69965f4c5dd5612774290c",
+    "nominatedBy": "Val, 2026-10-22 (recorded on #6057 comment 6350216592 and #5767 comment 6350217147)",
+    "meaning": "golden-02 only: PR #6176 head = main 611759242 + golden-02 changes. Not a nomination or acceptance of the full #5767 114-entry packet.",
+    "packetCommit": "This file is added in a docs-only commit on top of the candidate. Every source hash below is computed from the candidate tree."
+  },
+  "verificationBaseOid": "61175924280813bcee6e3f6d97612a81daed9010",
+  "states": {
+    "S1-absent": "Path has no reasoning adapter: runtimeIdentity.activity.reasoning = unsupported.",
+    "S2-disabled": "Claude profile drift sets activity.reasoning = disabled.",
+    "S3-unverified": "Claude thinking text the profile cannot classify: unavailable, withheld block, no text, capability unknown.",
+    "S4-provider-withheld": "redacted_thinking: unavailableReason provider-withheld, no text.",
+    "S5-opaque-continuation": "thinking signature, Responses encrypted_content, and the Hermes previous_response_id continuation."
+  },
+  "verdictLegend": {
+    "existing-test-evidence": "covered by a test on main before this packet",
+    "new-test-evidence-this-packet": "covered by a test added or extended in this packet",
+    "by-construction-no-dedicated-test": "the code path takes no reasoning input or stores only projected payloads; no dedicated test",
+    "out-of-scope": "no reasoning input exists on this surface, or another issue owns it",
+    "exact-candidate": "every matrix cell's evidence (new or existing tests) was rerun green on the candidate head; by-construction and out-of-scope cells carry their recorded rationale"
+  },
+  "matrix": {
+    "liveSse": {
+      "S1-absent": "existing-test-evidence",
+      "S2-disabled": "existing-test-evidence",
+      "S3-unverified": "existing-test-evidence",
+      "S4-provider-withheld": "existing-test-evidence",
+      "S5-opaque-continuation": "existing-test-evidence"
+    },
+    "cursorReplay": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "existing-test-evidence",
+      "S3-unverified": "existing-test-evidence",
+      "S4-provider-withheld": "existing-test-evidence",
+      "S5-opaque-continuation": "existing-test-evidence"
+    },
+    "historyDiskProjectionClientV1": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "existing-test-evidence",
+      "S3-unverified": "new-test-evidence-this-packet",
+      "S4-provider-withheld": "new-test-evidence-this-packet",
+      "S5-opaque-continuation": "existing-test-evidence"
+    },
+    "ordinaryLogs": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "by-construction-no-dedicated-test",
+      "S3-unverified": "new-test-evidence-this-packet",
+      "S4-provider-withheld": "new-test-evidence-this-packet",
+      "S5-opaque-continuation": "existing-test-evidence"
+    },
+    "copyAndReaderExportDesktop": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "new-test-evidence-this-packet",
+      "S3-unverified": "new-test-evidence-this-packet",
+      "S4-provider-withheld": "new-test-evidence-this-packet",
+      "S5-opaque-continuation": "new-test-evidence-this-packet"
+    },
+    "hfrExport": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "by-construction-no-dedicated-test",
+      "S3-unverified": "new-test-evidence-this-packet",
+      "S4-provider-withheld": "new-test-evidence-this-packet",
+      "S5-opaque-continuation": "existing-test-evidence"
+    },
+    "capabilityLabelDesktop": {
+      "S1-absent": "existing-test-evidence",
+      "S2-disabled": "new-test-evidence-this-packet",
+      "S3-unverified": "new-test-evidence-this-packet",
+      "S4-provider-withheld": "new-test-evidence-this-packet",
+      "S5-opaque-continuation": "n/a"
+    },
+    "capabilityLabelIos": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "by-construction-no-dedicated-test",
+      "S3-unverified": "existing-test-evidence",
+      "S4-provider-withheld": "new-test-evidence-this-packet",
+      "S5-opaque-continuation": "n/a"
+    },
+    "nativeNotifyTs": {
+      "S1-absent": "out-of-scope",
+      "S2-disabled": "out-of-scope",
+      "S3-unverified": "out-of-scope",
+      "S4-provider-withheld": "out-of-scope",
+      "S5-opaque-continuation": "out-of-scope"
+    },
+    "iosNotificationPreview": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "by-construction-no-dedicated-test",
+      "S3-unverified": "by-construction-no-dedicated-test",
+      "S4-provider-withheld": "by-construction-no-dedicated-test",
+      "S5-opaque-continuation": "by-construction-no-dedicated-test"
+    },
+    "covenAnalytics": {
+      "S1-absent": "out-of-scope",
+      "S2-disabled": "out-of-scope",
+      "S3-unverified": "out-of-scope",
+      "S4-provider-withheld": "out-of-scope",
+      "S5-opaque-continuation": "out-of-scope"
+    },
+    "webCaches": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "by-construction-no-dedicated-test",
+      "S3-unverified": "by-construction-no-dedicated-test",
+      "S4-provider-withheld": "by-construction-no-dedicated-test",
+      "S5-opaque-continuation": "by-construction-no-dedicated-test"
+    },
+    "iosThreadSnapshotStore": {
+      "S1-absent": "by-construction-no-dedicated-test",
+      "S2-disabled": "by-construction-no-dedicated-test",
+      "S3-unverified": "by-construction-no-dedicated-test",
+      "S4-provider-withheld": "by-construction-no-dedicated-test",
+      "S5-opaque-continuation": "by-construction-no-dedicated-test"
+    },
+    "continuationByteIdentity": {
+      "S1-absent": "n/a",
+      "S2-disabled": "n/a",
+      "S3-unverified": "n/a",
+      "S4-provider-withheld": "n/a",
+      "S5-opaque-continuation": "new-test-evidence-this-packet"
+    }
+  },
+  "notes": {
+    "S2-ordinaryLogs/hfrExport": "The drift run is asserted for the live stream, disk and history. Its logs and export carry only a fingerprint, so they are by construction, not asserted.",
+    "copyAndReaderExportDesktop": "Run on the fixture-mocked browser path (daemon-less CI mode). Server projection is proven separately by the route tests.",
+    "iosNotificationPreview": "Takes server-projected message.text. Final-reply sentinel tests belong to #6061 T5.",
+    "webCaches": "conversation-cache and the Tauri offline-cache store the projected API payload. The Tauri encrypted store is not exercised: a named omission.",
+    "iosThreadSnapshotStore": "Every write path takes validated blocks, and every render path re-validates (MessageBubble, ChatActivityTimeline)."
+  },
+  "defects": [
+    {
+      "id": "D1",
+      "surface": "desktop reasoning block header",
+      "before": "withheld or unavailable blocks showed '4 words' / '2 words' counted from Cave's placeholder text",
+      "repair": "ReasoningBlock countWords is false when the block has no text",
+      "ios": "not affected: no count shown"
+    }
+  ],
+  "attempts": [
+    {
+      "lane": "playwright golden-02 (peer coven-cave-a8, original test)",
+      "attempt": 1,
+      "head": "611759242 unchanged",
+      "exit": 1,
+      "firstFailure": "expect(summary).not.toContainText(/\\d+ words?/): Received 'Reasoning summary4 words'"
+    },
+    {
+      "lane": "playwright golden-02 (this session, fix reverted)",
+      "attempt": 1,
+      "exit": 1,
+      "firstFailure": "same as above",
+      "note": "route.ts briefly mutated during this build; the browser test mocks /api/chat/send, so it cannot affect this result"
+    },
+    {
+      "lane": "playwright golden-02 (fix applied, first rewrite)",
+      "attempt": 1,
+      "exit": 1,
+      "firstFailure": "test locator error: 'Copy message' is the user-bubble control; the assistant control is 'Copy completed response'. Test fixed, no product change."
+    },
+    {
+      "lane": "playwright golden-02 (fix applied)",
+      "attempt": 2,
+      "exit": 0,
+      "result": "2/2 passed"
+    },
+    {
+      "lane": "playwright golden-02 final test, fix reverted",
+      "attempt": 1,
+      "exit": 1,
+      "firstFailure": "'Reasoning summary4 words' (both capability variants)"
+    },
+    {
+      "lane": "playwright full spec, exact command",
+      "attempt": 1,
+      "exit": 0,
+      "result": "14 passed, none flaky"
+    },
+    {
+      "lane": "native AgentActivityUITests withheld test, no preview flag",
+      "attempt": 1,
+      "exit": 65,
+      "firstFailure": "AgentActivityUITests.swift:104 XCTAssertTrue failed (no withheld label); :105 XCTAssertFalse failed (summary text present)"
+    },
+    {
+      "lane": "native AgentActivityUITests (13) + ActivityCorpusTests (5)",
+      "attempt": 1,
+      "exit": 0,
+      "result": "18 tests, 18 starts, no retries"
+    },
+    {
+      "lane": "mutation: drop withheld-text guard in normalizeReasoningBlock",
+      "exit": 1,
+      "result": "corpus test fails at withheld-block-with-text-is-rejected; restored"
+    },
+    {
+      "lane": "mutation: alter previous_response_id",
+      "exit": 1,
+      "result": "hermes test fails: actual 'hermes-disclosure-1-'; restored"
+    }
+  ],
+  "commands": [
+    "pnpm typecheck",
+    "pnpm lint",
+    "pnpm check:tests-wired",
+    "pnpm test:app",
+    "pnpm test:api",
+    "node $(nodeArgsFor) src/lib/chat-activity-corpus.test.ts",
+    "node $(nodeArgsFor) src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
+    "node $(nodeArgsFor) src/app/api/chat/send/route-hermes-disclosure.integration.test.ts",
+    "CI=true pnpm exec playwright test tests/chat-activity-acceptance.spec.ts --project=desktop --no-deps --retries=0 --workers=1 -g 'withheld and unavailable'",
+    "CI=true pnpm exec playwright test tests/chat-activity-acceptance.spec.ts --project=desktop",
+    "pnpm mobile:ios:xcodegen",
+    "xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave -destination id=<owned sim> -only-testing:CovenCaveUITests/AgentActivityUITests -only-testing:CovenCaveTests/ActivityCorpusTests"
+  ],
+  "results": {
+    "typecheck": 0,
+    "lint": 0,
+    "checkTestsWired": "2128 files wired",
+    "testApp": "1475 files passed",
+    "testApi": "538 files passed",
+    "playwrightFullSpec": "14 passed",
+    "nativeUi": "13/13",
+    "nativeCorpus": "5/5"
+  },
+  "identities": {
+    "node": "v24.22.0",
+    "pnpm": "10.34.0",
+    "playwright": "1.62.0 (Desktop Chrome project, production standalone build)",
+    "macos": "26.7.1 (25G241)",
+    "xcode": "27.1 (27A9275)",
+    "iosSimulator": "owned 'golden02-6057' iPhone 17, iOS 27.0 (24A434), D7939CFA-054E-4568-816F-E6E38DD9A876; shut down after the run",
+    "appVersion": "0.5.14",
+    "daemon": "none: deterministic fixtures and in-process route tests, scratch HOME; ~/.coven untouched",
+    "provider": "none: fixture servers and a fake CLI only"
+  },
+  "sourceSha256": {
+    "src/components/chat-view.tsx": "e2c5541b1c1b49967ed9d744139634bc24d297b9ecd4f226af5ec32e0f8e5618",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "6303809c62cfb1765da7aef51197bdb487d1b84414b196894bd93953b4e15571",
+    "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-v1.json": "b54129786a8a7f91ea0edf0e79cdcb160942b4d3e43e9efbd70b57d5783d45e2",
+    "tests/chat-activity-acceptance.spec.ts": "9b8e363a4902e9664883c688f87d170d6b25635c38a4c3b2d3d29618bc0c9ae2",
+    "tests/fixtures/reasoning-states.ts": "cbcbc02fb244d7937a230090fe8006983213ad3eb5941be8ec16ba1aa3442c5b"
+  },
+  "rawArtifacts": {
+    "location": "local ignored .tmp/golden02/ in the issue worktree (logs, xcresult bundles), retained with the unit",
+    "sha256": {
+      "pw-red.log": "28f0b39a4dbb370270dfb1613f34215e1ed031c446c35465c21e52a11054bb46",
+      "pw-red-final.log": "81f54c2f48a1d8c242ded678ab29c323512fb45329bbda8bd74a3d5e10acd46b",
+      "pw-green-iter1.log": "1b9cec3e3b63c51b3a04ff2a4a34e14b0796510fc7815db03ccf5af39ea9c77a",
+      "pw-green-iter2.log": "e3d1408bd65c98c11c6dcf1e6b60f3b49ae85da95cd516e35832184fc9a4b92d",
+      "pw-full.log": "973df16d854d3e727797c348f13fa56afd6eaac1206c56bd2bbc8a291c900c73",
+      "ui-red.log": "9e31f1068d90bbc5d0817a1a0ee64f1f5c2c5649eee84d3c3951ef35a141875a",
+      "ui-green.log": "9d778a0ca7d88f65f563701daec984b20a316f714db497f803a1913df7baea87",
+      "test-app.log": "54bd1587e4d2cfe410f1a1ad5f9abbe22304c5e95bb9a8326724d0c1d58ea7dc",
+      "test-api.log": "2dd3b77ba3f4d66c71c2d88a212903d28214fbdf8640480ccd032f7d5ea4a1b6",
+      "typecheck2.log": "b1c655c855b0259468583f5a344f0d049b64d4c9d7f6f28222389b00410ee67f",
+      "lint.log": "3b460734e12dd3ec1452dca866e64f5e4b036e28d4c5f7e3a5ac635f8a9523fe",
+      "tests-wired.log": "326487e5d5b03c9cbdb3ba621603c071b0a4574c00a54353cac84d7003ee0436",
+      "corpus-mutation.log": "a8d25800e5216ac59ba04f22b24edf6ab08e1c3e68612749022f5c4271225281",
+      "continuation-mutation.log": "2722ab307d07447166b1053ea7070b04b9013f1186d8ee40631cc92ad4838531",
+      "route-claude-rate-limit-frame.integration.test.ts.log": "4e870e59a46634f49f97226911eca7f3acac5ad3363e436876566eea78db74ac",
+      "route-hermes-disclosure.integration.test.ts.log": "cce386ada685fd285b7de281d68f7bfc8ad7676e9d510215f7cdfd15d79ed8a2",
+      "peer-a8/t3-fail-first.log": "2a90838aa0b5b727d668001cf16d8c88c5f1c15465323dd136aa01a465a3db7e"
+    }
+  },
+  "omissions": [
+    "Real provider canary and real daemon vertical slice: non-goals here.",
+    "Human/device acceptance, including VoiceOver and physical lock screen: separate gate.",
+    "Tauri encrypted offline cache: not exercised from a browser.",
+    "Packaged desktop (Tauri) copy/export: only the web production build was exercised.",
+    "Hosted CI E2E shards on the candidate: a runner package outage (#6178) blocked them; the same spec passed locally on the candidate."
+  ],
+  "contributors": "coven-cave-a8 (a concurrent session) wrote the original fixture, the desktop test, the D1 fix and the route-test extensions; Val directed adoption. coven-cave-e0 integrated, verified and extended them.",
+  "candidateRun": {
+    "head": "4588a3d253bfbdd00b69965f4c5dd5612774290c",
+    "headAfter": "4588a3d253bfbdd00b69965f4c5dd5612774290c",
+    "treeCleanBefore": true,
+    "treeCleanAfter": true,
+    "nextBuildId": "6fesbn9-TSWNNqXtpKqpX",
+    "startedAt": {
+      "hermes": "2026-10-22T20:10:55Z",
+      "tests-wired": "2026-10-22T20:10:41Z",
+      "claude": "2026-10-22T20:10:42Z",
+      "typecheck": "2026-10-22T20:09:31Z",
+      "test-api": "2026-10-22T20:27:56Z",
+      "playwright": "2026-10-22T20:42:53Z",
+      "corpus": "2026-10-22T20:10:42Z",
+      "lint": "2026-10-22T20:09:48Z",
+      "test-app": "2026-10-22T20:11:03Z",
+      "xcodegen": "2026-10-22T20:44:56Z",
+      "native": "2026-10-22T20:44:57Z"
+    },
+    "results": {
+      "typecheck": 0,
+      "lint": 0,
+      "checkTestsWired": 0,
+      "corpus": 0,
+      "claudeRoute": 0,
+      "hermesRoute": 0,
+      "testApp": "1475 files passed",
+      "testApi": "538 files passed",
+      "playwrightFullSpec": "14 passed, none flaky, CI=true production standalone build",
+      "xcodegen": 0,
+      "native": "AgentActivityUITests 13/13 + ActivityCorpusTests 5/5; 18 starts for 18 tests, no retries"
+    },
+    "nativeClient": {
+      "configuration": "Debug simulator",
+      "simulator": "golden02-6057, iPhone 17, iOS 27.0 (24A434), D7939CFA-054E-4568-816F-E6E38DD9A876; owned, shut down after the run",
+      "xcode": "27.1 (27A9275)",
+      "version": "0.5.14",
+      "build": "2026101514",
+      "executableSha256": "08f113876375755d2c241b95fd7ceb546a10034c63a0210ca92fa96c75932c86"
+    },
+    "firstFailuresAndRetries": "None on the candidate run: every lane passed on its first attempt. The development-head first failures are listed in attempts[].",
+    "logSha256": {
+      "claude.log": "5a7106db1b710b5f7bbf68f517b2b7cfca0e3b07d629cbda5fb47c47f29e676b",
+      "corpus.log": "c1b4631a5a19d9ac8911e936b7ffaf1026582b3836cd075c5178b09f50624f90",
+      "hermes.log": "341de1a20ea0c9660664a487cd7296d84b29065e3ffa891f481b8d5de42f7d9d",
+      "lint.log": "b721a02998c92bfe174378b4be5dce54c40941a6b2b2588d0f2f8546099d2253",
+      "native.log": "4b4c485eee935221f94714956a6c41fabdf7c16421e849250cba306025459534",
+      "playwright.log": "9ca250bc18b0a7e4f97ad785c39135726828ca42e524d345df27b235376f5b61",
+      "test-api.log": "917053f77f0f268399385521d60b150f162f80640f5296b3a3106e843d398ce2",
+      "test-app.log": "bec5b3f17230e47edb14cd7995e3e08cecc64705bbd194a5e77b7dc195eca1d0",
+      "tests-wired.log": "a439e19436195930f8a6e45f29f9a2c4975ea613004abdf8b12f0c36919fb976",
+      "typecheck.log": "c9b14278a8d504f158202da1aa371f87b341c7bc9035c301cdf4185848f8e3f0",
+      "xcodegen.log": "43dd0389d253465d89926bdd44d845938a1e94775ecb0dc56d115c5bb5e8335f"
+    }
+  },
+  "hostedCi": {
+    "run": "39834989904 (CI) attempts 1 and 2",
+    "result": "failure only on E2E shards at 'Playwright system packages did not install in 2 attempts of 15m each'; no tests ran on those shards; main da32081f fails the same way. Tracked in #6178. Every other check passed. Recorded as a named omission for hosted E2E on the candidate."
+  }
+}

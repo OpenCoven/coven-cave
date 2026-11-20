@@ -18,6 +18,7 @@
     "allow-pty-resize",
     "allow-pty-stop",
     "allow-pty-list",
+    "allow-pty-snapshot",
     "allow-pty-diagnose",
     "allow-browser-navigate",
     "allow-browser-set-bounds",

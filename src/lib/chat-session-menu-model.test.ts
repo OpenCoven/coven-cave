@@ -16,6 +16,8 @@ const baseCtx = {
   showThinking: false,
   reflectAvailable: true,
   reflecting: false,
+  deleteAvailable: true,
+  deleting: false,
 };
 
 // ---- kebab contents -------------------------------------------------------
@@ -25,17 +27,28 @@ const baseCtx = {
   const ids = sections.flat().map((i) => i.id);
   assert.deepEqual(
     ids,
-    ["continue-on-phone", "project", "thinking", "reflect", "debug"],
-    "full context yields the slim five-item menu in two sections",
+    ["continue-on-phone", "project", "thinking", "reflect", "debug", "delete"],
+    "full context yields the slim menu, with delete last",
   );
-  assert.equal(sections.length, 2, "primary and tools sections");
+  assert.equal(sections.length, 3, "primary, tools and a danger section");
+  // Delete moved off the header row into the menu (#5953). It sits alone in
+  // the last section, styled as danger, and keeps its confirm step.
+  const danger = sections.at(-1);
+  assert.deepEqual(danger?.map((i) => i.id), ["delete"], "delete has its own last section");
+  assert.equal(danger?.[0].danger, true, "delete reads as a danger item");
+  assert.equal(danger?.[0].label, "Delete chat…", "the ellipsis promises the confirm step");
+  assert.equal(danger?.[0].icon, "ph:trash");
+  const deleting = sessionMenuSections({ ...baseCtx, deleting: true }).flat().find((i) => i.id === "delete");
+  assert.equal(deleting?.disabled, true, "delete disables while one is in flight");
+  const unavailable = sessionMenuSections({ ...baseCtx, deleteAvailable: false }).flat().map((i) => i.id);
+  assert.ok(!unavailable.includes("delete"), "no delete item when the chat cannot be deleted (no session, offline)");
 }
 
 {
   const ids = sessionMenuSections(baseCtx)
     .flat()
     .map((i) => i.id) as string[];
-  for (const promoted of ["archive", "delete", "rename", "voice", "call"]) {
+  for (const promoted of ["archive", "rename", "voice", "call"]) {
     assert.ok(
       !ids.some((id) => id.includes(promoted)),
       `${promoted} must NOT be a kebab item — it has a direct affordance now`,
@@ -50,6 +63,7 @@ const baseCtx = {
     projectPickerAvailable: false,
     hasTurns: false,
     reflectAvailable: false,
+    deleteAvailable: false,
   });
   const ids = sections.flat().map((i) => i.id);
   assert.deepEqual(ids, ["debug"], "minimal context degrades to debug only");

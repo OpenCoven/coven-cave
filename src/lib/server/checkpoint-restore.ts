@@ -139,10 +139,10 @@ export async function writeCheckpointPatch(
   const base = await git(repoRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
     .then(({ stdout }) => stdout.trim())
     .catch(() => hashText(repoRoot, "", "tree"));
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-checkpoint-"));
+  const scratch = fs.mkdtempSync(path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-cave-checkpoint-"));
   try {
-    const index = path.join(scratch, "index");
-    const realIndex = path.resolve(repoRoot, (await git(repoRoot, ["rev-parse", "--git-path", "index"])).stdout.trim());
+    const index = path.join(/* turbopackIgnore: true */ scratch, "index");
+    const realIndex = path.resolve(/* turbopackIgnore: true */ repoRoot, (await git(repoRoot, ["rev-parse", "--git-path", "index"])).stdout.trim());
     if (fs.existsSync(/* turbopackIgnore: true */ realIndex)) {
       // The copy keeps the index's own time, a second early: git trusts an
       // entry's cached stat only when the file is older than the index, and
@@ -197,9 +197,9 @@ export async function buildCheckpointPatch(
   repoRoot: string,
   contain: (relPath: string) => string | null,
 ): Promise<string> {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-checkpoint-"));
+  const scratch = fs.mkdtempSync(path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-cave-checkpoint-"));
   try {
-    const dest = path.join(scratch, "checkpoint.patch");
+    const dest = path.join(/* turbopackIgnore: true */ scratch, "checkpoint.patch");
     await writeCheckpointPatch(repoRoot, contain, dest);
     return fs.readFileSync(dest, "utf8");
   } finally {
@@ -416,8 +416,8 @@ export async function restoreCheckpointPatch(
   // snapshot is all new files.
   const base = recordedExists ? recorded! : head;
 
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-restore-"));
-  const index = path.join(scratch, "index");
+  const scratch = fs.mkdtempSync(path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-cave-restore-"));
+  const index = path.join(/* turbopackIgnore: true */ scratch, "index");
   try {
     const env = { GIT_INDEX_FILE: index };
     await git(repoRoot, base ? ["read-tree", base] : ["read-tree", "--empty"], env);

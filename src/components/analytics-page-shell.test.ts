@@ -36,7 +36,7 @@ assert.doesNotMatch(routePage, /AnalyticsPageShell/, "the stub renders nothing o
 // ── Standalone routes use the real application shell ───────────────────────────
 assert.match(
   shell,
-  /import \{ Shell, type ShellHandle \} from "@\/components\/shell"/,
+  /import \{ Shell, type ShellHandle, type ShellNavPolicy \} from "@\/components\/shell"/,
   "destination pages reuse the canonical workspace Shell",
 );
 assert.match(
@@ -46,8 +46,13 @@ assert.match(
 );
 assert.match(
   shell,
-  /navPolicy="remembered"/,
-  "standalone routes share the workspace navigation preference",
+  /navPolicy=\{destinationNavPolicy\(pathname\)\}/,
+  "the standalone shell picks its navigation policy per destination",
+);
+assert.match(
+  shell,
+  /return pathname\.startsWith\("\/settings"\) \? "visit-collapsed" : "remembered";/,
+  "Settings opens with the rail collapsed without touching the remembered preference (#6083); every other standalone route shares it",
 );
 assert.doesNotMatch(
   shell,

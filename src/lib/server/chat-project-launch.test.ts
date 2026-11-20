@@ -15,6 +15,7 @@ const {
   ChatProjectLaunchError,
   isProjectlessGenerationOrigin,
   projectlessGenerationLaunch,
+  projectRootPinIn,
 } = await import(moduleUrl.href);
 
 function launch(overrides = {}) {
@@ -39,6 +40,7 @@ function harness(overrides = {}) {
     validate: [],
     resolve: [],
     access: [],
+    pin: [],
   };
   const deps = {
     validateProjectRoot: (root) => {
@@ -53,6 +55,10 @@ function harness(overrides = {}) {
     hasProjectAccess: async (familiarId, projectId, surface) => {
       calls.access.push([familiarId, projectId, surface]);
       return true;
+    },
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: "/real/repo" };
     },
     ...overrides,
   };
@@ -89,7 +95,7 @@ test("missing project root fails before validation or access", async () => {
     "project_root_required",
     400,
   );
-  assert.deepEqual(calls, { validate: [], resolve: [], access: [] });
+  assert.deepEqual(calls, { validate: [], resolve: [], access: [], pin: [] });
 });
 
 test("a missing directory fails before registration or access checks", async () => {
@@ -197,6 +203,107 @@ test("a registered worktree authorizes through its parent project id", async () 
     projectId: "parent-project",
   });
   assert.deepEqual(calls.access, [["milo", "parent-project", "chat"]]);
+});
+
+// ── #6215: a registered project's folder is pinned to the directory a person
+// registered or confirmed. Validation follows symlinks, so without the pin a
+// familiar that can write to the root's parent could swap the folder for a
+// symlink and carry the project's grant to any directory.
+
+test("a project whose folder no one has confirmed is refused until a person confirms it", async () => {
+  const { deps, calls } = harness({
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: null, root: undefined };
+    },
+  });
+  await assert.rejects(
+    () => authorizeChatProjectLaunch(deps, {
+      familiarId: "milo",
+      projectRoot: "/repo",
+      surface: "chat",
+    }),
+    (error) =>
+      error instanceof ChatProjectLaunchError &&
+      error.code === "project_root_unconfirmed" &&
+      error.status === 409 &&
+      error.message.includes("Cave") &&
+      error.message.includes("project settings"),
+  );
+  assert.deepEqual(calls.access, [["milo", "project-1", "chat"]]);
+  assert.deepEqual(calls.pin, ["project-1"]);
+});
+
+test("a familiar without a grant is denied before the folder pin is consulted", async () => {
+  const { deps, calls } = harness({
+    hasProjectAccess: async () => false,
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: null, root: undefined };
+    },
+  });
+  await expectLaunchError(
+    () => authorizeChatProjectLaunch(deps, {
+      familiarId: "milo",
+      projectRoot: "/repo",
+      surface: "chat",
+    }),
+    "project_access_denied",
+    403,
+  );
+  assert.deepEqual(calls.pin, []);
+});
+
+test("a root that resolves outside the pinned folder is refused as moved", async () => {
+  for (const pin of ["/real/elsewhere", "/real/rep", "/real/repo/nested"]) {
+    const { deps } = harness({ projectRootPin: () => ({ name: "Cave", pin }) });
+    await assert.rejects(
+      () => authorizeChatProjectLaunch(deps, {
+        familiarId: "milo",
+        projectRoot: "/repo",
+        surface: "chat",
+      }),
+      (error) =>
+        error instanceof ChatProjectLaunchError &&
+        error.code === "project_root_moved" &&
+        error.status === 409 &&
+        error.message.includes("Cave") &&
+        error.message.includes("project settings"),
+      `a pin at ${pin} does not contain /real/repo`,
+    );
+  }
+});
+
+test("a worktree below the pinned folder launches under the parent's pin", async () => {
+  const { deps, calls } = harness({
+    resolveProjectId: () => "parent-project",
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: "/real/repo" };
+    },
+  });
+  const result = await authorizeChatProjectLaunch(deps, {
+    familiarId: "milo",
+    projectRoot: "/repo/.worktrees/feature",
+    surface: "chat",
+  });
+  assert.deepEqual(result, {
+    root: "/real/repo/.worktrees/feature",
+    projectId: "parent-project",
+  });
+  assert.deepEqual(calls.pin, ["parent-project"]);
+});
+
+test("the pin adapter reads a registry snapshot and treats a missing pin as unconfirmed", () => {
+  const pinOf = projectRootPinIn([
+    { id: "pinned", name: "Pinned", root: "/a", rootRealpath: "/real/a" },
+    { id: "legacy", name: "Legacy", root: "/b" },
+    { id: "blank", name: "Blank", root: "/c", rootRealpath: "   " },
+  ]);
+  assert.deepEqual(pinOf("pinned"), { name: "Pinned", pin: "/real/a", root: "/a" });
+  assert.deepEqual(pinOf("legacy"), { name: "Legacy", pin: null, root: "/b" });
+  assert.deepEqual(pinOf("blank"), { name: "Blank", pin: null, root: "/c" });
+  assert.equal(pinOf("missing").pin, null);
 });
 
 // ── cave-o3nq7: the projectless exemption covers the familiar's own workspace
@@ -347,4 +454,288 @@ test("an unresolvable resume root is gated, never dropped back to the workspace"
     launch({ resumeCwd: "/home/val/code/gone", resumeCwdResolved: undefined }),
     { kind: "gated" },
   );
+});
+
+// REGRESSION (#6210): the send route resolves a resumed turn's project id from
+// the realpathed cwd the first turn persisted. Composed the way the route
+// wires it (real fs, the real registry lookup), an alias-registered project
+// must keep its identity on resume while every grant, registration and
+// existence check still decides the launch.
+test("an alias-registered project keeps its identity on resume and still needs its grant", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { chatProjectAccessId } = await import("../chat-project-access.ts");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-alias-")));
+  try {
+    const realParent = path.join(base, "real");
+    const realProject = path.join(realParent, "cave");
+    fs.mkdirSync(realProject, { recursive: true });
+    fs.symlinkSync(realParent, path.join(base, "alias"));
+    const aliasProject = path.join(base, "alias", "cave");
+    // Registration pins the folder where the alias resolves (#6215), so a
+    // legitimate alias spelling keeps launching.
+    const projects = [{
+      id: "proj-alias",
+      name: "Cave",
+      root: aliasProject,
+      rootRealpath: realProject,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }];
+    const grants = new Set(["milo:proj-alias"]);
+    const deps = {
+      // validateCaveProjectRoot's contract: an existing directory, realpathed.
+      validateProjectRoot: (root) => {
+        try {
+          if (!fs.statSync(root).isDirectory()) return { ok: false, error: "root must be a directory" };
+        } catch {
+          return { ok: false, error: "root does not exist" };
+        }
+        return { ok: true, root: fs.realpathSync(root) };
+      },
+      resolveProjectId: (requestedRoot, resolvedRoot) =>
+        chatProjectAccessId({ projects, requestedProjectRoot: requestedRoot, resolvedCwd: resolvedRoot }),
+      isProjectRegistered: (projectId) => projects.some((project) => project.id === projectId),
+      hasProjectAccess: async (familiarId, projectId) => grants.has(`${familiarId}:${projectId}`),
+      projectRootPin: projectRootPinIn(projects),
+    };
+    const resume = (familiarId, projectRoot) =>
+      authorizeChatProjectLaunch(deps, { familiarId, projectRoot, surface: "chat" });
+
+    assert.deepEqual(
+      await resume("milo", aliasProject),
+      { root: realProject, projectId: "proj-alias" },
+      "turn 1 names the registered spelling and launches at its canonical root",
+    );
+    assert.deepEqual(
+      await resume("milo", realProject),
+      { root: realProject, projectId: "proj-alias" },
+      "the resumed turn from the persisted canonical cwd is the same project",
+    );
+
+    await assert.rejects(
+      resume("nova", realProject),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_access_denied",
+      "a familiar without a grant is still denied",
+    );
+    grants.delete("milo:proj-alias");
+    await assert.rejects(
+      resume("milo", realProject),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_access_denied",
+      "a revoked grant still denies the resumed turn",
+    );
+    grants.add("milo:proj-alias");
+
+    const sibling = path.join(realParent, "cave-evil");
+    fs.mkdirSync(sibling);
+    await assert.rejects(
+      resume("milo", sibling),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_not_registered",
+      "a different root sharing the project's prefix is not registered",
+    );
+    await assert.rejects(
+      resume("milo", path.join(realParent, "gone")),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_root_unavailable",
+      "a nonexistent resume root never reaches the registry",
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// REGRESSION (#6210): the hidden-generation workspace exemption covers only a
+// root that is NOT a registered project (cave-g8fqc). Composed with the
+// registry answer the send route derives, a project registered through an
+// alias spelling inside the familiar's workspace — or one that two records
+// name — must stay gated, while an unregistered workspace directory keeps the
+// auth-free exemption.
+test("an alias-registered project inside the familiar workspace is gated, not exempt", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { resumeRootIsRegisteredProject } = await import("../chat-project-access.ts");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-ws-")));
+  try {
+    const workspace = path.join(base, "workspaces", "milo");
+    const registered = path.join(workspace, "notes");
+    const scratch = path.join(workspace, "scratch");
+    fs.mkdirSync(registered, { recursive: true });
+    fs.mkdirSync(scratch);
+    fs.symlinkSync(path.join(base, "workspaces"), path.join(base, "alias"));
+    fs.symlinkSync(path.join(base, "workspaces"), path.join(base, "twin"));
+    const record = (id, root) => ({
+      id,
+      name: id,
+      root,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const decide = (projects, resumeCwd) => {
+      const resumeCwdResolved = fs.realpathSync(resumeCwd);
+      return launch({
+        familiarWorkspace: workspace,
+        resumeCwd,
+        resumeCwdResolved,
+        resumeCwdIsRegisteredProject: resumeRootIsRegisteredProject({
+          projects,
+          resumeCwd,
+          resolvedCwd: resumeCwdResolved,
+        }),
+      });
+    };
+    const aliasNotes = path.join(base, "alias", "milo", "notes");
+
+    assert.deepEqual(
+      decide([record("notes", aliasNotes)], registered),
+      { kind: "gated" },
+      "an alias-registered project inside the workspace needs its grant",
+    );
+    assert.deepEqual(
+      decide([record("notes", aliasNotes), record("notes-twin", path.join(base, "twin", "milo", "notes"))], registered),
+      { kind: "gated" },
+      "two records naming the directory leave it registered, so it stays gated",
+    );
+    assert.deepEqual(
+      decide([record("notes", aliasNotes)], scratch),
+      { kind: "workspace", root: scratch },
+      "an unregistered workspace directory keeps the auth-free exemption",
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// REGRESSION (#6215): a registered folder swapped for a symlink after a person
+// pinned it must not carry the project's grant to the symlink's target — not
+// through the registered spelling, a `.worktrees/` checkout, or a Board task
+// worktree. Re-pinning, which only a person does, admits the new folder.
+test("a pinned folder replaced by a symlink is refused until a person re-pins it", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { chatProjectAccessId, taskWorktreeProjectAccessId } = await import("../chat-project-access.ts");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-pin-")));
+  try {
+    const sub = path.join(base, "mono", "sub");
+    const elsewhere = path.join(base, "elsewhere");
+    for (const root of [sub, elsewhere]) {
+      fs.mkdirSync(path.join(root, ".worktrees", "feature"), { recursive: true });
+      fs.mkdirSync(path.join(root, ".worktrees", "task-1"), { recursive: true });
+    }
+    const projects = [{
+      id: "proj-sub",
+      name: "Sub",
+      root: sub,
+      rootRealpath: sub,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }];
+    const grants = new Set(["milo:proj-sub"]);
+    const boardCwd = path.join(sub, ".worktrees", "task-1");
+    const deps = (taskCard) => ({
+      validateProjectRoot: (root) => {
+        try {
+          if (!fs.statSync(root).isDirectory()) return { ok: false, error: "root must be a directory" };
+        } catch {
+          return { ok: false, error: "root does not exist" };
+        }
+        return { ok: true, root: fs.realpathSync(root) };
+      },
+      // The send route's composition: the Board handoff first, then Chat.
+      resolveProjectId: (requestedRoot, resolvedRoot) =>
+        taskWorktreeProjectAccessId({
+          projects,
+          startNewConversation: true,
+          hasExistingConversation: false,
+          taskProjectId: taskCard?.projectId,
+          taskCwd: taskCard?.cwd,
+          requestedProjectRoot: requestedRoot,
+          resolvedCwd: resolvedRoot,
+        }) ?? chatProjectAccessId({ projects, requestedProjectRoot: requestedRoot, resolvedCwd: resolvedRoot }),
+      isProjectRegistered: (projectId) => projects.some((project) => project.id === projectId),
+      hasProjectAccess: async (familiarId, projectId) => grants.has(`${familiarId}:${projectId}`),
+      projectRootPin: projectRootPinIn(projects),
+    });
+    const start = (projectRoot, taskCard) =>
+      authorizeChatProjectLaunch(deps(taskCard), { familiarId: "milo", projectRoot, surface: "chat" });
+    const board = () => start(boardCwd, { projectId: "proj-sub", cwd: boardCwd });
+    const refusedAsMoved = (error) =>
+      error instanceof ChatProjectLaunchError && error.code === "project_root_moved" && error.status === 409;
+
+    assert.deepEqual(await start(sub), { root: sub, projectId: "proj-sub" });
+    assert.deepEqual(
+      await start(path.join(sub, ".worktrees", "feature")),
+      { root: path.join(sub, ".worktrees", "feature"), projectId: "proj-sub" },
+      "a worktree inside the pinned folder launches",
+    );
+    assert.deepEqual(await board(), { root: boardCwd, projectId: "proj-sub" }, "a Board task worktree launches");
+
+    fs.renameSync(sub, path.join(base, "mono", "sub-original"));
+    fs.symlinkSync(elsewhere, sub);
+
+    await assert.rejects(start(sub), refusedAsMoved, "the registered spelling no longer reaches the pinned folder");
+    await assert.rejects(
+      start(path.join(sub, ".worktrees", "feature")),
+      refusedAsMoved,
+      "a worktree under the swapped folder follows the pin, not the symlink",
+    );
+    await assert.rejects(board(), refusedAsMoved, "a Board task worktree follows the pin");
+    await assert.rejects(
+      start(elsewhere),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_not_registered",
+      "the new target cannot borrow the saved directory identity",
+    );
+
+    grants.delete("milo:proj-sub");
+    await assert.rejects(
+      start(sub),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_access_denied",
+      "a revoked grant still denies, ahead of the pin",
+    );
+    grants.add("milo:proj-sub");
+
+    // A person confirms the folder again: the pin moves to where it resolves now.
+    projects[0].rootRealpath = fs.realpathSync.native(sub);
+    assert.deepEqual(await start(sub), { root: elsewhere, projectId: "proj-sub" }, "re-pinning admits the new folder");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// The pin is stored in on-disk letter case. On a case-insensitive volume a
+// launch spelled in another case is the same folder and must not read as moved
+// (#6216).
+test("a launch spelled in another letter case stays inside its pin", async (t) => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-case-")));
+  try {
+    const onDisk = path.join(base, "Cave");
+    fs.mkdirSync(onDisk);
+    const otherCase = path.join(base, "cave");
+    if (!fs.existsSync(otherCase)) {
+      t.skip("this volume is case-sensitive");
+      return;
+    }
+    const projects = [{ id: "proj-case", name: "Cave", root: otherCase, rootRealpath: fs.realpathSync.native(onDisk) }];
+    const result = await authorizeChatProjectLaunch(
+      {
+        validateProjectRoot: (root) => ({ ok: true, root: fs.realpathSync(root) }),
+        resolveProjectId: () => "proj-case",
+        isProjectRegistered: () => true,
+        hasProjectAccess: async () => true,
+        projectRootPin: projectRootPinIn(projects),
+      },
+      { familiarId: "milo", projectRoot: otherCase, surface: "chat" },
+    );
+    assert.equal(result.projectId, "proj-case");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });

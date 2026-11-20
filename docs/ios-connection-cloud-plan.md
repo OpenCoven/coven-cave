@@ -104,10 +104,11 @@ iOS explains the model ("your Cave lives on your desktop"), deep-links the
 Tailscale install, and gets progressive unreachable diagnostics; copy pass
 per the design language; refresh the stale mobile docs.
 
-**Phase O3 — zero-QR pairing (product calls first).** "Approve this phone"
+**Phase O3 — zero-QR pairing (decided 2026-10-26).** "Approve this phone"
 (phone POSTs a pairing request, desktop toast Approve/Deny mints the 30-day
-token, phone polls); optional Bonjour/mDNS same-LAN discovery; optional
-iCloud Keychain (`kSecAttrSynchronizable`) token survival.
+token, phone polls) shipped in #5384. The optional Bonjour/mDNS same-LAN
+discovery and iCloud Keychain (`kSecAttrSynchronizable`) token survival are
+not planned (Val, #6111).
 
 **Phase O4 — lifecycle & distribution.** ATS decision (cave-vcyh.1); native
 `#chat-<id>` fragment handling (absorbs the useful remnant of cave-gwyw);
@@ -342,7 +343,7 @@ specced shipped in #2320); its useful remnant (fragment handling) lives in O4.
 | 4 | `cave-h40l` | C2 — live stream resume cursors | connection | ~week+ |
 | 4 | `cave-clyh` | P2 — scheduled encrypted sync (iCloud folder first) | persistence | ~week |
 | 5 | `cave-xs4m` | C3 — prevent-sleep / LaunchAgent / serve self-repair | connection | product calls |
-| 5 | `cave-r1h6` | O3 — zero-QR pairing (approve-this-phone, Bonjour, iCloud Keychain) | onboarding | product calls |
+| 5 | `cave-r1h6` | O3 — zero-QR pairing: approve-this-phone shipped (#5384); Bonjour and iCloud Keychain not planned | onboarding | done |
 | 5 | `cave-f1wo` | O4 — ATS (w/ cave-vcyh.1), #chat fragment, TestFlight CI | onboarding | product calls |
 | 6 | umbrella | C4/P3 — APNs, hub-as-durable-home, iOS offline read cache | both | product calls |
 

@@ -12,13 +12,16 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
+import { assertCurrentPinnedLaunchRoot } from "@/lib/server/project-root-pin";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { isLocalCodexHarness } from "@/lib/local-codex";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 
 // Match the daemon's "harness X is not a supported harness" rejection
@@ -134,6 +137,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
   }
 
+  let authorizedProjectId: string | null = card.projectId ?? null;
   try {
     const authorized = await authorizeChatProjectLaunch(
       {
@@ -159,6 +163,7 @@ export async function POST(
             throw error;
           }
         },
+        projectRootPin: projectRootPinIn(projects),
       },
       {
         familiarId,
@@ -167,6 +172,7 @@ export async function POST(
       },
     );
     projectRoot = authorized.root;
+    authorizedProjectId = authorized.projectId;
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
       return NextResponse.json(
@@ -181,9 +187,28 @@ export async function POST(
     throw error;
   }
 
+  const recheckProjectRoot = async (expectedRoot = projectRoot): Promise<Response | null> => {
+    if (!authorizedProjectId) return null;
+    try {
+      const projectName = projects.find((project) => project.id === authorizedProjectId)?.name ?? card.title;
+      await assertCurrentPinnedLaunchRoot(authorizedProjectId, expectedRoot, projectName);
+      return null;
+    } catch (error) {
+      if (error instanceof ChatProjectLaunchError) {
+        return NextResponse.json(
+          { ok: false, error: error.message, code: error.code },
+          { status: error.status },
+        );
+      }
+      throw error;
+    }
+  };
+
   // A persisted card/session link can outlive deletion, permission changes, or
   // reassignment. Reuse it only after the same launch gate as a new session.
   if (card.sessionId) {
+    const rootChanged = await recheckProjectRoot();
+    if (rootChanged) return rootChanged;
     await recordSessionFamiliar(card.sessionId, familiarId);
     return NextResponse.json({
       ok: true,
@@ -279,9 +304,13 @@ export async function POST(
       .filter((g) => g.repo === ghLink.repo && g.number)
       .map((g) => issueContentionKey(g.repo, g.number));
     if (shouldIsolateInWorktree(activeKeys, issueContentionKey(ghLink.repo, ghLink.number))) {
+      const rootChanged = await recheckProjectRoot();
+      if (rootChanged) return rootChanged;
       try {
         const root = await resolveRepoRoot(projectRoot);
         if (root.ok) {
+          const beforeProvision = await recheckProjectRoot();
+          if (beforeProvision) return beforeProvision;
           const prov = await provisionIssueWorktree(root.repoRoot, {
             kind: ghLink.kind as IssueWorktreeKind,
             number: ghLink.number,
@@ -303,6 +332,8 @@ export async function POST(
   // package manager, or a registry adapter). The Board still owns worktree
   // isolation and the task link; Chat owns each runtime's launch contract.
   const reserveNativeChatTask = async () => {
+    const rootChanged = await recheckProjectRoot(sessionRoot);
+    if (rootChanged) return rootChanged;
     const sessionId = crypto.randomUUID();
     const updated = await updateCard(card.id, {
       sessionId,
@@ -380,7 +411,15 @@ export async function POST(
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
     return reserveNativeChatTask();
   }
+  // Codex local mode (#6049) runs only through Chat, which checks the local
+  // server and model and pins this computer's server address. The daemon
+  // can do neither, so a local task always takes the native bridge.
+  if (isLocalCodexHarness(binding.harness)) {
+    return reserveNativeChatTask();
+  }
 
+  const rootChanged = await recheckProjectRoot(sessionRoot);
+  if (rootChanged) return rootChanged;
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",

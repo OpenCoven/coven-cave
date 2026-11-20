@@ -44,7 +44,7 @@ assert.match(
 assert.match(src, /setCount\(changedFileCount\(json\)\)/, "count is every changed file, even when the list is cut (#5807)");
 const fetchSrc = readFileSync(new URL("./changes-summary-fetch.ts", import.meta.url), "utf8");
 assert.match(fetchSrc, /if \(typeof json\.totalFiles === "number"\) return json\.totalFiles;\s*return Array\.isArray\(json\.files\) \? json\.files\.length : 0;/, "an older server's list length still counts");
-// cave-68vv: the Environment panel's `+N −N` totals ride the SAME summary
+// cave-68vv / #5958: the Environment popover's `+N −N` totals ride the SAME summary
 // response — summed by the pure model helper, not a second fetch.
 assert.match(src, /json\.truncated && json\.totals\s*\? \{ additions: json\.totals\.insertions, deletions: json\.totals\.deletions \}\s*: sumFileTotals\(json\.files\)/, "diff totals summed from the shared summary response, or the server's when the list is cut (#5807)");
 assert.match(src, /totals, loaded, notARepo, branch, worktree, reload/, "totals exposed alongside the existing summary fields");

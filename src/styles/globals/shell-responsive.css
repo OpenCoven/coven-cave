@@ -113,6 +113,8 @@
 .familiars-view__stat {
   display: flex;
   flex-direction: column;
+  /* A wrapped label must not push its number out of line with its neighbours'. */
+  justify-content: space-between;
   gap: var(--space-1);
   min-width: 0;
   padding: var(--space-2);
@@ -125,8 +127,16 @@
   font-size: var(--text-2xs);
   letter-spacing: 0.08em;
   text-transform: lowercase;
-  white-space: nowrap;
+  /* Count labels name their definition ("coven sessions · 90d", issue 6357), so
+     they may wrap rather than clip. */
+  white-space: normal;
   color: var(--text-muted);
+}
+.familiars-view__stat-value.familiars-view__stat-value--unavailable {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  text-shadow: none;
 }
 .familiars-view__stat-value {
   font-family: var(--font-mono), ui-monospace, monospace;

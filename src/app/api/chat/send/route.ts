@@ -1,3 +1,7 @@
+import {
+  assertCurrentPinnedLaunchRootIn,
+  pinnedProjectRoot,
+} from "@/lib/server/project-root-pin";
 import { isMetaRunOrigin } from "@/lib/chat-origins";
 import { projectTextOffsets } from "@/lib/project-text-offsets";
 import { projectProgressDetails } from "@/lib/server/chat-display-projection";
@@ -56,7 +60,7 @@ import {
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { parseHarnessAuthFailure } from "@/lib/harness-failure";
+import { parseHarnessAuthFailure, parseHarnessUsageLimit } from "@/lib/harness-failure";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -109,9 +113,12 @@ import {
 } from "@/lib/codex-compatibility";
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import { isCodexFamilyHarness, isLocalCodexHarness, localCodexBackendInfo, type LocalCodexRefusalCode } from "@/lib/local-codex";
+import { applyLocalCodexSpawnEnv, preflightLocalCodex } from "@/lib/server/local-codex-backends";
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
+  classifyRuntimeProcessFailure,
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -140,6 +147,7 @@ import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
 import {
   hasUnsupportedClaudeToolFrame,
   isClaudeStreamJsonFrame,
+  isSyntheticClaudeEnvelope,
   parseClaudeMessageEnvelope,
   parseClaudeTextOnlyEnvelope,
 } from "@/lib/claude-stream";
@@ -196,14 +204,20 @@ import {
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { resolveInferenceLaunchPlan } from "@/lib/server/inference-launch-plan";
 import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
+import {
+  chatProjectAccessId,
+  resumeRootIsRegisteredProject,
+  taskWorktreeProjectAccessId,
+} from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
   projectlessGenerationLaunch,
+  projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
+import { buildClaudeWriteScope, ClaudeAuthorityRootError, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -264,6 +278,7 @@ import {
   modelApplicationForHarness,
   modelApplicationFromRun,
   modelRejectionInError,
+  USAGE_LIMIT_APPLICATION_REASON,
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
@@ -271,6 +286,7 @@ import {
   buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   resolveLocalRuntimeCwd,
+  runtimeGrantDirs,
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
 import {
@@ -282,6 +298,7 @@ import {
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  describePrivateStateWriteOverlap,
   listAccessibleProjects,
 } from "@/lib/project-permissions";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
@@ -300,6 +317,8 @@ import {
   isSshRuntime,
 } from "@/lib/familiar-runtime";
 import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat-hosts";
+import { hasGitHubTokenInEnv, parseConnectorIds, prepareTurnConnectors } from "@/lib/connectors";
+import { hasGhStoredLogin } from "@/lib/server/gh-login-status";
 import {
   parseCostUsd,
   parseStreamJsonUsage,
@@ -327,6 +346,7 @@ import {
   covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  covenRunSupportsWriteScope,
   covenRunSupportsSpeed,
   openCodeRunCapabilities,
 } from "./chat-send-capabilities";
@@ -368,6 +388,10 @@ import {
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
+// Reused from #6450 at 119a775f2: the onboarding access review must match
+// admission on every local runtime, including Codex workspace-write.
+const PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE =
+  "This project's access is read-only. Choose Read-only mode or request write access, then retry.";
 export const runtime = "nodejs";
 
 // A transport drop no longer kills the harness (deliberate Stop goes through
@@ -472,6 +496,10 @@ type SendBody = {
    *  familiar's own runtime binding decides. */
   runtimeHost?: string;
   attachments?: ChatAttachment[];
+  /** Connectors the user turned on for this chat (allowlisted ids such as
+   *  "github"). Credentials never travel in the body; see
+   *  src/lib/connectors.ts. Unknown ids are dropped. */
+  connectors?: string[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
   /** Project root the mentions are relative to — resumed sessions don't carry
@@ -862,6 +890,7 @@ async function startAdmittedChatStream(
 
 function openClawChatResponse(args: {
   admission: ChatRunAdmission;
+  assertLaunchFoldersUnchanged: () => Promise<void>;
   req: Request;
   body: SendBody;
   promptText: string;
@@ -1130,6 +1159,16 @@ function openClawChatResponse(args: {
       const gatewayAuth = openClawGatewayPairedDeviceAuthStatus(
         args.openClawGatewayCredentialStore,
       );
+      try {
+        await args.assertLaunchFoldersUnchanged();
+      } catch (error) {
+        if (!(error instanceof ChatProjectLaunchError)) throw error;
+        push({ kind: "error", code: error.code, message: error.message });
+        push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
+        runBuffer?.finish();
+        close();
+        return;
+      }
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
         sessionKey: gatewaySessionKey,
@@ -1559,7 +1598,14 @@ function openClawChatResponse(args: {
       let terminal = false;
       let localRecoveryAttempted = false;
       let stopChildOnLaunch = false;
-      const spawnChild = (mode: "gateway" | "local") => {
+      const spawnChild = async (mode: "gateway" | "local") => {
+        try {
+          await args.assertLaunchFoldersUnchanged();
+        } catch (error) {
+          if (!(error instanceof ChatProjectLaunchError)) throw error;
+          failChild(error);
+          return null;
+        }
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey);
         const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
@@ -1656,11 +1702,13 @@ function openClawChatResponse(args: {
         return created;
       }).catch(() => false);
 
-      const failChild = (err: NodeJS.ErrnoException) => {
+      const failChild = (err: NodeJS.ErrnoException | ChatProjectLaunchError) => {
         if (terminal) return;
         terminal = true;
         markChatRunTransportSettled(runHandle);
-        const failure = localRuntimeLaunchError("openclaw", err.code);
+        const failure = err instanceof ChatProjectLaunchError
+          ? { code: err.code, message: err.message }
+          : localRuntimeLaunchError("openclaw", err.code);
         pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
         push({ kind: "error", code: failure.code, message: failure.message });
         push({
@@ -1713,7 +1761,8 @@ function openClawChatResponse(args: {
             "Gateway CLI is unavailable; retrying embedded local OpenClaw",
             "running",
           );
-          child = spawnChild(executionMode);
+          child = await spawnChild(executionMode);
+          if (!child) return;
           attachChild(child);
           pushProgress("openclaw-local-retry", "Embedded local OpenClaw started", "done");
           return;
@@ -1919,7 +1968,8 @@ function openClawChatResponse(args: {
         close();
       }
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", args.cwd);
-      child = spawnChild(executionMode);
+      child = await spawnChild(executionMode);
+      if (!child) return;
       attachChild(child);
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
@@ -2332,7 +2382,7 @@ async function postAdmittedChat(
   // resume-incapable combination retains the existing filtered
   // `coven run codex` transport unchanged.
   const codexResumeTarget =
-    binding.harness === "codex" &&
+    isCodexFamilyHarness(binding.harness) &&
     body.sessionId &&
     !flowDiscussionStartsFresh &&
     // A handoff never resumes the previous runtime's native session. Without
@@ -2344,7 +2394,7 @@ async function postAdmittedChat(
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   const codexSpawnEnv =
-    !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
+    !sshRuntime && isCodexFamilyHarness(binding.harness) ? harnessSpawnEnv(body.familiarId) : null;
   const codexDirectLaunch = codexSpawnEnv
     ? (() => {
         try {
@@ -2593,19 +2643,16 @@ async function postAdmittedChat(
   // The workspace exemption assumes a workspace directory is not a registered
   // project. A user can register one whose root lives under the familiar's
   // workspace, so ask the registry rather than trusting containment: a resume
-  // root that resolves to a real project id is gated like any other project
-  // root (cave-g8fqc). `unregistered:<root>` is the fail-closed sentinel and
-  // does NOT count as registered.
-  const resumeProjectAccessId = resumeCwd
-    ? chatProjectAccessId({
+  // root that names a registered project — through any spelling, and even when
+  // two records make its grant ambiguous — is gated like any other project
+  // root (cave-g8fqc, #6210).
+  const resumeCwdIsRegisteredProject = resumeCwd
+    ? resumeRootIsRegisteredProject({
         projects,
         resumeCwd,
         resolvedCwd: resumeCwdResolved ?? resumeCwd,
       })
-    : null;
-  const resumeCwdIsRegisteredProject = Boolean(
-    resumeProjectAccessId && !resumeProjectAccessId.startsWith("unregistered:"),
-  );
+    : false;
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
@@ -2624,6 +2671,7 @@ async function postAdmittedChat(
   // the browser submits the exact CWD persisted on that task card, and only
   // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
+  let authorizedProjectId: string | null = null;
   try {
     if (projectlessLaunch.kind === "unavailable") {
       throw new ChatProjectLaunchError(
@@ -2664,6 +2712,7 @@ async function postAdmittedChat(
               throw error;
             }
           },
+          projectRootPin: projectRootPinIn(projects),
         },
         {
           familiarId: body.familiarId,
@@ -2672,6 +2721,7 @@ async function postAdmittedChat(
         },
       );
       authorizedProjectRoot = authorized.root;
+      authorizedProjectId = authorized.projectId;
     }
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
@@ -2702,6 +2752,25 @@ async function postAdmittedChat(
     }
     throw error;
   }
+  const assertProjectFoldersUnchanged = (currentProjects: Awaited<ReturnType<typeof loadProjects>>) => {
+    if (sshRuntime) return;
+    if (authorizedProjectId) {
+      const primary = currentProjects.find((project) => project.id === authorizedProjectId);
+      if (cwd !== authorizedProjectRoot) {
+        throw new ChatProjectLaunchError("project_root_moved", 409,
+          "The project folder changed while preparing this turn. Confirm its folder in project settings and retry.");
+      }
+      assertCurrentPinnedLaunchRootIn(currentProjects, authorizedProjectId, cwd, primary?.name);
+    }
+  };
+  try {
+    assertProjectFoldersUnchanged(await loadProjects());
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) {
+      return Response.json({ ok: false, code: error.code, error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
   // Hermes's direct plan cannot be constructed until the spawn cwd is known:
   // a scoped PATH may deliberately contain workspace-relative entries. Keep
   // the resolver's command, env, and cwd intact for help probing and spawn.
@@ -2722,6 +2791,22 @@ async function postAdmittedChat(
       availability: launch,
     });
   }
+  // Connectors use credentials already granted to this familiar's spawn
+  // env. Only a local launch has that env; ssh hosts, the Hermes API, and
+  // OpenClaw report the connector unavailable rather than pretend it is on.
+  // With no GitHub token in that env, the desktop's stored gh login counts
+  // (#5845); only `gh auth status` is asked, no token is read or injected.
+  const requestedConnectors = parseConnectorIds(body.connectors);
+  const connectorEnv = !sshRuntime && localRuntimePlan ? localRuntimePlan.env : null;
+  const githubStoredLogin =
+    connectorEnv !== null &&
+    requestedConnectors.includes("github") &&
+    !hasGitHubTokenInEnv(connectorEnv)
+      ? await hasGhStoredLogin(connectorEnv)
+      : false;
+  const turnConnectors = prepareTurnConnectors(requestedConnectors, connectorEnv, {
+    githubStoredLogin,
+  });
   const grokCapabilities = grokDirect
     ? await probeReadyLocalRuntimeCapability({
         plan: localRuntimePlan,
@@ -2871,6 +2956,8 @@ async function postAdmittedChat(
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  // Honor the requested access level. Unsupported Full access is refused at
+  // launch admission; never turn a Build request into Claude's native plan mode.
   const directReadOnlyEnforcement =
     !sshRuntime &&
     (Boolean(copilotStream) || grokDirect || (codexDirect && codexDirectCapabilities?.sandbox === true));
@@ -2913,8 +3000,10 @@ async function postAdmittedChat(
   // so it is forwardable exactly when that transport was selected above with
   // the flag in its probed contract (#5905). The model-state route asks the
   // same routing helpers, so the chips it offers match what lands here.
+  // Reasoning effort is a cloud Codex control; a local model never receives it.
   const codexReasoningForwardingEnabled =
-    codexDirect && codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
+    codexDirect && !isLocalCodexHarness(binding.harness) &&
+    codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
   const copilotReasoningForwardingEnabled =
     Boolean(copilotStream) && copilotSupportsReasoningEffort(copilotCapability?.version ?? null);
   const forwardableControlParameters = new Set<string>([
@@ -2967,6 +3056,41 @@ async function postAdmittedChat(
       modelApplicationState: "rejected",
       modelApplicationReason: "The saved model id failed launch-boundary validation.",
     }, { status: 400 });
+  }
+  // Codex local mode (#6049): the server, the model and its tool support are
+  // checked before anything spawns. A session that cannot run locally stops
+  // here with what to do; it never falls back to cloud Codex. Both transports
+  // pin the local provider: `-c` overrides on the direct one, Cave's
+  // scaffolded adapter manifest on `coven run`.
+  let localCodexConfigArgs: string[] | undefined;
+  if (isLocalCodexHarness(binding.harness)) {
+    const info = localCodexBackendInfo(binding.harness)!;
+    if (sshRuntime) {
+      return NextResponse.json({
+        ok: false,
+        code: "local_codex_remote_host" satisfies LocalCodexRefusalCode,
+        error: `${info.label} runs on this computer with its own ${info.product} server. Switch the host to this computer to use it.`,
+      }, { status: 409 });
+    }
+    const preflight = await preflightLocalCodex(binding.harness, cleanModelId(desiredModel));
+    if (preflight && !preflight.ok) {
+      return NextResponse.json({
+        ok: false,
+        code: preflight.code,
+        error: preflight.message,
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: preflight.message,
+      }, { status: 409 });
+    }
+    // Off the direct transport the turn runs `coven run <harness>` with
+    // Cave's scaffolded manifest; a custom endpoint reaches Codex through
+    // the spawn environment. Continuity there is by replay: Coven cannot
+    // capture an external Codex adapter's thread id for a native resume.
+    if (preflight?.ok) {
+      localCodexConfigArgs = preflight.configArgs;
+      if (localRuntimePlan) applyLocalCodexSpawnEnv(localRuntimePlan.env, preflight, codexDirect ? "direct" : "coven");
+    }
   }
   if (savedModelRejection === "provider-mismatch") {
     // Refused before any process starts: forwarding this id would launch the
@@ -3097,14 +3221,42 @@ async function postAdmittedChat(
       accessibleProjects.map((entry) => entry.project.root),
     ),
   );
-  const effectiveAccessibleProjects = accessibleProjects.filter((entry) =>
-    usableProjectRoots.has(entry.project.root.trim())
-  );
+  const effectiveAccessibleProjects = accessibleProjects.flatMap((entry) => {
+    if (!usableProjectRoots.has(entry.project.root.trim())) return [];
+    const pin = pinnedProjectRoot(entry.project);
+    return pin ? [{ ...entry, project: { ...entry.project, root: pin } }] : [];
+  });
   const omittedGrantCount = accessibleProjects.length - effectiveAccessibleProjects.length;
+  const assertLaunchFoldersUnchanged = async () => {
+    if (sshRuntime) return;
+    const currentProjects = await loadProjects();
+    assertProjectFoldersUnchanged(currentProjects);
+    for (const entry of effectiveAccessibleProjects) {
+      assertCurrentPinnedLaunchRootIn(
+        currentProjects,
+        entry.project.id,
+        entry.project.root,
+        entry.project.name,
+      );
+    }
+  };
   const grantedProjectRoots = effectiveAccessibleProjects.map((entry) => entry.project.root.trim());
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
     effectiveAccessibleProjects.map((entry) => [entry.project.root.trim(), entry.access]),
   );
+  // Canonical pins can collapse alias registrations onto one root. Preserve
+  // #6216's most-permissive merge; a later read grant cannot erase a write grant.
+  for (const entry of effectiveAccessibleProjects) {
+    if (entry.access === "write") grantedProjectRootAccess[entry.project.root.trim()] = "write";
+  }
+  const primaryProjectAccess = authorizedProjectId
+    ? accessibleProjects.find((entry) => entry.project.id === authorizedProjectId)?.access
+    : undefined;
+  if (!sshRuntime && body.permissionMode !== "read" && primaryProjectAccess === "read") {
+    return Response.json({ ok: false, code: "project_write_access_required",
+      error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
+
+  }
   const runtimeResourceRoots = sshRuntime
     ? []
     : await resolveRuntimeResourceRoots({
@@ -3121,6 +3273,7 @@ async function postAdmittedChat(
     : {
         kind: "local",
         root: cwd,
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
         allowedProjectRoots: grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
         readOnlyResourceRoots: runtimeResourceRoots,
@@ -3204,7 +3357,8 @@ async function postAdmittedChat(
   const mentionedFiles = imagesSupported
     ? await resolveMentionedFiles(
         body.mentionedFiles,
-        resolvedFamiliarWorkspace,
+        cwd,
+        body.mentionedFilesRoot,
       )
     : [];
   const dailyMemoryContext = metaRun
@@ -3280,7 +3434,8 @@ async function postAdmittedChat(
                       filesSupported: imagesSupported,
                       attachmentFilePaths,
                     }),
-                    { modelControls: promptModelControls },
+                    { modelControls: promptModelControls, connectors: turnConnectors },
+                    { origin: generationOrigin },
                   ),
                   mentionedFiles,
                 ),
@@ -3313,7 +3468,15 @@ async function postAdmittedChat(
     : null;
 
   if (binding.harness === "openclaw" && !sshRuntime) {
+    try {
+      await assertLaunchFoldersUnchanged();
+    } catch (error) {
+      if (error instanceof ChatProjectLaunchError) return Response.json(
+        { ok: false, code: error.code, error: error.message }, { status: error.status });
+      throw error;
+    }
     return openClawChatResponse({
+      assertLaunchFoldersUnchanged,
       admission,
       req,
       body,
@@ -3373,30 +3536,78 @@ async function postAdmittedChat(
         : grokDirect
           ? grokLaunchModel
           : forwardModel) ?? undefined;
+  const claudeScopedWrite = !sshRuntime && binding.harness === "claude" && body.permissionMode !== "read";
+  const claudeWriteScopeSupported = claudeScopedWrite
+    ? ((await probeCovenCapability(covenRunSupportsWriteScope)) ?? false) : false;
+  let writeScopeFile: ReturnType<typeof prepareClaudeWriteScopeFile> | undefined;
+  const protectedRuntimeRoots = claudeScopedWrite ? await resolveRuntimeResourceRoots() : runtimeResourceRoots;
+  if (claudeScopedWrite) {
+    const primaryAccess = authorizedProjectId
+      ? effectiveAccessibleProjects.find(entry => entry.project.id === authorizedProjectId)?.access
+      : projectlessLaunch.kind === "workspace" ? "write" : undefined;
+    if (primaryAccess !== "write") {
+      return Response.json({ ok: false, code: "project_write_access_required",
+        error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
+    }
+    try {
+      const writeScope = buildClaudeWriteScope({
+        primaryRoot: cwd, primaryAccess, grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
+        familiarWorkspace: resolvedFamiliarWorkspace, protectedRoots: protectedRuntimeRoots,
+      });
+      // A Coven without the flag refuses this launch below, so credentials never reach disk for it.
+      if (claudeWriteScopeSupported) {
+        // Name the folder and the grant behind an overlap, so the person can
+        // narrow the right one. prepareClaudeWriteScopeFile still refuses it.
+        const overlap = await describePrivateStateWriteOverlap({
+          familiarId: body.familiarId,
+          familiarName: binding.display_name?.trim() || body.familiarId,
+          writableProjects: effectiveAccessibleProjects
+            .filter(entry => entry.access === "write")
+            .map(entry => entry.project),
+          primaryProjectId: authorizedProjectId,
+          familiarWorkspace: resolvedFamiliarWorkspace,
+          primaryRoot: cwd,
+        });
+        if (overlap) {
+          return Response.json({ ok: false, code: "scoped_write_unavailable",
+            reason: "cave_private_state_overlap", overlap, error: overlap.message }, { status: 409 });
+        }
+        writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({
+          familiarWorkspace: resolvedFamiliarWorkspace,
+          projectRoots: grantedProjectRoots,
+          writableRoots: writeScope.writableRoots,
+        }), { env: localRuntimePlan?.env });
+      }
+    } catch (error) {
+      return Response.json({ ok: false, code: "scoped_write_unavailable",
+        error: error instanceof ClaudeAuthorityRootError
+          ? error.message
+          : "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
+    }
+  }
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants are writable in full-permission harness modes. Forward
   // only writable project roots and the familiar workspace; runtime skill
   // roots are advertised as read-only and must never be promoted through an
   // `--add-dir` grant. The spawn cwd is already trusted implicitly, so it is
-  // excluded. Generic forwarding remains gated on the `--add-dir` probe and
-  // local runtimes only (SSH runtimes own their remote filesystem).
-  const spawnRoot = cwd;
+  // excluded, by canonical identity (#6210). Generic forwarding remains gated
+  // on the `--add-dir` probe and local runtimes only (SSH runtimes own their
+  // remote filesystem).
   const grantDirs = !sshRuntime
-    ? Array.from(
-        new Set(
-          [
-            ...grantedProjectRoots,
-            ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-          ]
-            .map((root) => root.trim())
-            .filter((root) => root && root !== spawnRoot),
-        ),
-      )
+    ? runtimeGrantDirs({
+        spawnRoot: cwd,
+        grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
+        familiarWorkspace: resolvedFamiliarWorkspace,
+      })
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
   const runtimeAccessFingerprint = buildRuntimeAccessFingerprint({
     primaryRoot: cwd,
+    permissionMode: body.permissionMode === "read" ? "read" : "full",
+    readOnlyResourceRoots: protectedRuntimeRoots,
     grantedProjectRoots,
     projectRootAccess: grantedProjectRootAccess,
     additionalRoots: resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : [],
@@ -3556,6 +3767,8 @@ async function postAdmittedChat(
         // Thinking pick (#5905): `-c model_reasoning_effort=…`, gated on the
         // probed `--config` capability for this launch shape.
         reasoningEffort: forwardReasoning,
+        // Codex local mode: keep this turn on its server, fresh or resumed.
+        localConfigArgs: localCodexConfigArgs,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];
@@ -3564,13 +3777,14 @@ async function postAdmittedChat(
     // Enforce Read-only by mapping to the harness's native sandbox flag via
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
-    if (forwardPermission) a.push("--permission", forwardPermission);
+    if (writeScopeFile) a.push("--write-scope", writeScopeFile.path);
+    else if (forwardPermission) a.push("--permission", forwardPermission);
     // The Speed control: `coven run --speed fast|balanced|thorough`, mapped by
     // the daemon onto Claude's `--effort`. Only an explicit, validated pick is
     // forwarded; an unset control leaves the runtime's own default in place.
     if (forwardSpeed) a.push("--speed", forwardSpeed);
     // Trust each granted root at the harness level; repeatable flag.
-    for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+    if (!writeScopeFile) for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
@@ -3694,8 +3908,20 @@ async function postAdmittedChat(
   // before the child-run registry is installed. Keep this binding available
   // to `announceSession` without putting it in the temporal dead zone.
   let runHandle!: ChatRunHandle;
+  try {
+    await assertLaunchFoldersUnchanged();
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) return Response.json(
+      { ok: false, code: error.code, error: error.message }, { status: error.status });
+    throw error;
+  }
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => startAdmittedChatStream(admission, async () => {
+      try {
+      // A failed creation retires its own files; runAttempt then refuses the launch.
+      await writeScopeFile?.create().catch((error: NodeJS.ErrnoException) => {
+        console.warn("Could not create an owned runtime scope file:", error.code ?? "unknown error");
+      });
       let closed = false;
       const displayProjection = new LegacyReasoningStreamProjection();
       const push = (incoming: StreamEvent) => {
@@ -3751,7 +3977,10 @@ async function postAdmittedChat(
           id === "familiar-contract" ||
           id === "runtime-process" ||
           id === "runtime-launch-diagnostics" ||
-          id === "runtime-grants"
+          id === "runtime-grants" ||
+          id === "runtime-write-denied" ||
+          id === "runtime-write-scope" ||
+          id === "runtime-write-scope-read-only"
         ) {
           persistedCompatibilityDiagnostics.push({
             ...projected,
@@ -3786,6 +4015,14 @@ async function postAdmittedChat(
           "Unavailable project grants skipped",
           "notice",
           `${omittedGrantCount} registered project ${omittedGrantCount === 1 ? "directory was" : "directories were"} unavailable on this host.`,
+        );
+      }
+      if (writeScopeFile?.excludedMcpServers.length) {
+        pushProgress(
+          "runtime-mcp-servers-excluded",
+          "MCP servers left out",
+          "notice",
+          `Left out of this turn: ${writeScopeFile.excludedMcpServers.join(", ")}. They use a folder this familiar can write to, and MCP servers can't open those folders while Claude has write access. To use them, move what they reference out of that folder or narrow its access.`,
         );
       }
       // Report what identity context this turn actually loaded. A familiar
@@ -3895,7 +4132,7 @@ async function postAdmittedChat(
       // but produced no output") and the banner heuristic ate bare-number
       // answers — so their text passes through verbatim.
       const rawStdoutHarness =
-        binding.harness !== "codex" && binding.harness !== "claude";
+        !isCodexFamilyHarness(binding.harness) && binding.harness !== "claude";
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
@@ -3904,6 +4141,9 @@ async function postAdmittedChat(
       // unterminated/malformed OpenCode JSONL frame so a client regression or
       // a tool dumping one huge value cannot retain unbounded route memory.
       const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 * 1024;
+      let claudeWriteDenied = false;
+      let claudeScopeRefused = false;
+      let claudeScopeStderr = "";
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -3935,7 +4175,7 @@ async function postAdmittedChat(
       // through to the generic empty-output/authentication diagnostic.
       let codexAdapterFailure: ReturnType<typeof codexAdapterFailureAvailability> = null;
       const captureCodexAdapterFailure = (text: string) => {
-        if (binding.harness !== "codex" || codexAdapterFailure) return;
+        if (!isCodexFamilyHarness(binding.harness) || codexAdapterFailure) return;
         codexAdapterFailure = codexAdapterFailureAvailability(text);
       };
       // Tracks open tool calls from both hook lines and stream-json
@@ -4081,6 +4321,18 @@ async function postAdmittedChat(
       const recordRuntimeAuthKind = (kind: "login" | "configuration" | null | undefined) => {
         if (kind === "configuration" || (kind === "login" && !runtimeAuthKind)) runtimeAuthKind = kind;
       };
+      // A spent plan allowance or a throttled request (#5938). Only the
+      // verdict is kept, and it only upgrades (null → rate → quota): a quota
+      // notice followed by a 429 line is still a quota, which needs a model
+      // switch rather than a retry. Recorded BEFORE every disclosure filter so
+      // the classifier sees text the diagnostics deliberately withhold.
+      let runtimeUsageLimit: "quota" | "rate" | null = null;
+      const recordUsageLimitKind = (kind: "quota" | "rate" | null | undefined) => {
+        if (kind === "quota" || (kind === "rate" && !runtimeUsageLimit)) runtimeUsageLimit = kind;
+      };
+      const recordUsageLimit = (text: unknown) => {
+        recordUsageLimitKind(parseHarnessUsageLimit(text, binding.harness)?.kind);
+      };
       // Some harnesses (notably codex) route their error output through
       // stdout, where the AssistantFilter discards it. Capture any stdout
       // lines that look like errors as a fallback for the diagnostic.
@@ -4094,6 +4346,7 @@ async function postAdmittedChat(
           if (["codex", "claude", "copilot"].includes(binding.harness)) {
             recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
           }
+          recordUsageLimit(trimmed);
           if (!trimmed || (!force && !ERR_LINE_RE.test(trimmed))) continue;
           stdoutErrTail.push(trimmed);
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
@@ -4114,6 +4367,7 @@ async function postAdmittedChat(
           if (["codex", "claude", "copilot"].includes(binding.harness)) {
             recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
           }
+          recordUsageLimit(trimmed);
           relayedErrTail.push(trimmed);
           if (relayedErrTail.length > STDOUT_ERR_KEEP) relayedErrTail.shift();
         }
@@ -4748,7 +5002,13 @@ async function postAdmittedChat(
             // paths, command output, or credentials. Retain only the model
             // rejection classification needed for response metadata; never
             // copy their message into a persisted/user-visible diagnostic.
-            openCodeModelRejected ||= modelRejectionInError(ev.message);
+            // A usage limit is not a model rejection even when its prose says
+            // "model unavailable": the id was accepted, the plan is spent.
+            const openCodeUsageLimit = parseHarnessUsageLimit(ev.message, binding.harness);
+            recordUsageLimitKind(openCodeUsageLimit?.kind);
+            if (!openCodeUsageLimit) {
+              openCodeModelRejected ||= modelRejectionInError(ev.message);
+            }
             resumeFailed ||= RESUME_ERR_RE.test(ev.message);
             recordStdoutErrorTail("OpenCode reported an error event", true);
             result = { ...result, is_error: true };
@@ -4870,6 +5130,7 @@ async function postAdmittedChat(
             // stripped every payload from this event.
             result = { ...result, is_error: true };
             recordRuntimeAuthKind(event.authKind);
+            recordUsageLimitKind(event.usageLimit);
             recordStdoutErrorTail("Codex reported a failure event", true);
             return;
           }
@@ -4962,8 +5223,14 @@ async function postAdmittedChat(
               usage?: unknown;
               /** Coven's relayed harness failure reason on `result` frames. */
               error?: unknown;
+              /** Claude Code's own result text; on an is_error result it is
+               *  the CLI's failure notice (e.g. a usage limit, #5938). It
+               *  feeds the classifiers only and is never rendered. */
+              result?: unknown;
+              permission_denials?: unknown;
               text?: string;
               message?: {
+                model?: unknown;
                 content?: Array<{
                   type?: string;
                   text?: string;
@@ -4987,12 +5254,25 @@ async function postAdmittedChat(
               announceSession(ev.session_id);
             }
             if (ev.type === "result") {
+              if (binding.harness === "claude" && countClaudeWriteDenials(ev) > 0 && !claudeWriteDenied) {
+                claudeWriteDenied = true;
+                const message = "The runtime blocked a file or shell action. Review this familiar's project access, then retry.";
+                pushProgress("runtime-write-denied", "Write blocked by runtime permissions", "error", message);
+                push({ kind: "error", code: "write_permission_denied", message, harness: binding.harness });
+              }
+              const scopeRefusal = writeScopeFile && ev.is_error === true ? claudeWriteScopeRefusal(ev.error) : null;
+              if (scopeRefusal) {
+                claudeScopeRefused = true;
+                launchFailure = scopeRefusal;
+                pushProgress("runtime-write-scope", "Project write access unavailable", "error", scopeRefusal.message);
+                push({ kind: "error", ...scopeRefusal, harness: binding.harness });
+              }
               // The result event also carries token usage and total cost
               // (CHAT-D12-02). Both are optional and defensively validated —
               // harnesses without billing metadata simply omit them.
               result = {
                 duration_ms: ev.duration_ms,
-                is_error: ev.is_error,
+                is_error: ev.is_error || claudeWriteDenied || claudeScopeRefused,
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
@@ -5011,6 +5291,12 @@ async function postAdmittedChat(
                 const cleaned = resolveBackspaces(stripAnsi(relayedError));
                 captureCodexAdapterFailure(cleaned);
                 recordRelayedError(cleaned);
+              }
+              // Claude Code repeats its failure notice in the result's own
+              // `result` text. Classify the usage-limit verdict from it and
+              // discard the text, matching the Claude stderr rule above.
+              if (ev.is_error === true && binding.harness === "claude" && typeof ev.result === "string") {
+                recordUsageLimit(resolveBackspaces(stripAnsi(ev.result)));
               }
             } else if (
               // `output` belongs to Coven's Windows Codex bridge, not the
@@ -5047,10 +5333,15 @@ async function postAdmittedChat(
               ev.type === "assistant" &&
               Array.isArray(ev.message?.content)
             ) {
+              // Coven sends each Codex agent_message as its own envelope with
+              // no trailing newline. Keep the boundary, as the direct
+              // `codex exec --json` path does, or consecutive messages run
+              // together ("differences.I've loaded", #5945).
               for (const block of ev.message.content) {
                 if (block?.type !== "text" || typeof block.text !== "string" || !block.text) continue;
-                assistantText += block.text;
-                push({ kind: "assistant_chunk", text: block.text });
+                const text = assistantText && !/\s$/.test(assistantText) ? `\n${block.text}` : block.text;
+                assistantText += text;
+                push({ kind: "assistant_chunk", text });
               }
             } else if (
               binding.harness === "claude" &&
@@ -5072,7 +5363,18 @@ async function postAdmittedChat(
                 }
                 return;
               }
+              // Claude Code stamps CLI-authored text (a usage-limit notice)
+              // with model `<synthetic>`. Classify only that text; a model
+              // reply that merely quotes the word "limit" is never a verdict.
+              let syntheticEnvelope = false;
               for (const claudeEvent of parseClaudeMessageEnvelope(ev, claudeCompatibility.profile)) {
+                if (claudeEvent.kind === "model" && claudeEvent.synthetic) {
+                  syntheticEnvelope = true;
+                  continue;
+                }
+                if (claudeEvent.kind === "text" && syntheticEnvelope) {
+                  recordUsageLimit(claudeEvent.text);
+                }
                 if (claudeEvent.kind === "model") {
                   responseMetadata.runtimeIdentity = withReportedRuntimeModel(
                     responseMetadata.runtimeIdentity ?? runtimeIdentityForLaunch(binding.harness), claudeEvent.model,
@@ -5121,7 +5423,9 @@ async function postAdmittedChat(
                   fingerprint: redactedEventFingerprint(ev),
                 });
               }
+              const synthetic = isSyntheticClaudeEnvelope(ev);
               for (const text of parseClaudeTextOnlyEnvelope(ev)) {
+                if (synthetic) recordUsageLimit(text);
                 assistantText += text;
                 push({ kind: "assistant_chunk", text });
               }
@@ -5489,9 +5793,37 @@ async function postAdmittedChat(
         }
       };
 
-      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
-        if (runHandle.stopRequested) return Promise.resolve();
+      const runAttempt = async (spawnArgs: string[], apiPrompt = harnessPrompt, authorityVerified = false): Promise<void> => {
+        if (runHandle.stopRequested) return;
+        try {
+          await assertLaunchFoldersUnchanged();
+        } catch (error) {
+          if (!(error instanceof ChatProjectLaunchError)) throw error;
+          launchFailure = { code: error.code, message: error.message };
+          result.is_error = true;
+          pushProgress("project-root", "Project folder changed", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message, harness: binding.harness });
+          return;
+        }
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
+        // These files decide what a launch may write and what it starts outside
+        // the sandbox. A retry reuses them, so each attempt checks them first,
+        // then re-enters above so a Stop during the check still prevents the launch.
+        if (writeScopeFile && !authorityVerified) {
+          return writeScopeFile.assertIntact().then(
+            () => runAttempt(spawnArgs, apiPrompt, true),
+            () => {
+              if (runHandle.stopRequested) return;
+              console.warn("Refused a launch: this turn's write access files changed or went missing.");
+              const failure = { code: "runtime_write_scope_unavailable",
+                message: "Cave could not verify this familiar's write access files, so the run did not start. Retry, and restart Cave if this continues." };
+              launchFailure = failure;
+              result.is_error = true;
+              pushProgress("runtime-write-scope", "Project write access unavailable", "error", failure.message);
+              push({ kind: "error", ...failure, harness: binding.harness });
+            },
+          );
+        }
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
           let discardingOpenCodeFrame = false;
@@ -5508,6 +5840,13 @@ async function postAdmittedChat(
               : openCodeDirect ? undefined : cwd,
           );
           const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
+            if (err instanceof ChatProjectLaunchError) {
+              result.is_error = true;
+              const { code, message } = err;
+              launchFailure = { code, message };
+              push({ kind: "error", code, message });
+              return;
+            }
             let localLaunchError: { code: string; message: string } = localRuntimeLaunchError(
               localRuntimePlan?.runner ?? "coven",
               err.code,
@@ -5631,6 +5970,16 @@ async function postAdmittedChat(
                     Date.now() - attemptStartedAt,
                   );
                   push({ kind: "error", code: availability.code, message: availability.message });
+                  return null;
+                }
+                if (claudeScopedWrite && !claudeWriteScopeSupported) {
+                  launchFailure = { code: "scoped_write_unavailable",
+                    message: permissionForwardingEnabled
+                      ? "Full access is unavailable for Claude on this runtime. Choose a runtime that can enforce project write access, then retry."
+                      : "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
+                  result.is_error = true;
+                  pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
+                  push({ kind: "error", ...launchFailure, harness: binding.harness });
                   return null;
                 }
                 const command = openCodeLaunchCommand
@@ -5771,6 +6120,17 @@ async function postAdmittedChat(
 
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            if (writeScopeFile && !claudeScopeRefused) {
+              claudeScopeStderr = (claudeScopeStderr + text).slice(-8192);
+              const refusal = claudeWriteScopeRefusal(claudeScopeStderr);
+              if (refusal) {
+                claudeScopeRefused = true;
+                launchFailure = refusal;
+                result.is_error = true;
+                pushProgress("runtime-write-scope", "Project write access unavailable", "error", refusal.message);
+                push({ kind: "error", ...refusal, harness: binding.harness });
+              }
+            }
             captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
@@ -5782,6 +6142,9 @@ async function postAdmittedChat(
               if (["codex", "claude", "copilot"].includes(binding.harness)) {
                 recordRuntimeAuthKind(parseHarnessAuthFailure(trimmed, binding.harness)?.kind);
               }
+              // Classified before the Claude disclosure rule below: a quota
+              // notice on stderr still needs the model-switch recovery.
+              recordUsageLimit(trimmed);
               // Claude stderr can include tool payloads. It must not be copied
               // into the generic empty-response diagnostic, which is rendered
               // to the chat transcript.
@@ -6080,6 +6443,7 @@ async function postAdmittedChat(
         stdoutErrTail.length = 0;
         relayedErrTail.length = 0;
         runtimeAuthKind = null;
+        runtimeUsageLimit = null;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -6142,6 +6506,7 @@ async function postAdmittedChat(
         stdoutErrTail.length = 0;
         relayedErrTail.length = 0;
         runtimeAuthKind = null;
+        runtimeUsageLimit = null;
         codexAdapterFailure = null;
         covenBackedProcessFailed = false;
         covenBackedExitCode = null;
@@ -6215,7 +6580,32 @@ async function postAdmittedChat(
         push({ kind: "error", code, message, harness: binding.harness });
       }
 
-      if (!launchFailure && covenBackedProcessFailed && !assistantText.trim()) {
+      // A spent plan allowance or throttled request (#5938). Unlike the auth
+      // block this does NOT require empty assistant text: Claude Code delivers
+      // its quota notice AS assistant text (a `<synthetic>` envelope), so the
+      // transcript is never empty. Chat gets a one-turn model switch for a
+      // quota and keeps the plain Retry for throttling. The error event
+      // carries the Cave model id the send asked for, never provider text.
+      if (!launchFailure && !sshRuntime && !runHandle.stopRequested && result.is_error && runtimeUsageLimit) {
+        const quota = runtimeUsageLimit === "quota";
+        const code = quota ? "harness_usage_limit" : "harness_rate_limited";
+        const label = parseHarnessUsageLimit("usage limit reached", binding.harness)?.harnessLabel ?? "The runtime";
+        const message = quota
+          ? `${label} usage limit reached for ${selectedModel ?? "the runtime's default model"}.`
+          : `${label} is rate-limiting requests. Wait a moment, then retry.`;
+        launchFailure = { code, message };
+        pushProgress("harness-usage-limit", quota ? "Runtime usage limit reached" : "Runtime rate-limited", "error", message);
+        push({ kind: "error", code, message, harness: binding.harness, model: selectedModel ?? null });
+      }
+
+      // Coven may relay a failed native turn and itself exit 0. A recognized
+      // failure still needs safe guidance; unknown zero-exit reports keep the
+      // existing redacted empty-response path. Never classify assistant prose.
+      const runtimeProcessReason = binding.harness === "codex" && !codexDirect && !sshRuntime
+        ? classifyRuntimeProcessFailure([...stderrTail, ...relayedErrTail].join("\n"))
+        : "unknown";
+      if (!launchFailure && !runtimeUsageLimit && !assistantText.trim()
+          && (covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown"))) {
         const failedRunner = binding.harness === "codex"
           ? "codex"
           : binding.harness === "claude"
@@ -6232,6 +6622,7 @@ async function postAdmittedChat(
         const failure = runtimeProcessFailure(failedRunner, {
           exitCode: covenBackedExitCode,
           emittedDiagnostic,
+          reason: runtimeProcessReason,
         });
         launchFailure = failure;
         result.is_error = true;
@@ -6241,6 +6632,7 @@ async function postAdmittedChat(
           runner: failedRunner,
           exitCode: covenBackedExitCode,
           emittedDiagnostic,
+          reason: runtimeProcessReason,
           ...(localRuntimePlan
             ? {
                 launcher: {
@@ -6426,7 +6818,10 @@ async function postAdmittedChat(
           ? { failed: true } : { supported: true });
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = openCodeModelRejected
-          ? application.reason : "OpenCode received the selected model; the resolved model was not reported.";
+          ? application.reason
+          : runtimeUsageLimit === "quota"
+            ? USAGE_LIMIT_APPLICATION_REASON
+            : "OpenCode received the selected model; the resolved model was not reported.";
         modelState.applicationState = application.state;
         modelState.reason = responseMetadata.modelApplicationReason;
       }
@@ -6436,7 +6831,9 @@ async function postAdmittedChat(
       // itself safely identifies a rejected model. The validated native
       // assistant model report, when available, establishes downstream identity.
       else if (localRuntimePlan?.runner === "coven" && forwardModel) {
-        const rejected = result.is_error === true && modelRejectionInError(
+        // A usage limit is checked first: its prose can read "model
+        // unavailable", but the id was accepted, so the model stays pending.
+        const rejected = result.is_error === true && !runtimeUsageLimit && modelRejectionInError(
           [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
         );
         const confirmed = !result.is_error && confirmedModel != null && responseMetadata.runtimeIdentity?.model != null;
@@ -6453,7 +6850,9 @@ async function postAdmittedChat(
           ? application.reason
           : confirmed
             ? application.reason
-            : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
+            : runtimeUsageLimit === "quota"
+              ? USAGE_LIMIT_APPLICATION_REASON
+              : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
         modelState.applicationState = application.state;
         modelState.reason = responseMetadata.modelApplicationReason;
       }
@@ -6461,18 +6860,23 @@ async function postAdmittedChat(
       // successful run confirms it; a model rejection becomes failed rather
       // than incorrectly reporting the selected model as applied.
       else if (confirmedModel) {
-        const application = modelApplicationForHarness(
-          modelApplicationFromRun({
-            confirmedModel,
-            isError: result.is_error === true,
-            errorText: [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
-          }),
-        );
+        const run = modelApplicationFromRun({
+          confirmedModel,
+          isError: result.is_error === true,
+          errorText: [...stderrTail, ...stdoutErrTail, ...relayedErrTail].join("\n"),
+        });
+        const application = modelApplicationForHarness(run);
+        // The recorded verdict covers text the tails withhold (Claude's
+        // synthetic notice never enters a tail), so it also sets the reason.
+        const reason = run?.reason
+          ?? (result.is_error && runtimeUsageLimit === "quota" && application.state === "pending"
+            ? USAGE_LIMIT_APPLICATION_REASON
+            : application.reason);
         if (!result.is_error) responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;
-        responseMetadata.modelApplicationReason = application.reason;
+        responseMetadata.modelApplicationReason = reason;
         modelState.applicationState = application.state;
-        modelState.reason = application.reason;
+        modelState.reason = reason;
       }
       if (!result.is_error && Object.keys(appliedModelControlValues).length > 0) {
         responseMetadata.appliedControls = appliedModelControlValues;
@@ -6508,11 +6912,13 @@ async function postAdmittedChat(
       settleUnfinishedTools();
       // Preflight/spawn failures never produced a real assistant response, so
       // preserve the established no-transcript behavior for them. A Coven
-      // child that did start and then exited non-zero is different: persist a
+      // child that did start and then failed is different: persist a
       // clearly marked failure when the conversation already has an id, so a
       // reload retains the safe exit diagnostics instead of looking complete.
       const persistCovenProcessFailure = Boolean(
-        finalSessionId && launchFailure && covenBackedProcessFailed,
+        finalSessionId && launchFailure && (
+          covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown")
+        ),
       );
       let persistedTurnId: string | undefined;
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
@@ -6711,6 +7117,9 @@ async function postAdmittedChat(
       runBuffer?.finish();
       await sleep(20);
       close();
+      } finally {
+        await writeScopeFile?.dispose().catch(() => console.warn("Could not retire an owned runtime scope file; retained for inspection."));
+      }
     }),
   });
 

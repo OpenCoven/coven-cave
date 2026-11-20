@@ -82,6 +82,8 @@ const contracts: RouteContract[] = [
   { route: "/chat/search", methods: ["GET"], kind: "json" },
   { route: "/chat/generate/[origin]", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
+  { route: "/chat/scheduled", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/chat/signal-sweeps", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/stop", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
@@ -150,11 +152,20 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
   { route: "/coven-automations/[id]/events", methods: ["GET"], kind: "json" },
+  { route: "/coven-automations/[id]/lifecycle", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/coven-automations/[id]/occurrences", methods: ["GET"], kind: "json" },
+  { route: "/coven-automations/[id]/occurrences/[occurrenceId]", methods: ["GET"], kind: "json" },
+  { route: "/coven-automations/[id]/feed", methods: ["GET"], kind: "json" },
+  { route: "/codex-automations/[id]/definition", methods: ["GET"], kind: "json" },
+  { route: "/coven-automation-lifecycle", methods: ["GET"], kind: "json" },
+  { route: "/coven-automation-occurrences", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
+  { route: "/research-automation-import", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/import", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/config/workspace-path", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/connectors", methods: ["GET"], kind: "json" },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/connection", methods: ["GET"], kind: "json" },
@@ -248,6 +259,9 @@ const contracts: RouteContract[] = [
   { route: "/knowledge/packs", methods: ["GET"], kind: "json" },
   { route: "/knowledge/packs/seed", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  // Reads are open to signed-in clients; PUT is guarded inside the handler (#6049).
+  { route: "/local-models", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
@@ -276,6 +290,7 @@ const contracts: RouteContract[] = [
   { route: "/omnigent/status", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/bootstrap", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/onboarding/journey", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/prerequisites", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/onboarding/codex-port-preflight", methods: ["POST"], kind: "json" },
@@ -285,8 +300,10 @@ const contracts: RouteContract[] = [
   { route: "/queue/issues", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/queue/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/queue/readiness", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/opencoven/executions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // Thin hosts: the optional implementation reads the body, after admission.
+  { route: "/opencoven/executions", methods: ["POST"], kind: "json", localOriginGuard: true },
+  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
+  { route: "/opencoven/submissions/retained", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
   { route: "/passkey/challenge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -301,11 +318,10 @@ const contracts: RouteContract[] = [
   { route: "/project-tree", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
-  { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/projects/[id]", methods: ["PUT", "DELETE", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -318,6 +334,7 @@ const contracts: RouteContract[] = [
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/runtime-models/[runtime]", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/capability", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/context-packs", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -359,9 +376,9 @@ const contracts: RouteContract[] = [
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/running-activity", methods: ["GET"], kind: "json" },
-  { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
-  { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/salem", methods: ["GET", "POST"], kind: "json" },
+  { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json" },
+  { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json" },
   { route: "/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -477,10 +494,16 @@ function usesJsonResponse(source: string): boolean {
 
 function effectiveRouteSource(file: string, source: string): string {
   const parts = [source];
+  if (source.includes('from "@/lib/server/salem-retired"')) {
+    parts.push(readFileSync(path.join(root, "src", "lib", "server", "salem-retired.ts"), "utf8"));
+  }
   const reexport = source.match(/from\s+"(\.[^"]+\/route)";/);
   if (reexport) {
     const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);
     parts.push(readFileSync(target, "utf8"));
+  }
+  if (source.includes('from "@/lib/server/opencoven-submissions-host"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "opencoven-submissions-host.ts"), "utf8"));
   }
   if (source.includes('from "@/lib/proposal-decision-body"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "proposal-decision-body.ts"), "utf8"));
@@ -510,6 +533,10 @@ function effectiveRouteSource(file: string, source: string): string {
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
+  }
+  // Core and Research link endpoints delegate to the same guarded handler.
+  if (source.includes('from "@/lib/server/saved-links-route"')) {
+    parts.push(readFileSync(path.join(root, "src", "lib", "server", "saved-links-route.ts"), "utf8"));
   }
   return parts.join("\n");
 }
@@ -993,6 +1020,19 @@ for (const contract of contracts) {
   const effectiveSource = effectiveRouteSource(file, source);
 
   assert.deepEqual(exportedMethods(source), contract.methods, `${contract.route} HTTP method exports changed`);
+  if (source.includes('from "@/lib/server/research-package"')) {
+    // Handler-level contracts moved with their implementations to Research's
+    // scripts/http-route-contracts.test.ts. Core owns exact dispatch and gating.
+    for (const method of contract.methods) {
+      assert.ok(source.includes(`dispatchResearchRequest(${JSON.stringify(contract.route.slice(1))}, ${JSON.stringify(method)}, request`), `${contract.route} must dispatch its exact route and method`);
+    }
+    const bridge = readFileSync(path.join(root, 'src/lib/server/research-package.ts'), 'utf8');
+    assert.match(bridge, /if \(!capability\.enabled\) return researchUnavailable\(capability\)/);
+    const authorization = bridge.indexOf('if (forbidden) return forbidden');
+    const runtimeLoad = bridge.indexOf('const result = await loadCompatibleRuntime(load)');
+    assert.ok(authorization >= 0 && runtimeLoad > authorization);
+    continue;
+  }
   assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);
 
   const readsJson = contract.optionalJsonBody
@@ -1055,23 +1095,6 @@ for (const contract of contracts) {
       assert.match(effectiveSource, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }
   }
-}
-
-{
-  const generationsSource = readFileSync(
-    path.join(apiRoot, "research", "generations", "route.ts"),
-    "utf8",
-  );
-  assert.match(
-    generationsSource,
-    /validateCreateResearchGenerationInput/,
-    "research generations must keep input validation at the API boundary",
-  );
-  assert.match(
-    generationsSource,
-    /"media-not-ready" \? 409/,
-    "research generations must expose media readiness as a conflict, never a fake queued record",
-  );
 }
 
 {
@@ -1204,7 +1227,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /const runAttempt = [\s\S]*if \(runHandle\.stopRequested\) return Promise\.resolve\(\);/,
+    /const runAttempt = (?:async )?[\s\S]*?if \(runHandle\.stopRequested\) return(?: Promise\.resolve\(\))?;/,
     "/chat/send: shared direct dispatch must not launch after consuming an early Stop",
   );
   assert.match(

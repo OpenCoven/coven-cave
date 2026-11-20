@@ -15,7 +15,7 @@ import {
 export { MUTABLE_KINDS };
 export type { InboxPrefs, MutableKind, SoundMode };
 
-const PREFS_PATH = path.join(caveHome(), "inbox-prefs.json");
+const PREFS_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "inbox-prefs.json");
 
 const EMPTY: InboxPrefs = {
   version: 1,

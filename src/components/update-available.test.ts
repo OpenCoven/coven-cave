@@ -36,8 +36,40 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*await update\.install\(\)/,
-  "installs the prepared native update directly (install() is the first action, no daemon npm install in between)",
+  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{[^}]*?const \{ relaunch \} = await import\("@tauri-apps\/plugin-process"\);\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
+  "installs the prepared native update directly: the relaunch code is loaded and Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
+);
+// install() replaces the bundle that serves this build's chunks, so nothing
+// may be loaded between install() and relaunch() (#6470).
+assert.doesNotMatch(
+  src,
+  /await update\.install\(\);[\s\S]*?await import\([\s\S]*?await relaunch\(\);/,
+  "nothing is dynamically imported between install() and relaunch()",
+);
+assert.match(
+  src,
+  /try \{\s*await relaunch\(\);\s*\} catch \(err\) \{\s*throw new UpdateInstalledRelaunchError\(/,
+  "a relaunch failure after a completed install is reported as installed, not as a failed update",
+);
+
+// Declined or failed Windows msiexec recovery (#5981): the watcher is armed
+// before install(), arming failure aborts the install (fail closed), and the
+// relaunched app explains the outcome with a Retry until the user acts.
+assert.match(
+  src,
+  /async function armWindowsInstallRecovery\(\)[\s\S]*?if \(!\(await isWindowsDesktop\(\)\)\) return async \(\) => \{\};[\s\S]*?invoke\("arm_update_install_recovery"\)[\s\S]*?throw new Error\(`couldn't prepare install recovery/,
+  "Windows arms install recovery and refuses to install when it cannot",
+);
+assert.match(src, /invoke\("disarm_update_install_recovery"\)/, "a failed install() disarms recovery");
+assert.match(
+  src,
+  /parseUpdateInstallOutcome\(await invoke<unknown>\("update_install_outcome"\)\)/,
+  "the relaunched app reads the native outcome through the validating parser",
+);
+assert.match(
+  src,
+  /id: INSTALL_OUTCOME_BANNER_ID,\s*severity: "warning",[\s\S]*?label: "Retry update"[\s\S]*?clearWindowsInstallOutcome\(\)[\s\S]*?runCheck\(\);[\s\S]*?onDismiss: \(\) => \{ void clearWindowsInstallOutcome\(\); \}/,
+  "the outcome banner offers Retry and clears the record only when the user acts",
 );
 assert.doesNotMatch(src, /downloadAndInstall/, "does not combine download with immediate process exit");
 assert.match(src, /@tauri-apps\/plugin-process/, "relaunches via the process plugin");
@@ -49,8 +81,8 @@ assert.match(preparationSrc, /update\.close\(\)/, "releases cancelled or discard
 assert.match(src, /\/api\/app\/latest-release/, "falls back to the server release check");
 assert.match(
   src,
-  /import \{ openInAppBrowserUrl \} from "@\/lib\/open-external"/,
-  "update fallback should use the explicit Cave Browser URL handoff",
+  /import \{ openSystemBrowserUrl \} from "@\/lib\/open-external"/,
+  "update fallback should use the explicit system-browser URL handoff",
 );
 assert.doesNotMatch(
   src,
@@ -66,6 +98,24 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
+// Debug shells register no updater (tauri_setup.rs). The page must read
+// that as "off", never as a failure: a failed native check falls through to
+// the browser installer, which a dev build must not offer either.
+assert.match(
+  src,
+  /if \(!isTauri\(\)\) return \{ kind: "not-applicable" \};\s*\/\/[^\n]*\n\s*if \(process\.env\.NODE_ENV === "development"\) return \{ kind: "disabled" \};/,
+  "a development page skips the native check",
+);
+assert.match(
+  src,
+  /return message\.trim\(\) === "plugin updater not found";[\s\S]*if \(isUpdaterUnregistered\(err\)\) return \{ kind: "disabled" \};/,
+  "a debug shell serving a production page is recognized by Tauri's own unregistered-plugin rejection",
+);
+assert.match(
+  src,
+  /if \(native\.kind === "disabled"\) return \{ kind: "unavailable", message: DEVELOPMENT_UPDATES_OFF \};\s*if \(native\.kind === "available"\)/,
+  "a disabled updater resolves to the quiet unavailable state before any fallback lookup",
+);
 assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
 assert.match(src, /updateCovenCli\(/, "startup reconciliation checks the independently versioned CLI");
 assert.doesNotMatch(src, /APP_VERSION/, "the running Cave version is never treated as a CLI version requirement");
@@ -149,7 +199,7 @@ assert.match(src, /Restart &amp; install/, "prepared update offers an explicit r
 assert.match(src, /Installing update/, "install state explains that the verified update is being installed");
 assert.match(src, />\s*Cancel\s*</, "settings row allows preparation cancellation");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
-assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
+assert.match(src, /Open installer in system browser/, "fallback keeps installer recovery in the system browser");
 assert.match(src, /Native updater unavailable/, "settings row distinguishes native updater failure from a normal installer fallback");
 assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
 assert.match(
@@ -176,7 +226,7 @@ assert.match(
 assert.match(src, /Native updater still unavailable/, "banner escalates copy only after a failed native retry");
 assert.match(
   src,
-  /recommendNativeRetry[\s\S]{0,400}?"Retry native update"[\s\S]{0,200}?"Open release page in Browser"/,
+  /recommendNativeRetry[\s\S]{0,400}?"Retry native update"[\s\S]{0,200}?"Open release page in system browser"/,
   "banner CTA orders native retry ahead of the browser release page",
 );
 assert.match(
@@ -190,11 +240,11 @@ assert.match(
 // recovery inside Cave, and sends users to the canonical release page instead.
 assert.match(src, /phase: "failed"/, "tracks a dedicated failed state for a thrown install");
 assert.match(src, /message: err instanceof Error \? err\.message/, "captures the real failure reason instead of swallowing it");
-assert.match(src, /function openReleasePageInBrowser/, "centralizes failed-updater recovery");
-assert.match(src, /openInAppBrowserUrl\(RELEASES_PAGE\)/, "failed updater recovery opens the canonical release page");
+assert.match(src, /const openReleasePageInBrowser/, "centralizes failed-updater recovery");
+assert.match(src, /openUpdateUrl\(RELEASES_PAGE\)/, "failed updater recovery opens the canonical release page");
 assert.doesNotMatch(src, /openFallbackUpdateInBrowser/, "updater recovery must not resolve direct installer assets");
-assert.doesNotMatch(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl[\s\S]*openInAppBrowserUrl\(url\)/, "updater recovery must not open metadata-derived direct installer URLs");
-assert.match(src, /Open release page in Browser/, "updater recovery labels the destination as the release page");
+assert.doesNotMatch(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl[\s\S]*openSystemBrowserUrl\(url\)/, "updater recovery must not open metadata-derived direct installer URLs");
+assert.match(src, /Open release page in system browser/, "updater recovery labels the destination as the release page");
 assert.match(
   src,
   /state\.phase === "native-unavailable"[\s\S]{0,900}?onClick=\{openReleasePageInBrowser\}/,
@@ -202,7 +252,7 @@ assert.match(
 );
 assert.doesNotMatch(
   src,
-  /state\.phase === "native-unavailable"[\s\S]{0,900}?openInAppBrowserUrl\(r\.url\)/,
+  /state\.phase === "native-unavailable"[\s\S]{0,900}?openUpdateUrl\(r\.url\)/,
   "native-unavailable settings row must not reuse a stale installer URL from the initial check",
 );
 assert.doesNotMatch(src, /download manually/i, "failed updater copy should not imply leaving the app for manual recovery");

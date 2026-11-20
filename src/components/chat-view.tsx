@@ -1,9 +1,13 @@
 "use client";
 
+import { createProjectsRetryCarry, type ProjectsRetryRoute } from "@/lib/chat-projects-retry";
+import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
+import { useFirstUse } from "@/components/first-use-provider";
+
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
-import { runtimeActivityStatusLines } from "@/lib/chat-runtime-activity";
+import { ResponseRunDetails } from "@/components/response-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
-import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
+import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolProgressStatus, toolStatusCounts, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
 import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
@@ -55,7 +59,6 @@ import {
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ComposerMarkdownLayer } from "@/components/composer-markdown-layer";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
-import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatActivityMap } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
@@ -66,10 +69,13 @@ import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
+  CHAT_FOCUS_PROJECT_EVENT,
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
   markCovenGroupPending,
   markCovenTabPending,
+  markProjectFocusPending,
+  markProjectsTabPending,
 } from "@/lib/chat-tab-events";
 import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
 import {
@@ -81,6 +87,7 @@ import {
 } from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessInvalidation } from "@/lib/chat-access-invalidation";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
 import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
@@ -93,6 +100,7 @@ import {
   readLiveChatGeneration,
   reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
+  forgetFailedSendModel,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
@@ -120,7 +128,7 @@ import {
   chatFoldLabel,
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
-import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { CHAT_COMPOSER_PREFS_CHANGED_EVENT, readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
 import { isFlowSession, useFlowDiscussion } from "@/lib/flow-discussion";
 import {
@@ -129,6 +137,7 @@ import {
   readNewSessionDefaults,
   writeNewSessionDefaults,
 } from "@/lib/chat-new-session-defaults";
+import { CHAT_REPLY_COMPLETED_EVENT } from "@/lib/setup-events";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import {
@@ -146,19 +155,28 @@ import {
 } from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { authRecoveryHarness, parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { isLocalCodexRefusalCode, type LocalCodexRefusalCode } from "@/lib/local-codex";
+import { ComposerModelPopover, runtimeModelLabel } from "@/components/composer-runtime-chip";
+import type { ComposerModelInventory } from "@/components/model-inventory-feedback";
+import type { RuntimeModelOption } from "@/lib/runtime-models";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useKeySymbols } from "@/lib/platform-keys";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useVisualViewport } from "@/lib/use-viewport";
 import { ChatPhoneCodeRailToggle, ChatPhoneThreadsToggle } from "@/components/chat-phone-header-controls";
 import { ChatFindBand } from "@/components/chat-find-band";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
-import { ArchiveChatButton, ChatTitleEditable, DeleteChatButton, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
+import { ArchiveChatButton, ChatTitleEditable, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
+import { runtimeDisplayName } from "@/components/runtime-logo";
+import { Popover, PopoverBody } from "@/components/ui/popover";
+import { ChatSendLater } from "@/components/chat-send-later";
+import { useSetupOpener } from "@/components/onboarding-local-setup-host";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useToolMilestones } from "@/lib/use-tool-milestones";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
@@ -183,6 +201,7 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   cleanImageDataUrl,
+  MAX_CHAT_ATTACHMENTS,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -247,6 +266,7 @@ import {
   formatRuntime,
   responseMetadataModel,
   responseMetadataIdentity,
+  runtimeIdentityGaps,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
@@ -268,6 +288,7 @@ import { verificationEvidenceFromTools } from "@/lib/chat-tool-verification";
 import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
 import { copyText } from "@/lib/clipboard";
+import { projectUiBlocksToReadable } from "@/lib/ui-block-readable";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
@@ -308,6 +329,7 @@ import { ChatSpecCard } from "@/components/chat-spec-card";
 import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-file-reader";
 import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
+import { UiBlockHostContext, UiBlockStateScope, splitSegmentsForUiBlocks, type UiBlockHost } from "@/components/chat-ui-block";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -343,13 +365,12 @@ import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { chatComposerDraftKey, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
+import { chatComposerDraftKey, initialComposerDraftDecision, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
 import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
-import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { ChatReasoningDisclosure } from "./chat-reasoning-disclosure";
@@ -406,6 +427,7 @@ import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 import { markStartupSettled } from "@/lib/startup-gate";
 import { sharedJsonFetch } from "@/lib/shared-json-fetch";
+import { createPointerPressTracker, type PointerPressTracker } from "@/lib/pointer-press";
 
 /** How long an identical usage-meter request is shared across re-runs (#5668). */
 const USAGE_PLAN_REUSE_MS = 10_000;
@@ -454,11 +476,17 @@ const APPROVAL_RELOAD_REQUIRED = "Reload this chat before sending answers so the
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
+  /** Opaque identity restored only for the original refused blank compose. */
+  retryComposeId?: string;
+  initialRetryRuntimeHost?: string | null;
+  projectsRetryPassive?: boolean;
   session?: SessionRow | null;
   projectRoot?: string;
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** A reviewed onboarding starter, preserved as editable text without dispatch. */
+  initialDraft?: string;
   /** Explicit task-card model forwarded through a native Board handoff. */
   initialModelOverride?: string;
   /** Task work can reserve its conversation id before mounting the bridge.
@@ -581,6 +609,21 @@ type FailedSend = {
   /** Snapshot from the attempt, never the controls currently visible later. */
   controls?: ChatSendControls;
 };
+const projectsRetryCarry = createProjectsRetryCarry<{
+  failed: FailedSend;
+  message: string;
+  root: string;
+  route: ProjectsRetryRoute;
+}>();
+
+export function readProjectsRetryRoute(): ProjectsRetryRoute | null {
+  return projectsRetryCarry.peek()?.route ?? null;
+}
+
+export function discardProjectsRetry(): void {
+  projectsRetryCarry.drop();
+}
+
 type ChatSendOptions = {
   promptOverride?: string;
   parentTurnId?: string | null;
@@ -780,7 +823,15 @@ function fmtDuration(ms?: number): string | null {
 
 function DurationText({ durationMs }: { durationMs?: number }) {
   const duration = fmtDuration(durationMs);
-  return duration ? <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{duration}</span> : null;
+  return duration ? <span className="font-mono text-[length:var(--text-2xs)] tabular-nums text-[var(--text-muted)]">{duration}</span> : null;
+}
+
+/** The tone of a call's outcome chip (.cave-tool-status). Live states and
+ *  failures carry a tint; a finished, successful call reads as muted text;
+ *  rejected, cancelled and unknown outcomes take a neutral fill. The label
+ *  beside it is always the exact state word, so colour never stands alone. */
+function toolStatusTone(status: ToolStatus): "active" | "error" | "ok" | "neutral" {
+  return status === "error" ? "error" : isToolActive(status) ? "active" : status === "ok" ? "ok" : "neutral";
 }
 
 type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: ToolStatus; durationMs?: number };
@@ -857,6 +908,12 @@ function ChatErrorStrip({
   onPickProject,
   onRegisterProject,
   onStopEarlierRun,
+  usageLimitModel,
+  modelOptions,
+  modelInventory,
+  onRetryWithModel,
+  onManageUsage,
+  localRefusal,
 }: {
   message: string;
   code?: string;
@@ -895,10 +952,26 @@ function ChatErrorStrip({
   /** When set, the send was refused with 409 chat_run_active: render an
    *  action that stops the earlier run this view no longer tracks. */
   onStopEarlierRun?: () => void;
+  /** Usage-limit recovery (#5938): the Cave model id the failed send asked
+   *  for (null = runtime default), the runtime's inventory to pick another
+   *  from, and the one-turn retry. The strip never re-sends the same model. */
+  usageLimitModel?: string | null;
+  modelOptions?: RuntimeModelOption[];
+  modelInventory?: ComposerModelInventory;
+  onRetryWithModel?: (modelId: string) => void;
+  /** Opens the runtime vendor's usage page through the host's URL path. */
+  onManageUsage?: () => void;
+  /** The send was refused for a local session before anything ran (#6095). */
+  localRefusal?: LocalCodexRefusalCode;
 }) {
   const { copied, copy } = useCopy();
+  const usageLimit = code === "harness_usage_limit";
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
   const erroredSteps = (failingTurn?.progress ?? []).filter((p) => p.status === "error");
+  // The refused `connect` step only repeats the message above, so it says
+  // that instead of claiming detail is withheld. It applies only while the
+  // message still names the refusal; every other step keeps the fallback.
+  const refusalShown = Boolean(localRefusal && message.includes(localRefusal));
   const hasDetail = Boolean(code) || erroredTools.length > 0 || erroredSteps.length > 0;
   const [open, setOpen] = useState(true);
   // Re-expand whenever a *new* error fires so the latest detail is front-and-centre.
@@ -939,19 +1012,19 @@ function ChatErrorStrip({
   // Harness/runtime failures get an inline fix row (switch adapter / copy the
   // quoted `coven adapter …` commands) instead of ending at the message.
   const harnessFailure = useMemo(
-    () => code === "harness_auth_required" ? null : parseHarnessFailure(recoveryText),
-    [code, recoveryText],
+    () => code === "harness_auth_required" || usageLimit ? null : parseHarnessFailure(recoveryText),
+    [code, recoveryText, usageLimit],
   );
   // Sign-in failures land here at the FIRST message (the wizard greens on
   // install, never auth) — surface the runtime's login command instead of
   // ending at raw stderr (cave-f6ol).
   const authFailure = useMemo(
-    () => parseHarnessAuthFailure(
+    () => usageLimit ? null : parseHarnessAuthFailure(
       code === "harness_auth_required" ? "authentication required"
         : code === "harness_auth_configuration_required" ? "api key missing" : recoveryText,
       harnessId,
     ),
-    [code, recoveryText, harnessId],
+    [code, recoveryText, harnessId, usageLimit],
   );
   // A preflight-confirmed missing runtime (or the legacy Coven ENOENT path)
   // gets a soft Setup recovery instead of a bare error + generic Retry. The
@@ -967,6 +1040,9 @@ function ChatErrorStrip({
 
   const btn =
     "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
+  // The one primary action a fix row may carry (same accent as "Add project").
+  const primaryBtn =
+    "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)] disabled:opacity-40";
   const pre =
     "max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-r border-l-2 border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[var(--bg-base)]/45 px-2.5 py-1.5 font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]";
   // Small mono kicker naming which tool/step produced the quoted reason below.
@@ -979,15 +1055,18 @@ function ChatErrorStrip({
       className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
     >
       <div className="mx-auto w-full max-w-[var(--cave-chat-measure)]">
-      <div className="flex items-center gap-2 px-5 py-2 text-xs">
+      {/* The row wraps so the code badge and buttons never squeeze the
+          reason to zero width in a phone composer (#6445). */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
-        {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" ? (
+        <span className="min-w-0 flex-1 basis-56 break-words font-medium">{message}</span>
+        {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
         ) : null}
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Six buttons are wider than a phone: they wrap, so Dismiss stays reachable. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {hasDetail ? (
             <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={btn}>
               <Icon name={open ? "ph:caret-down-bold" : "ph:caret-right-bold"} width={11} aria-hidden />
@@ -1029,7 +1108,7 @@ function ChatErrorStrip({
               Stop earlier turn
             </button>
           ) : null}
-          {canRetry ? (
+          {canRetry && !usageLimit ? (
             <button type="button" onClick={onRetry} disabled={busy} className={btn}>
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
               Retry
@@ -1040,6 +1119,19 @@ function ChatErrorStrip({
           </button>
         </div>
       </div>
+      {usageLimit && onRetryWithModel ? (
+        <UsageLimitFixRow
+          model={usageLimitModel ?? null}
+          harnessId={harnessId ?? null}
+          modelOptions={modelOptions ?? []}
+          modelInventory={modelInventory}
+          busy={busy}
+          onPickModel={onRetryWithModel}
+          onManageUsage={onManageUsage}
+          buttonClassName={btn}
+          primaryClassName={primaryBtn}
+        />
+      ) : null}
       {harnessFailure ? (
         <HarnessFixActions
           failure={harnessFailure}
@@ -1124,7 +1216,12 @@ function ChatErrorStrip({
                 <pre className={pre}>A tool failed. Its input and output are withheld to protect project data.</pre>
               </div>
             ))}
-            {erroredSteps.map((p) => (
+            {erroredSteps.map((p) => refusalShown && p.id === "connect" ? (
+              <div key={p.id}>
+                <div className={kicker}>request refused</div>
+                <pre className={pre}>Nothing ran. The reason is shown above.</pre>
+              </div>
+            ) : (
               <div key={p.id}>
                 <div className={kicker}>step failure</div>
                 <pre className={pre}>{safeRuntimeProcessDetail(p) ?? "A runtime step failed. Its detail is withheld to protect project data."}</pre>
@@ -1139,6 +1236,95 @@ function ChatErrorStrip({
         </div>
       ) : null}
       </div>
+    </div>
+  );
+}
+
+/** Fixed vendor page for Claude's plan usage. Never taken from provider text:
+ *  the runtime's own notice can carry a tracking URL (#5938). */
+const CLAUDE_USAGE_SETTINGS_URL = "https://claude.ai/settings/usage";
+
+/** Usage-limit fix row (#5938): the plan allowance for the selected model is
+ *  spent, so a plain Retry would re-send the exhausted model. Offer a one-turn
+ *  switch to another model from the runtime's inventory (the exhausted id is
+ *  left out) or to the runtime default. Renders only Cave's own copy and
+ *  model ids; the provider's notice never reaches this row. */
+function UsageLimitFixRow({
+  model,
+  harnessId,
+  modelOptions,
+  modelInventory,
+  busy,
+  onPickModel,
+  onManageUsage,
+  buttonClassName,
+  primaryClassName,
+}: {
+  model: string | null;
+  harnessId: string | null;
+  modelOptions: RuntimeModelOption[];
+  modelInventory?: ComposerModelInventory;
+  busy: boolean;
+  /** Retries the failed send with this model for the next message only;
+   *  an empty id means the runtime default. */
+  onPickModel: (modelId: string) => void;
+  onManageUsage?: () => void;
+  buttonClassName: string;
+  primaryClassName: string;
+}) {
+  const { announce } = useAnnouncer();
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const exhaustedModel = model ? runtimeModelLabel(model, modelOptions) ?? model : "the runtime default model";
+  const otherModels = useMemo(
+    () => modelOptions.filter((option) => option.id !== model),
+    [modelOptions, model],
+  );
+  const pick = (next: string | null) => {
+    const id = next ?? "";
+    const label = id ? runtimeModelLabel(id, modelOptions) ?? id : "the runtime default model";
+    announce(`Retrying with ${label} for this message.`);
+    onPickModel(id);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[length:var(--text-xs)]">
+      <span className="min-w-0">
+        You&apos;ve used up the quota for {exhaustedModel}. Pick another model for this message, or try
+        again after the limit resets.
+      </span>
+      <button
+        ref={anchorRef}
+        type="button"
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className={primaryClassName}
+      >
+        <Icon name="ph:arrows-left-right" width={11} aria-hidden />
+        Use another model…
+      </button>
+      <ComposerModelPopover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        placement="top-start"
+        runtime={harnessId ?? ""}
+        modelValue=""
+        modelOptions={otherModels}
+        modelInventory={modelInventory}
+        onPickModel={(id) => { if (id) pick(id); }}
+      />
+      <button type="button" disabled={busy} onClick={() => pick(null)} className={buttonClassName}>
+        <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+        Use runtime default
+      </button>
+      {harnessId === "claude" && onManageUsage ? (
+        <button type="button" onClick={onManageUsage} className={buttonClassName}>
+          <Icon name="ph:arrow-square-out" width={11} aria-hidden />
+          Manage usage
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1387,88 +1573,6 @@ function responseModelLabel(model: string): string {
   return model;
 }
 
-function responseModelStatusLines(metadata?: ChatResponseMetadata): string[] {
-  if (!metadata) return [];
-  const requested = metadata.requestedModel;
-  const desired = metadata.desiredModel ?? metadata.model;
-  const forwarded = metadata.forwardedModel;
-  const confirmed = metadata.confirmedModel;
-  const identity = responseMetadataIdentity(metadata);
-  const lines: string[] = [
-    identity ? `Runtime: ${identity.harness}${identity.version ? ` ${identity.version}` : " · Version not reported"}`
-      : "Runtime identity: not recorded in this response",
-    identity?.model ? `Runtime-reported model: ${identity.model}` : "Runtime-reported model: unavailable",
-  ];
-  if (requested !== undefined) {
-    lines.push(`Requested model: ${requested ? responseModelLabel(requested) : "Runtime default"}`);
-  }
-  if (desired) lines.push(`Selected model: ${responseModelLabel(desired)}`);
-  if (forwarded && forwarded !== desired) lines.push(`Forwarded model: ${responseModelLabel(forwarded)}`);
-  if (confirmed && !identity) lines.push(`Recorded model: ${responseModelLabel(confirmed)}`);
-  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
-  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
-  if (metadata.modelApplicationReason && !confirmed) lines.push(metadata.modelApplicationReason);
-  lines.push(...runtimeActivityStatusLines(identity?.activity));
-  return lines;
-}
-
-/** The model application trail is separate from controls: a runtime echo can
- * prove forwarding without proving provider application, and a runtime-owned
- * default may intentionally have no model id at all. */
-function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const lines = responseModelStatusLines(metadata);
-  if (lines.length === 0) return null;
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response model. ${lines.join(". ")}`}>
-      {lines.map((line) => (
-        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
-          {line}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function responseControlStatusLines(metadata?: ChatResponseMetadata): string[] {
-  const requested = Object.entries(metadata?.requestedControls ?? {});
-  const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
-  const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
-  const forwarded = new Set(Object.keys(metadata?.forwardedControls ?? {}));
-  const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
-  if (!requested.length && !rejected.size) return [];
-  return [
-    ...requested.map(([family, value]) => {
-      const prefix = rejected.has(family)
-        ? "Rejected"
-        : promptOnly.has(family)
-          ? "Prompt guidance"
-          : applied.has(family)
-            ? "Applied"
-            : forwarded.has(family)
-              ? "Forwarded — not confirmed"
-            : "Requested — not confirmed";
-      return `${prefix}: ${family} ${value}`;
-    }),
-    ...[...rejected].filter((family) => !requested.some(([requestedFamily]) => requestedFamily === family))
-      .map((family) => `Rejected: ${family}`),
-  ];
-}
-
-/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
-function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const lines = responseControlStatusLines(metadata);
-  if (lines.length === 0) return null;
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
-      {lines.map((line) => (
-        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
-          {line}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 type MetaLineState = "complete" | "streaming" | "failed" | "offline";
 
 function metaLineState(args: {
@@ -1485,13 +1589,15 @@ function metaLineState(args: {
 
 /** A directory segment renders with a folder icon (the runtime IS the working
  *  directory — see formatRuntime); plain strings render as text. */
-type MetaSegment = string | { dir: { label: string; title: string } };
+type MetaSegment = string | { dir: { label: string; title: string } } | { unverified: string };
 
 function metaLineSegments(args: {
   state: MetaLineState;
   lifecycle: ChatTurnLifecycle | null;
   harness?: string;
   model?: string;
+  /** What the runtime did not report; one "unverified" segment stands for all of it (#5953). */
+  identityGaps?: string[];
   runtime?: string | null;
   projectRoot?: string | null;
   durationMs?: number;
@@ -1500,7 +1606,8 @@ function metaLineSegments(args: {
 }): MetaSegment[] {
   const segs: MetaSegment[] = [
     ...(args.harness ? [args.harness] : []),
-    args.model ? responseModelLabel(args.model) : "Model not reported",
+    ...(args.model ? [responseModelLabel(args.model)] : []),
+    ...(args.identityGaps?.length ? [{ unverified: args.identityGaps.join(" · ") }] : []),
   ];
   // The runtime is the cwd; fall back to the project root so a directory shows
   // even before the first turn records runtime metadata. No dishonest "model:"
@@ -1558,32 +1665,21 @@ function turnMetaPeekTitle(turn: Turn): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-/** Inline remedy for the offline meta line: the old copy said "start it from
- *  the banner above", but the banner can be dismissed or off-screen — a broken
- *  reference. The action lives in the notice itself, self-contained like the
- *  settings/onboarding start buttons; the workspace's 5s status poll picks up
- *  the flip and clears the offline state (cave-5qmm). */
+/** Keep offline recovery in reach even when the shell banner was dismissed.
+ * Setup checks prerequisites and reports start failures with recovery guidance. */
 function MetaLineStartDaemon() {
-  const [starting, setStarting] = useState(false);
+  const { openSetup, setupHost } = useSetupOpener("banner");
   return (
-    <button
-      type="button"
-      className="cave-chat-meta-line__action focus-ring"
-      disabled={starting}
-      onClick={async () => {
-        setStarting(true);
-        try {
-          await fetch("/api/daemon/start", { method: "POST" });
-        } catch {
-          // The meta line keeps reading "daemon offline" and the button
-          // re-arms — the workspace banner surfaces start errors in detail.
-        } finally {
-          setStarting(false);
-        }
-      }}
-    >
-      {starting ? "starting…" : "Start daemon"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="cave-chat-meta-line__action focus-ring"
+        onClick={openSetup}
+      >
+        Open setup
+      </button>
+      {setupHost}
+    </>
   );
 }
 
@@ -1598,35 +1694,6 @@ function MetaLineElapsed({ since }: { since: string }) {
   }, [since]);
   return (
     <span aria-hidden="true" className="cave-chat-meta-line__elapsed">{` · ${elapsed}s`}</span>
-  );
-}
-
-/** Compact context-window meter for the completed-turn meta line: a tiny bar +
- *  percentage sized against the model's context window, fed by the latest
- *  turn's token usage. Null when the harness reported no usage (e.g. the
- *  OpenClaw bridge) or the model/window can't be resolved. The bar fill warms
- *  from accent → amber → red as the window fills. */
-function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string }) {
-  const meter = computeContextMeter(usage, model);
-  if (!meter) return null;
-  const fill =
-    meter.level === "high"
-      ? "var(--color-danger)"
-      : meter.level === "warn"
-        ? "var(--color-warning)"
-        : "var(--accent-presence)";
-  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
-  return (
-    <span className="cave-chat-meta-line__context inline-flex items-center gap-1" title={title}>
-      {" · "}
-      <span
-        aria-hidden
-        className="inline-block h-[5px] w-7 overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--text-muted)_28%,transparent)]"
-      >
-        <span className="block h-full rounded-full" style={{ width: `${Math.max(3, meter.percent)}%`, background: fill }} />
-      </span>
-      <span aria-label={`Context ${meter.percent} percent full`}>{`${meter.percent}%`}</span>
-    </span>
   );
 }
 
@@ -1706,7 +1773,7 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
-  /** Session action verbs, rendered after the conversation title. */
+  /** Supplemental activity shares the metadata row outside its live region. */
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1736,9 +1803,11 @@ function MetaLine({
   // context meter (the meter needs the model to size the window).
   const identity = responseMetadataIdentity(responseMetadata);
   const metaModel = identity?.model ?? undefined;
-  const metaHarness = identity
-    ? `${identity.harness}${identity.version ? ` ${identity.version}` : " · Version not reported"}`
-    : "Runtime not recorded";
+  const metaHarness = identity ? `${identity.harness}${identity.version ? ` ${identity.version}` : ""}` : undefined;
+  // The runtime's unreported identity reads as one muted "unverified" marker,
+  // with the gaps named on hover (#5953). The facts stay honest; two spelled-out
+  // gap phrases were the loudest part of a settled header.
+  const identityGaps = runtimeIdentityGaps(identity);
   // Historical diagnostics describe a response, never the selection for an
   // unsent message. Keep first-run settings in the composer until a run exists.
   const segments = hasResponse ? metaLineSegments({
@@ -1746,6 +1815,7 @@ function MetaLine({
     lifecycle,
     harness: metaHarness,
     model: metaModel,
+    identityGaps,
     runtime: responseMetadata?.runtime ?? session?.runtime,
     projectRoot: session?.project_root ?? projectRoot,
     durationMs,
@@ -1754,19 +1824,12 @@ function MetaLine({
   }) : [];
   // Settled headers keep runtime and model visible in the identity line;
   // the hover cluster carries directory, duration, and usage only.
+  const identitySegmentCount = (metaHarness ? 1 : 0) + (metaModel ? 1 : 0) + (identityGaps.length ? 1 : 0);
   const provenanceSegments =
     state === "complete"
-      ? segments.slice(metaHarness ? 2 : 1)
+      ? segments.slice(identitySegmentCount)
       : segments;
   const task = linkedContext?.task ?? null;
-  // Chat-revamp 1b: the header meta carries the session's live git branch
-  // beside the familiar + model. The fetch rides the shared changes-summary
-  // gate (cave-v8hh) — the composer git chip already polls the same root, so
-  // this subscriber adds no extra requests.
-  const { branch: gitBranch } = useChangesSummary(
-    session?.project_root ?? projectRoot ?? undefined,
-    Boolean(session?.project_root ?? projectRoot),
-  );
   // Same defense-in-depth override as the old headline row: hide a raw
   // "Task context: …" seed prompt that leaked through as the title.
   const titleOverride =
@@ -1781,10 +1844,9 @@ function MetaLine({
     // text that actually changes keeps the announcements and takes the
     // controls out of them (cave-fh9so).
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
-      {/* Chat-revamp 1b: the session's familiar leads the header as a small
-          circular avatar, so the title row reads avatar · title · meta. */}
+      {/* The familiar spans the title and metadata rows. */}
       <span className="cave-chat-header-avatar" aria-hidden="true">
-        <FamiliarIcon familiar={familiar} size="md" />
+        <FamiliarIcon familiar={familiar} size="lg" />
       </span>
       {session ? (
         <ChatTitleEditable
@@ -1795,6 +1857,8 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
+      <div className="cave-chat-meta-line__details">
+        <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
       {/* One status, stated once (cave-dkdev). The same <SessionStatusPill>
           the Sessions list renders, so a chat reads identically whether you
           are looking at it or looking for it. Transport ("connecting",
@@ -1809,64 +1873,56 @@ function MetaLine({
           transport={sessionState.transport}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
-        {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
-            — "<familiar> · <model> · <branch>" — while the heavier provenance
-            (cwd · duration · tokens · cost + meters) stays in the adjacent
-            reveal-on-hover cluster, so nothing is deleted, just demoted.
-            Streaming/failed/offline states keep their live meta. */}
-        {state === "complete" ? (
-          <span className="cave-chat-meta-line__identity">
-            {familiar.display_name}
-            {hasResponse ? ` · ${metaHarness}` : ""}
-            {hasResponse ? (metaModel ? ` · ${responseModelLabel(metaModel)}` : " · Model not reported") : null}
-            {gitBranch ? (
-              <>
-                {" · "}
-                <span className="cave-chat-meta-line__branch" title={`Branch: ${gitBranch}`}>
-                  <Icon name="ph:git-branch" width={10} aria-hidden />
-                  {gitBranch}
-                </span>
-              </>
-            ) : null}
+          {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
+              — "<familiar> · <model> · <branch>" — while the heavier provenance
+              (cwd · duration · tokens · cost + meters) stays in the adjacent
+              reveal-on-hover cluster, so nothing is deleted, just demoted.
+              Streaming/failed/offline states keep their live meta. */}
+          {state === "complete" ? (
+            <span className="cave-chat-meta-line__identity">
+              {familiar.display_name}
+              {hasResponse && metaHarness ? ` · ${metaHarness}` : ""}
+              {hasResponse && metaModel ? ` · ${responseModelLabel(metaModel)}` : ""}
+              {hasResponse && identityGaps.length ? (
+                <>
+                  {" · "}
+                  <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
+                </>
+              ) : null}
+            </span>
+          ) : null}
+          {/* Slim header (cave-xsq.3): when the turn has settled, the static
+              provenance (model · runtime · dir · duration · usage · meters) is a
+              quiet reveal-on-hover cluster so the settled header reads as just the
+              conversation title — like ChatGPT. Live streaming state (elapsed,
+              "esc to cancel") stays visible; provenance shows inline while
+              streaming (no reveal class) so nothing is hidden mid-response. */}
+          <span
+            className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
+          >
+            {provenanceSegments.map((seg, i) => (
+              <Fragment key={i}>
+                {i > 0 || state === "complete" ? " · " : null}
+                {typeof seg === "string" ? (
+                  seg
+                ) : "unverified" in seg ? (
+                  <span className="cave-chat-meta-line__unverified" title={seg.unverified}>unverified</span>
+                ) : (
+                  <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
+                    <Icon name="ph:folder" width={11} aria-hidden />
+                    {seg.dir.label}
+                  </span>
+                )}
+              </Fragment>
+            ))}
+            {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
           </span>
-        ) : null}
-        {/* Slim header (cave-xsq.3): when the turn has settled, the static
-            provenance (model · runtime · dir · duration · usage · meters) is a
-            quiet reveal-on-hover cluster so the settled header reads as just the
-            conversation title — like ChatGPT. Live streaming state (elapsed,
-            "esc to cancel") stays visible; provenance shows inline while
-            streaming (no reveal class) so nothing is hidden mid-response. */}
-        <span
-          className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
-        >
-          {provenanceSegments.map((seg, i) => (
-            <Fragment key={i}>
-              {i > 0 || state === "complete" ? " · " : null}
-              {typeof seg === "string" ? (
-                seg
-              ) : (
-                <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
-                  <Icon name="ph:folder" width={11} aria-hidden />
-                  {seg.dir.label}
-                </span>
-              )}
-            </Fragment>
-          ))}
-          {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
-          {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
+          {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
+          {state === "streaming" ? " · esc to cancel" : null}
+          {state === "offline" ? <MetaLineStartDaemon /> : null}
         </span>
-        {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
-        {state === "streaming" ? " · esc to cancel" : null}
-        {state === "offline" ? <MetaLineStartDaemon /> : null}
-      </span>
-      {/* No pickers on this row (cave-zfmqm). cave-fh9so pulled the
-          project/model/context chips inline here to collapse three stacked
-          header rows into one; one row of five controls is still a toolbar.
-          Choosing a project or a model belongs to the composer, which is where
-          you are when the choice matters and which still carries them. The
-          header is a title and the verbs that act on this conversation. */}
-      {children}
+        {children}
+      </div>
     </div>
   );
 }
@@ -2102,9 +2158,10 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { familiar, sessionId, retryComposeId, initialRetryRuntimeHost, projectsRetryPassive = false, session, projectRoot, initialPrompt, initialDraft, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
+  const firstUse = useFirstUse();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [streamHealth, dispatchStreamHealth] = useReducer(
     chatStreamHealthReducer,
@@ -2224,32 +2281,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
     if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
-      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
-      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
-        familiarId: familiar.id,
-        prompt,
-        origin: "enhance",
+      await runAutoReflectionIfMissing(familiar.id, targetSessionId, async () => {
+        const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
+        const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
+          familiarId: familiar.id,
+          prompt,
+          origin: "enhance",
+        });
+        if (error || !text.trim()) return;
+        const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessionId: targetSessionId,
+            trigger: "auto",
+            threadTitle: session?.title ?? familiar.display_name,
+            payload: text,
+            ...(reviewSessionId ? { reviewSessionId } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => null) as
+          | { ok: true; report: ThreadSelfReport; archivedAt?: string }
+          | { ok: false; error?: string }
+          | null;
+        if (json?.ok) {
+          setThreadSignalReport(json.report);
+          if (json.archivedAt) onSessionsChanged?.();
+        }
       });
-      if (error || !text.trim()) return;
-      const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sessionId: targetSessionId,
-          trigger: "auto",
-          threadTitle: session?.title ?? familiar.display_name,
-          payload: text,
-          ...(reviewSessionId ? { reviewSessionId } : {}),
-        }),
-      });
-      const json = await res.json().catch(() => null) as
-        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
-        | { ok: false; error?: string }
-        | null;
-      if (json?.ok) {
-        setThreadSignalReport(json.report);
-        if (json.archivedAt) onSessionsChanged?.();
-      }
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
@@ -2387,6 +2446,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
   const { announce } = useAnnouncer();
+  useToolMilestones(turns.findLast((turn) => turn.role === "assistant"));
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
   // linked board card from the first prompt. State renders the armed chip; the
@@ -2439,12 +2499,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
-  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
+  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => {
+    const reviewed = !sessionId ? initialControls?.permissionMode : undefined;
+    return reviewed === "read" || reviewed === "full" ? reviewed : readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode;
+  });
+  useEffect(() => {
+    if (sessionId) return;
+    const updateUnsentChoice = () => setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
+    window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+    return () => window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+  }, [sessionId]);
   // Composer Host chip: null = auto — the conversation's recorded host, else
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
   // sticky remote host would silently run every new chat elsewhere).
-  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialControls?.runtimeHost ?? null);
+  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialRetryRuntimeHost !== undefined ? initialRetryRuntimeHost : initialControls?.runtimeHost ?? null);
   const sessionRuntimeHost = useMemo(() => {
     const parsed = parseConversationRuntime(session?.runtime);
     return parsed?.kind === "ssh" ? parsed.host : null;
@@ -2540,9 +2609,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Debug context for the inline error strip below the chat: which turn failed
   // and an optional machine code. `seq` increments per occurrence so the strip
   // re-expands its detail every time a *new* error fires (not just the first).
-  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string } | null>(null);
+  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string; model?: string | null; localRefusal?: LocalCodexRefusalCode } | null>(null);
   const debugErrorSeqRef = useRef(0);
-  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string }) => {
+  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string; model?: string | null; localRefusal?: LocalCodexRefusalCode }) => {
     debugErrorSeqRef.current += 1;
     const seq = debugErrorSeqRef.current;
     setDebugError((previous) => ({
@@ -2559,10 +2628,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
   const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
-  // The chat's project folder no longer exists on disk (moved/deleted): the
-  // send 400s with code project_root_unavailable and Retry can never succeed —
-  // the recovery is re-pointing the project, not retrying (cave-ivcc).
-  const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // The fix lives in Projects, and Retry can never succeed: the chat's project
+  // folder no longer exists on disk (400 project_root_unavailable, cave-ivcc),
+  // or a person must confirm the folder in project settings (409
+  // project_root_unconfirmed / project_root_moved, #6215).
+  const [projectsFixNeeded, setProjectsFixNeeded] = useState(false);
+  // A project whose Write grant overlaps Cave's private state: Projects is
+  // where that grant changes, so the error offers to open it there (#6451).
+  const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
+  // Projects unmounts Chat. Keep only this explicit round trip in memory;
+  // opening any other recipient discards it, including in a reused view.
+  const [localRetryComposeId] = useState(() => crypto.randomUUID());
+  const retryChatId = sessionId ?? retryComposeId ?? localRetryComposeId;
+  const projectsRetryOwnedRef = useRef(false);
+  useEffect(() => {
+    const target = { familiarId: familiar.id, chatId: retryChatId };
+    const carried = projectsRetryPassive ? projectsRetryCarry.read(target) : projectsRetryCarry.returnTo(target);
+    if (!carried && !projectsRetryOwnedRef.current) return;
+    projectsRetryOwnedRef.current = Boolean(carried);
+    setLastFailedSend(carried?.failed ?? null);
+    setError(carried?.message ?? null);
+    setDebugError(null);
+    setPrivateStateProjectRoot(carried?.root ?? null);
+    if (carried) announce("Your refused message is ready to retry.");
+  }, [familiar.id, retryChatId, projectsRetryPassive, announce]);
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -2609,6 +2698,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pre-session (voice new-chat) creates the conversation first, then the
   // router promotes it and re-enters through the openVoiceNonce effect.
   const openVoiceCall = useCallback(async () => {
+    if (!firstUse.ensureIntroduction()) return;
     const launch = projectLaunchRef.current;
     if (!launch.ready) {
       setError(launch.message);
@@ -2650,7 +2740,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setVoiceCallPending(false);
     }
-  }, [sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
+  }, [firstUse, sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
   // Composer dictation (voice new-chat): finals append to the draft for
   // review — never auto-sent. The mic hides when no ears engine exists.
   const dictation = useDictation(
@@ -3105,7 +3195,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [refreshUsagePlan]);
 
   useEffect(() => {
-    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode });
+    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode }, "automatic");
   }, [thinkingEffort, responseSpeed, permissionMode]);
 
   // Persist a model choice through the existing channels: session scope when a
@@ -3114,6 +3204,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const stagedModel = modelId ?? "";
       pendingModelOverrideRef.current = stagedModel;
       pendingModelScopeRef.current = modelId
@@ -3231,6 +3322,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      // The saved failure belongs to the old runtime, as in handleUseHarnessFix.
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const nextModel = modelForRuntimeSwitch(runtime);
       pendingModelOverrideRef.current = nextModel;
       pendingModelScopeRef.current = "next-message";
@@ -3312,6 +3405,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
+  // never sends; an existing draft is kept and the text is appended below it.
+  // The browser's undo stack can't hold this edit (React sets the value, and
+  // WebKit would merge it with the typing before it), so the composer keeps
+  // one explicit undo step: the first Cmd/Ctrl+Z while the composer still
+  // holds exactly the pre-filled text restores the earlier draft (#6521).
+  const prefillUndoRef = useRef<{ before: string; after: string } | null>(null);
+  const prefillComposerFromUiBlock = useCallback((text: string) => {
+    const before = inputRef.current?.value ?? "";
+    const after = before.trim() ? `${before.replace(/\s+$/, "")}\n\n${text}` : text;
+    prefillUndoRef.current = { before, after };
+    setInput(after);
+    requestAnimationFrame(() => {
+      const field = inputRef.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
+    announce("Draft added to the composer. Nothing was sent.");
+  }, [announce, setInput]);
   const toggleMobileAutoMode = useCallback(() => {
     if (autoMissionActive) {
       const statusDraft = autoMissionStatusDraft(input);
@@ -3332,7 +3445,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [announce, autoMissionActive, input, setInput]);
-  // Attachments staged in the composer (cap 10) with drag-and-drop
+  // Attachments staged in the composer (50 total, at most 10 non-images) with drag-and-drop
   // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
   // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
   // Announce staging changes without moving focus away from the draft.
@@ -3422,6 +3535,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     sessionId: null,
   });
   const initialPromptSentRef = useRef(false);
+  const initialDraftConsumedRef = useRef(false);
+  const [starterDraftConflict, setStarterDraftConflict] = useState<{ key: string; text: string } | null>(null);
+  const currentStarterConflict = starterDraftConflict?.key === scopedDraftKey ? starterDraftConflict : null;
+  useEffect(() => {
+    if (!initialDraft || initialDraftConsumedRef.current) return;
+    const decision = initialComposerDraftDecision({ incoming: initialDraft, current: input, sessionId, expectedProject: projectRoot, project: activeProjectRoot, ready: projectLaunchReady });
+    if (decision === "wait") return;
+    initialDraftConsumedRef.current = true;
+    if (decision === "apply") setInput(initialDraft);
+    else if (decision === "review") setStarterDraftConflict({ key: scopedDraftKey, text: initialDraft });
+  }, [initialDraft, input, sessionId, projectRoot, activeProjectRoot, projectLaunchReady, scopedDraftKey, setInput]);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
@@ -3560,6 +3684,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return next;
     });
   }
+
+  useEffect(() => subscribeChatAccessInvalidation((change) => {
+    if (change.sessionId !== undefined && change.sessionId !== currentSessionRef.current) return;
+    transcriptResetRevisionRef.current += 1;
+    refetchOnSettleRef.current = null;
+    turnsRef.current = [];
+    setTurns([]);
+    setActiveLeafId("");
+    setLinkedContext(null);
+    setFlowTranscriptFallback(null);
+    setLastFailedSend(null);
+    projectsRetryCarry.drop();
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamOwnerRef.current = false;
+    currentStreamHealthRunIdRef.current = null;
+    setBusy(false);
+    setHistoryState(change.reason === "missing" ? "missing" : "error");
+    setError("Chat access changed. Reload history to check current access.");
+    announce("Chat access changed. History was cleared.");
+  }), [announce]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -3726,7 +3871,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Toggling Match case / Whole word re-runs the search, so it must re-jump
   // too — the key includes them, otherwise flipping a toggle leaves you parked
   // on a hit that the new options no longer produce.
-  useEffect(() => {
+  // Layout phase, not passive (#6173): the jump must commit its selected
+  // window before the browser delivers a scroll event queued against the old
+  // tail. A passive effect let that event land first and page the transcript
+  // back to the tail, so the first hit's turn was never mounted.
+  useLayoutEffect(() => {
     if (!findOpen) return;
     const key = [findMatchCase ? "c" : "", findWholeWord ? "w" : "", findDebouncedQuery].join("|");
     if (key === lastJumpedQueryRef.current) return;
@@ -3812,10 +3961,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
     if (!sessionId || sessionId !== openVoiceSessionId) return;
+    if (!firstUse.ensureIntroduction()) return;
+    if (!projectLaunchReady) return;
     openVoiceNonceRef.current = openVoiceNonce;
     voiceAutoCreatedRef.current = sessionId;
-    setVoiceCallOpen(true);
-  }, [openVoiceNonce, sessionId, openVoiceSessionId]);
+    void openVoiceCall();
+  }, [firstUse, openVoiceCall, openVoiceNonce, projectLaunchReady, sessionId, openVoiceSessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -3849,6 +4000,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // anywhere in the composer dock (Tab to Send or a chip, a tap on Tools), so
   // the phone composer never collapses under the control being used.
   const [composerEngaged, setComposerEngaged] = useState(false);
+  // #5840: leaving the composer rests it only once the press that moved focus
+  // has been released, so the control being tapped stays under the finger.
+  const pointerPressRef = useRef<PointerPressTracker | null>(null);
+  const cancelComposerRestRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const tracker = createPointerPressTracker(window);
+    pointerPressRef.current = tracker;
+    return () => {
+      cancelComposerRestRef.current?.();
+      cancelComposerRestRef.current = null;
+      tracker.dispose();
+      pointerPressRef.current = null;
+    };
+  }, []);
+  const engageComposer = useCallback(() => {
+    cancelComposerRestRef.current?.();
+    cancelComposerRestRef.current = null;
+    setComposerEngaged(true);
+  }, []);
+  const restComposerAfterPress = useCallback((dock: Element) => {
+    cancelComposerRestRef.current?.();
+    const rest = () => {
+      cancelComposerRestRef.current = null;
+      if (!dock.contains(document.activeElement)) setComposerEngaged(false);
+    };
+    const tracker = pointerPressRef.current;
+    if (tracker) cancelComposerRestRef.current = tracker.afterPress(rest);
+    else rest();
+  }, []);
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
@@ -3865,7 +4045,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // in-thread (invokeSkillOption), prompts insert-for-editing, and Enter on a
   // command runs the highlighted suggestion's intent — never the partially
   // typed text, and never recorded in ↑ history (send() owns that push).
-  const modelHarness = canonicalHarnessId(modelState?.harness ?? familiar.harness ?? "claude");
+  // Before model-state answers, a chat stays on its own saved runtime rather
+  // than borrowing the familiar's current one (#5954: cody rebound to Claude
+  // while this chat still runs Codex).
+  const modelHarness = canonicalHarnessId(modelState?.harness ?? session?.harness ?? familiar.harness ?? "claude");
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete below, which is null outside `/model <arg>` position).
   const composerModelInventory = useRuntimeModelInventory(modelHarness ?? "claude", familiar.id, modelState?.runtime ?? session?.runtime, runtimeHost);
@@ -3936,7 +4119,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { value: "full", label: "Build · full access" },
       ],
       onChange: (value: string) => {
-        if (value === "read" || value === "full") setPermissionMode(value);
+        if (value === "read" || value === "full") {
+          writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode: value });
+          setPermissionMode(value);
+        }
       },
     },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
@@ -4000,8 +4186,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
-  // rewrite from this thread's familiar (rule engine as offline fallback) and
-  // owns the race-safe apply/suggest/revert lifecycle.
+  // rewrite from this thread's familiar (no scripted fallback; failures keep
+  // the draft) and owns the race-safe apply/suggest/revert lifecycle.
   const preparedPromptEnhancement = prepareChatPromptEnhancement(
     input,
     Boolean(activeProjectRoot),
@@ -4036,7 +4222,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         .flatMap((turn) => turn.tools ?? [])
         .filter((tool) => tool.status === "ok" || tool.status === "error")
         .slice(-3)
-        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+        // Names and outcomes only: a loaded tool result stays in its card (#6486).
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status })),
       linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
@@ -4417,7 +4604,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionId,
       isThreadSwitch,
       flowBackedSession,
-      sources: chatHistorySources,
+      sources: {
+        ...chatHistorySources,
+        subscribeInvalidation: (targetSessionId, invalidate) => subscribeChatAccessInvalidation((change) => {
+          if (change.sessionId === undefined || change.sessionId === targetSessionId) {
+            invalidate(change.reason === "missing");
+          }
+        }),
+      },
       view: {
         readTurns: () => turnsRef.current,
         syncTurns: (next) => { turnsRef.current = next; },
@@ -5078,7 +5272,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return true;
       }
       setInput("");
-      void fetch("/api/research/links", {
+      void fetch("/api/links", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ urls, source: "chat" }),
@@ -5244,6 +5438,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     allowBusy = false,
     submission?: { canSend: () => boolean; onPersisted: () => void },
   ) => {
+    if (!firstUse.ensureIntroduction()) return;
+    if (text.trim() || outgoingAttachments.length > 0) projectsRetryCarry.drop();
     // A runtime picker writes the familiar binding through /api/config. Wait
     // for that read-modify-write before resolving the send body; otherwise an
     // immediate send can launch the old harness even though the chip already
@@ -5454,7 +5650,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setDebugError(null);
     setLastFailedSend(null);
     setProjectAccessRoot(null);
-    setProjectRootMissing(false);
+    setProjectsFixNeeded(false);
+    setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
     setEarlierRunId(null);
@@ -5546,12 +5743,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attentionSettlement.reconcileNow();
       },
     };
+    const accessGuard = createChatStreamAccessGuard(controller, () => liveGeneration.sessionAliases);
     const publishStreamHealth = (
       action: Exclude<
         ChatStreamHealthAction,
         { type: "hydrate" } | { type: "connect" } | { type: "reset" }
       >,
     ) => {
+      if (accessGuard.revoked()) return;
       generationStreamHealth = chatStreamHealthReducer(generationStreamHealth, action);
       if (liveGeneration.sessionId) {
         const metadata = {
@@ -5594,6 +5793,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const chunkCoalescer = createChunkCoalescer({
       flushMs: CHUNK_FLUSH_MS,
       apply: (text) => {
+        if (accessGuard.revoked()) return;
         flushPendingStreamHealthEvent();
         applyAssistantChunk(text, assistantId, liveGeneration);
       },
@@ -5652,8 +5852,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
           modelControls: controlsOverride?.modelControls ?? modelControls,
-          // Advisory permission mode for the picked access level; the daemon may
-          // ignore it if the harness doesn't support per-turn permission scoping.
+          // Send the selected access level; the server refuses unsupported modes.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
@@ -5696,13 +5895,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
         signal: controller.signal,
       });
+      if (res.status === 401 || res.status === 403) {
+        invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+        // Keep the existing project repair action, without retaining the
+        // rejected prompt as a retryable send or repainting its transcript.
+        if (res.status === 403) {
+          const message = await chatBridgeFailureMessage(res);
+          if (/project_access_denied|project access denied|not registered/i.test(message)
+            && currentSessionRef.current === liveGeneration.sessionId) {
+            const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+            setProjectAccessRoot(failingRoot || null);
+          }
+        }
+      }
+      if (accessGuard.revoked()) return;
       if (!res.ok) {
         const refusal = res.status === 409
-          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown } | null
+          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
-        setLastFailedSend(request);
+        // Resending a model the server refused can only be refused again, so
+        // Retry follows the composer and the composer catches up (#6419).
+        const modelRefused = /model_runtime_mismatch|unsupported_model_override/.test(message);
+        setLastFailedSend(modelRefused ? forgetFailedSendModel(request) : request);
+        if (modelRefused) void refreshModelState();
         // A 403 here is the project-access gate: the chat's cwd belongs to no
         // registered project the familiar can reach. Capture that cwd so the
         // error strip can offer a one-click "register + grant, then retry".
@@ -5719,11 +5936,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // succeed — swap in actionable copy + an Open-projects fix (cave-ivcc).
         if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
           const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
-          setProjectRootMissing(true);
+          setProjectsFixNeeded(true);
           surfacedMessage =
             missingRoot
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
               : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
+        }
+        // The project's folder needs a person to confirm it (#6215): never
+        // confirmed since folder pinning, or it now resolves somewhere else.
+        // The server's copy names the project and the fix.
+        if (
+          res.status === 409 &&
+          (refusal?.code === "project_root_unconfirmed" || refusal?.code === "project_root_moved")
+        ) {
+          setProjectsFixNeeded(true);
+          surfacedMessage = refusal.code === "project_root_moved"
+            ? "This project’s folder now resolves somewhere else. Confirm its folder in project settings before starting chat."
+            : "Confirm this project’s folder in project settings before starting chat. Projects added before folder pinning need this once.";
         }
         // Missing, unregistered, and newly revoked project contexts all need a
         // fresh choice. Retry alone cannot repair them, so route every stable
@@ -5751,6 +5980,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             ? "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry."
             : "This chat is still running an earlier turn, so your message was not sent. Wait for it to finish, then retry.";
         }
+        // The message names the folder and the grant behind it; Projects is
+        // where a project's grant changes.
+        const overlapRefusal = refusal as {
+          error?: unknown;
+          reason?: unknown;
+          overlap?: { source?: unknown; root?: unknown } | null;
+        } | null;
+        if (res.status === 409 && overlapRefusal?.reason === "cave_private_state_overlap") {
+          if (typeof overlapRefusal.error === "string" && overlapRefusal.error.trim()) surfacedMessage = overlapRefusal.error;
+          if (overlapRefusal.overlap?.source === "project" && typeof overlapRefusal.overlap.root === "string") {
+            setPrivateStateProjectRoot(overlapRefusal.overlap.root);
+          }
+        }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
           id: "connect",
@@ -5762,7 +6004,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           liveStreamMetadata(liveGeneration),
         );
-        raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
+        // A local session refused before anything ran (#6095): the message
+        // above is Cave's own copy and the whole reason.
+        raiseDebugError({
+          turnId: assistantId,
+          code: `HTTP ${res.status}`,
+          ...(isLocalCodexRefusalCode(refusal?.code) ? { localRefusal: refusal.code } : {}),
+        });
         publishStreamHealth({
           type: "degrade",
           at: new Date().toISOString(),
@@ -5800,6 +6048,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
       let cursor = 0;
       const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
+        if (accessGuard.revoked()) return;
         if (eventCursor != null) {
           cursor = Math.max(cursor, eventCursor);
           pendingStreamHealthEvent = { cursor, at: new Date().toISOString() };
@@ -5853,6 +6102,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             `/api/chat/stream?runId=${encodeURIComponent(runId)}&cursor=${cursor}`,
             { cache: "no-store", signal: controller.signal },
           );
+          if (recovery.status === 401 || recovery.status === 403) {
+            invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+          }
+          if (accessGuard.revoked()) return;
           if (recovery.ok && recovery.body) {
             const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
@@ -5882,6 +6135,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } catch (err) {
+      if (accessGuard.revoked()) return;
       // Apply any buffered streamed text FIRST — the handlers below read
       // t.text (e.g. the cancelled fallback label) and must see all of it.
       flushStreamUpdates();
@@ -5931,6 +6185,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      accessGuard.dispose();
       attentionSettlement.reconcileIfNeeded();
       // All terminal exits — HTTP rejection, missing body, exhausted recovery,
       // abort, and stream exceptions — reach here. Calling
@@ -5939,7 +6194,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
-      if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
+      if (!accessGuard.revoked() && needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
       // But only tear down the SHARED stream wiring if we still own it. After a
@@ -6272,7 +6527,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         next,
         prevAttachments ?? [],
         [],
-        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn) },
+        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness) },
         {
           thinkingEffort,
           responseSpeed,
@@ -6299,7 +6554,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       [],
       {
         parentTurnId: parentId ?? null,
-        ...retryTurnModelRequest(prevUser, turn),
+        ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness),
       },
       {
         thinkingEffort,
@@ -6345,7 +6600,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
-    if (attachments.length === 0 && intentFromSlash(text)) return;
     // Global stop phrases (cave-uf2x): while a task is running, typing any
     // configured phrase is a command — halt the turn (same path as the Stop
     // button) instead of leaving the draft stranded behind the busy bail.
@@ -6355,6 +6609,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
+    if (!firstUse.ensureIntroduction()) return;
+    if (attachments.length === 0 && intentFromSlash(text)) return;
     if (attachmentsReading) return;
     if (!projectLaunchReady) {
       setError(projectLaunchMessage);
@@ -6537,6 +6793,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return;
     }
     if (!projectLaunchReady) return;
+    if (!firstUse.ensureIntroduction()) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
     // A caller that can remount this view under a live handoff (the Task Work
     // cockpit, whose Group is keyed by the visible pane set) supplies a stable
@@ -6609,7 +6866,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId, firstUse.payload?.state.step]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -6685,7 +6942,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               lifecycle: "streaming",
               // CHAT-D12-01: settle the synthetic row the moment text is
               // flowing — the streamed text IS the live signal from here
-              // on. Leaving it "running" kept the auto-open ProgressGroup
+              // on. Leaving it "running" kept the activity timeline
               // pulsing for the entire stream. Same evidence settles the
               // server's "Starting <harness>" step, which the server itself
               // only closes at process exit.
@@ -6933,7 +7190,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 id: "tools",
                 label: toolStatusLabel(mergedTool.status),
                 detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,
-                status: mergedTool.status === "error" ? "error" : mergedTool.status === "ok" ? "done" : mergedTool.status === "unknown" || mergedTool.status === "rejected" ? "notice" : "running",
+                status: toolProgressStatus(mergedTool.status),
                 durationMs: mergedTool.durationMs,
               }),
             };
@@ -6981,6 +7238,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
+          window.dispatchEvent(new Event(CHAT_REPLY_COMPLETED_EVENT));
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId) {
@@ -7080,7 +7338,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           liveStreamMetadata(liveGeneration),
         );
-        raiseDebugError({ turnId: assistantId, code: ev.code, harness: ev.harness });
+        raiseDebugError({ turnId: assistantId, code: ev.code, harness: ev.harness, model: ev.model });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
       }
@@ -7142,10 +7400,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // One undo after a coven:ui pre-fill restores the draft it replaced.
+    const prefillUndo = prefillUndoRef.current;
+    if (prefillUndo) {
+      if (e.currentTarget.value !== prefillUndo.after) {
+        prefillUndoRef.current = null;
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        prefillUndoRef.current = null;
+        setInput(prefillUndo.before);
+        const field = e.currentTarget;
+        requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+        announce("Draft restored.");
+        return;
+      }
+    }
     // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
-      if (attachments.length < 10) fileInputRef.current?.click();
+      if (attachments.length < MAX_CHAT_ATTACHMENTS) fileInputRef.current?.click();
       return;
     }
     if (mentionOpen) {
@@ -7495,7 +7768,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
+  const guidanceLabel = firstUse.payload?.state.step !== "complete" ? "Continue introduction" : firstUse.payload.resolution.kind === "repair" ? "Review default context" : "Working with familiars";
   const offlineReadOnly = historyState === "offline" || flowBackedSession;
+  // Native UI tier host: opts this chat's transcript into coven:ui rendering.
+  // Memoized so the context value is stable across composer keystrokes.
+  const uiBlockHost = useMemo<UiBlockHost>(
+    () => ({ prefill: offlineReadOnly ? null : prefillComposerFromUiBlock, announce }),
+    [offlineReadOnly, prefillComposerFromUiBlock, announce],
+  );
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -7536,8 +7816,105 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       popoverPlacement={composerPopoverPlacement}
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
+      executionRuntime={runtimeHost && runtimeHost !== LOCAL_HOST_ID
+        ? `ssh:${runtimeHost}`
+        : modelState?.runtime ?? session?.runtime ?? (modelState ? "local" : null)}
     />
   );
+  // One Tools menu, placed by width (#5954): desktop puts it in the action
+  // cluster beside Send, where the context meter sat; narrower layouts keep
+  // the floating tab and the phone's rest-state geometry unchanged.
+  const composerActionsMenu = (
+    <ComposerActionsMenu
+      attach={{
+        onSelect: () => fileInputRef.current?.click(),
+        disabled: attachments.length >= MAX_CHAT_ATTACHMENTS,
+        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+      }}
+      skills={{
+        onPickSkill: (skill) => {
+          // Keep whatever is already typed — it becomes the skill's
+          // arguments on send instead of being overwritten.
+          const ins = skillComposerInsertion(input, skill);
+          setInput(ins.text);
+          inputRef.current?.focus();
+          requestAnimationFrame(() =>
+            inputRef.current?.setSelectionRange(ins.caret, ins.caret),
+          );
+        },
+      }}
+      context={{
+        projects,
+        projectValue: resolvedProjectId,
+        onProjectChange: setProjectIdDraft,
+        familiarId: familiar.id ?? null,
+        createProject,
+        createProjectOrThrow,
+        runtime: modelHarness,
+        modelValue: composerModelValue,
+        modelOptions: composerModelOptions,
+        modelInventory: composerModelInventory,
+        onPickRuntime: handleSelectRuntime,
+        onPickModel: handleSelectModel,
+        modelDisabled: busy,
+        projectRoot: activeProjectRoot,
+        onOpenUrl,
+        popoverPlacement: composerPopoverPlacement,
+      }}
+      linkedWork={{
+        linkedContext,
+        onOpenTask,
+        sessionId,
+        onLinkedContextChange: setLinkedContext,
+        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+      }}
+      improve={{
+        dictation: dictation.available
+          ? {
+              listening: dictation.listening,
+              toggle: dictation.toggle,
+              disabled: busy && !dictation.listening,
+            }
+          : undefined,
+        promptSnippets: {
+          onSelect: () => setPromptSnippetsOpen(true),
+        },
+        enhance: {
+          onEnhance: promptEnhance.enhance,
+          disabled: busy || !input.trim(),
+          loading: promptEnhance.state.phase === "loading",
+          unavailableReason: promptEnhance.unavailableReason,
+        },
+      }}
+      response={{
+        hostValue: composerHostValue,
+        onHostPick: setRuntimeHost,
+        sections: composerResponseSections,
+        onSaveAsTemplate: () => setSaveTemplateSeed(input),
+        saveAsTemplateDisabled: !input.trim(),
+        indicator:
+          composerHostValue !== LOCAL_HOST_ID ||
+          permissionMode !== DEFAULT_PERMISSION_MODE ||
+          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+      }}
+      triggerVariant="tools"
+      phoneActions={isMobile ? {
+        auto: {
+          selected: autoModeSelected,
+          running: autoMissionActive,
+          disabled: busy && !autoMissionActive,
+          onSelect: toggleMobileAutoMode,
+        },
+        retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
+        summarize: { disabled: busy, onSelect: summarizeSession },
+        call: { disabled: !sessionId, onSelect: () => void openVoiceCall() },
+        guidance: { label: guidanceLabel, onSelect: firstUse.openGuide },
+      } : undefined}
+    />
+  );
+
   const composerNode = (
     <footer
       className="cave-composer-dock"
@@ -7821,14 +8198,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               autoRunning={autoMissionActive}
               busy={busy}
               canRetry={Boolean(lastFailedSend)}
-              canAttach={attachments.length < 10}
+              canAttach={attachments.length < MAX_CHAT_ATTACHMENTS}
               hasSession={Boolean(sessionId)}
               onAuto={toggleMobileAutoMode}
               onRetry={retryLastSend}
               onStop={cancelSend}
               onSummarize={summarizeSession}
               onAttach={() => fileInputRef.current?.click()}
-              onVoice={() => setVoiceCallOpen(true)}
+              onVoice={() => void openVoiceCall()}
             />
 
             <div
@@ -7836,96 +8213,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               data-access-mode={permissionMode}
               onBlur={(event) => {
                 const dock = event.currentTarget.closest(".cave-composer-dock") ?? event.currentTarget;
-                if (!dock.contains(event.relatedTarget as Node | null)) setComposerEngaged(false);
+                const next = event.relatedTarget as Node | null;
+                // A chip's menu portals to <body> (#5958): keyboard focus
+                // moving into its rows is still the composer being used, so
+                // the phone's rest state must not hide the chip it hangs from.
+                if (next instanceof Element && next.closest(".ui-popover-portal")) return;
+                if (!dock.contains(next)) restComposerAfterPress(dock);
               }}
             >
               <div className="cave-composer-edge-actions">
-                <ComposerActionsMenu
-                  attach={{
-                    onSelect: () => fileInputRef.current?.click(),
-                    disabled: attachments.length >= 10,
-                    hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                  }}
-                  skills={{
-                    onPickSkill: (skill) => {
-                      // Keep whatever is already typed — it becomes the skill's
-                      // arguments on send instead of being overwritten.
-                      const ins = skillComposerInsertion(input, skill);
-                      setInput(ins.text);
-                      inputRef.current?.focus();
-                      requestAnimationFrame(() =>
-                        inputRef.current?.setSelectionRange(ins.caret, ins.caret),
-                      );
-                    },
-                  }}
-                  context={{
-                    projects,
-                    projectValue: resolvedProjectId,
-                    onProjectChange: setProjectIdDraft,
-                    familiarId: familiar.id ?? null,
-                    createProject,
-                    createProjectOrThrow,
-                    runtime: modelHarness,
-                    modelValue: composerModelValue,
-                    modelOptions: composerModelOptions,
-                    modelInventory: composerModelInventory,
-                    onPickRuntime: handleSelectRuntime,
-                    onPickModel: handleSelectModel,
-                    modelDisabled: busy,
-                    projectRoot: activeProjectRoot,
-                    onOpenUrl,
-                    popoverPlacement: composerPopoverPlacement,
-                  }}
-                  linkedWork={{
-                    linkedContext,
-                    onOpenTask,
-                    sessionId,
-                    onLinkedContextChange: setLinkedContext,
-                    handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                    sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                  }}
-                  improve={{
-                    dictation: dictation.available
-                      ? {
-                          listening: dictation.listening,
-                          toggle: dictation.toggle,
-                          disabled: busy && !dictation.listening,
-                        }
-                      : undefined,
-                    promptSnippets: {
-                      onSelect: () => setPromptSnippetsOpen(true),
-                    },
-                    enhance: {
-                      onEnhance: promptEnhance.enhance,
-                      disabled: busy || !input.trim(),
-                      loading: promptEnhance.state.phase === "loading",
-                    },
-                  }}
-                  response={{
-                    hostValue: composerHostValue,
-                    onHostPick: setRuntimeHost,
-                    sections: composerResponseSections,
-                    onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                    saveAsTemplateDisabled: !input.trim(),
-                    indicator:
-                      composerHostValue !== LOCAL_HOST_ID ||
-                      permissionMode !== DEFAULT_PERMISSION_MODE ||
-                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                  }}
-                  triggerVariant="tools"
-                  phoneActions={isMobile ? {
-                    auto: {
-                      selected: autoModeSelected,
-                      running: autoMissionActive,
-                      disabled: busy && !autoMissionActive,
-                      onSelect: toggleMobileAutoMode,
-                    },
-                    retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
-                    summarize: { disabled: busy, onSelect: summarizeSession },
-                    call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
-                  } : undefined}
-                />
+                {isMobile ? composerActionsMenu : null}
                 {linkedContext?.task && onOpenTask ? (
                   <button
                     type="button"
@@ -8021,7 +8318,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <textarea
                 ref={inputRef}
-                onFocus={() => setComposerEngaged(true)}
+                onFocus={engageComposer}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -8062,6 +8359,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onRetry={promptEnhance.retry}
                 onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
@@ -8118,8 +8416,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                 />
                 <div className="cave-composer-control-row">
-                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                  {isMobile ? (
+                    <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                  ) : composerActionsMenu}
                   <div className="cave-composer-submit-row">
+                    {!isMobile && sessionId && !flowBackedSession ? <ChatSendLater key={sessionId} sessionId={sessionId}
+                      captureMessage={() => {
+                        if (historyState !== "loaded" || !projectLaunchReady || attachmentsReading) throw new Error("Load this chat and finish preparing attachments before scheduling.");
+                        if (isOmnigentHostOptionId(runtimeHost)) throw new Error("Choose a chat host before scheduling a reply.");
+                        if (!input.trim() && !attachments.length) return null;
+                        if (input.trim().startsWith("/")) throw new Error("Send commands directly. Only replies can be scheduled.");
+                        const parent = pendingBranchParent !== undefined ? pendingBranchParent : activeLeafId || null;
+                        return {
+                          familiarId: familiar.id, sessionId,
+                          prompt: buildQuotedPrompt(replyTarget, input.trim()),
+                          projectRoot: requestProjectRoot ?? undefined,
+                          attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(attachments.map(({ id: _id, ...attachment }) => attachment)),
+                          modelControls: { ...modelControls }, permissionMode,
+                          ...(runtimeHost ? { runtimeHost } : {}),
+                          ...(modelState?.source === "runtime-default"
+                            ? { modelOverride: "", modelOverrideScope: "next-message" as const }
+                            : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+                              ? { modelOverride: modelState.effectiveModel, modelOverrideScope: "next-message" as const } : {}),
+                          mentionedFiles: mentionedFiles.filter(p => input.includes(`@${p}`)).slice(0, MAX_FILE_MENTIONS),
+                          mentionedFilesRoot: mentionRoot ?? undefined,
+                          parentTurnId: parent === null ? null : turnsRef.current.find(turn => turn.id === parent)?.persistedTurnId ?? parent,
+                        };
+                      }}
+                      onScheduled={(scheduled) => {
+                        if (buildQuotedPrompt(replyTarget, input.trim()) !== scheduled.prompt ||
+                            JSON.stringify(stripPreviewOnlyAttachmentFieldsKeepingImages(attachments.map(({ id: _id, ...attachment }) => attachment))) !== JSON.stringify(scheduled.attachments)) return;
+                        setInput(""); clearDraft(); clearAttachments(); setMentionedFiles([]);
+                        setReplyTarget(null); setPendingBranchParent(undefined); promptEnhance.reset();
+                      }} /> : null}
+
                     {busy && (input.trim() || attachments.length > 0) ? (
                       <button
                         type="button"
@@ -8150,6 +8480,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onEnhance={promptEnhance.enhance}
                       onCancel={promptEnhance.cancel}
                       disabled={busy || !input.trim()}
+                      unavailableReason={promptEnhance.unavailableReason}
                     />
                     <button
                       type="button"
@@ -8171,6 +8502,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title={`Send message (${keys.enter})`}
                         aria-label="Send message"
                       >
+                        {firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? <span className="first-chat-send-label">Send message</span> : null}
                         <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
                     ) : null}
@@ -8191,6 +8523,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {!offlineReadOnly ? (
                   <div className="cave-composer-footer-band__cluster">
                     {chatContextControls}
+                    {!isMobile ? (
+                      <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                    ) : null}
                   </div>
                 ) : null}
                 {linkedContextRow}
@@ -8204,10 +8539,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
 
   return (
+    <UiBlockHostContext.Provider value={uiBlockHost}>
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...(offlineReadOnly ? {} : dropHandlers)}
+      data-first-use={firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? "true" : undefined}
       // On the root, not the dock: the dock rides up by it and the transcript
       // reserves the same height so its last turn is never under the keyboard.
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
@@ -8242,11 +8579,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <FamiliarIcon familiar={familiar} size="sm" />
             <div className="min-w-0">
               <div className="truncate text-[length:var(--text-base)] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
+              {/* The composer's resolved runtime and selected model, so the
+                  phone states the same facts as the composer below it rather
+                  than the familiar's config (#5954). */}
               <div className="truncate font-mono text-[length:var(--text-2xs)] leading-tight text-[var(--text-muted)]">
-                {familiar.harness ?? "cave"}
-                {visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)
-                  ? ` · ${visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)}`
-                  : ""}
+                {runtimeDisplayName(modelHarness)}
+                {composerModelValue ? ` · ${composerModelValue}` : ""}
               </div>
             </div>
           </div>
@@ -8271,37 +8609,55 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         {linkedContext?.task ? (
           <MobileHeaderTask task={linkedContext.task} onOpenTask={onOpenTask} />
         ) : null}
-        <MetaLine
-          session={session ?? launchStubSession}
-          hasResponse={Boolean(activePendingTurn || lastSettledAssistantTurn)}
-          linkedContext={linkedContext}
-          busy={busy}
-          lifecycle={activeLifecycle}
-          pendingSince={activePendingTurn?.createdAt ?? null}
-          error={!!error}
-          daemonRunning={daemonRunning}
-          durationMs={lastSettledAssistantTurn?.durationMs}
-          usage={lastSettledAssistantTurn?.usage}
-          costUsd={lastSettledAssistantTurn?.costUsd}
-          usagePlan={usagePlan}
-          responseMetadata={displayResponseMetadata}
-          familiar={familiar}
-          projectRoot={projectRoot}
-          onSessionsChanged={onSessionsChanged}
-          generateTitle={generateTitleFromTranscript}
-          readOnly={offlineReadOnly}
-        >
+        <div className="cave-chat-header-row">
+          <MetaLine
+            session={session ?? launchStubSession}
+            hasResponse={Boolean(activePendingTurn || lastSettledAssistantTurn)}
+            linkedContext={linkedContext}
+            busy={busy}
+            lifecycle={activeLifecycle}
+            pendingSince={activePendingTurn?.createdAt ?? null}
+            error={!!error}
+            daemonRunning={daemonRunning}
+            durationMs={lastSettledAssistantTurn?.durationMs}
+            usage={lastSettledAssistantTurn?.usage}
+            costUsd={lastSettledAssistantTurn?.costUsd}
+            usagePlan={usagePlan}
+            responseMetadata={displayResponseMetadata}
+            familiar={familiar}
+            projectRoot={projectRoot}
+            onSessionsChanged={onSessionsChanged}
+            generateTitle={generateTitleFromTranscript}
+            readOnly={offlineReadOnly}
+          >
+            <div className="cave-chat-header-status">
+              {sessionId !== null || turns.length > 0 ? (
+                <ChatSessionContextRow
+                  turns={turns}
+                  usage={lastSettledAssistantTurn?.usage}
+                  costUsd={lastSettledAssistantTurn?.costUsd}
+                  durationMs={lastSettledAssistantTurn?.durationMs}
+                />
+              ) : null}
+              <RunActivityStrip
+                activeTurn={activePendingTurn}
+                lastTurn={lastSettledAssistantTurn}
+                identityGaps={lastSettledAssistantTurn ? runtimeIdentityGaps(responseMetadataIdentity(displayResponseMetadata)) : []}
+              />
+            </div>
+          </MetaLine>
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,
                 chat-revamp 1b) and flips to Unarchive on archived sessions so
-                restore is one click too. Delete keeps its confirm popover. */}
+                restore is one click too. Delete lives in the kebab with its
+                confirm step (#5953). */}
             {sessionId && session && !offlineReadOnly ? (
               <VoiceCallButton
                 familiar={familiar}
                 voiceActive={voiceCallOpen}
-                onOpenVoice={() => setVoiceCallOpen(true)}
+                onOpenVoice={() => void openVoiceCall()}
               />
             ) : null}
             {sessionId && session && !offlineReadOnly ? (
@@ -8317,15 +8673,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <button
                 type="button"
                 className="focus-ring"
-                title="Find in conversation (⌘F)"
+                title={platformizeHint("Find in conversation (⌘F)", keys)}
                 aria-label="Find in conversation"
                 onClick={openFind}
               >
                 <Icon name="ph:magnifying-glass" width={12} aria-hidden />
               </button>
-            ) : null}
-            {sessionId && !offlineReadOnly ? (
-              <DeleteChatButton deleting={deleting} onDelete={() => void deleteChat()} />
             ) : null}
             {sessionId && !offlineReadOnly && (
               <SessionOverflowMenu
@@ -8337,10 +8690,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                onOpenGuidance={firstUse.openGuide}
+                guidanceLabel={guidanceLabel}
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
                 onReflect={familiar.id && reflectTranscript ? () => void reflectOnThread() : undefined}
+                deleting={deleting}
+                onDelete={() => void deleteChat()}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
                 onRegisterCurrentRoot={
                   setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
@@ -8366,7 +8723,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }}
             />
           </div>
-        </MetaLine>
+        </div>
         {/* No mobile header strip either. It existed as the counterpart to the
             inline desktop copy, because `.cave-chat-meta-line` is display:none
             below the breakpoint — with both retired the composer carries the
@@ -8394,31 +8751,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
-      {/* Chat.dc.html 2a ③: the slim mono context band under the title — what
-          the last run cost, on the right. The band used to also carry
-          project/branch/model/cwd chips (with a project selector), but the
-          header's identity line one row up already states familiar · model ·
-          branch, so those were dropped as redundant chrome (cave ultraminimalist
-          pass). A brand-new chat (no session yet) renders no band at all. */}
-      {sessionId !== null || turns.length > 0 ? (
-      <ChatSessionContextRow
-        model={contextRowModel}
-        turns={turns}
-        usage={lastSettledAssistantTurn?.usage}
-        costUsd={lastSettledAssistantTurn?.costUsd}
-        durationMs={lastSettledAssistantTurn?.durationMs}
-      />
-      ) : null}
-      <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
+      {currentStarterConflict ? <aside className="first-use-nudge" aria-label="Starter request needs review"><span>Your existing draft is kept. Use the onboarding starter instead?</span><Button variant="ghost" size="xs" onClick={() => { if (currentDraftKeyRef.current !== currentStarterConflict.key) return; setInput(currentStarterConflict.text); setStarterDraftConflict(null); }}>Use starter request</Button><Button variant="ghost" size="xs" onClick={() => setStarterDraftConflict(null)}>Keep my draft</Button></aside> : null}
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
           rather than covering it. With no inspector open the row collapses to
           the transcript alone and the layout is unchanged. The Thread Signal
-          host stays inside the transcript column but outside its scroll flow. */}
+          host stays inside the transcript column but outside its scroll flow.
+          min-w-0: off-screen turns (content-visibility: auto) remember their
+          last rendered width, so without it this flex item kept the
+          transcript at its old width when the pane narrowed — opening the
+          nav or docking the inspector clipped the conversation (#6009). */}
       <div className="flex min-h-0 flex-1">
-      <div className="cave-chat-overlay-host relative min-h-0 flex-1">
+      <div className="cave-chat-overlay-host relative min-h-0 min-w-0 flex-1">
       <div
         ref={scrollRef}
         tabIndex={0}
@@ -8435,14 +8781,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </span>
           </div>
         ) : null}
-        {/* Floating Environment HUD (cave-68vv): wide panes only; keys on the
-            SESSION-root derivation (cave-r0gt). */}
-        <ChatEnvironmentPanel
-          projectRoot={session?.project_root ?? projectRoot ?? null}
-          runtime={session?.runtime ?? null}
-          hasTurns={turns.length > 0}
-          onOpenUrl={onOpenUrl}
-        />
         {/* Left turn spine (Chat.dc.html 2a, cave-j86la). One node per turn in
             the transcript's left gutter, derived from the SAME activePath the
             transcript renders. An absolutely-positioned overlay inside the
@@ -8522,6 +8860,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               // quieter ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
+                firstUse={firstUse.payload?.state.version === 2}
+                onPrompt={(text) => { setInput(text); inputRef.current?.focus(); }}
                 sessions={sessions}
                 composer={composerNode}
                 onSaveDefaults={saveNewSessionDefaults}
@@ -8707,6 +9047,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <ChatErrorStrip
           message={error}
           code={debugError?.code}
+          localRefusal={debugError?.localRefusal}
           errorSeq={debugError?.seq ?? 0}
           failingTurn={
             debugError?.turnId ? turns.find((t) => t.id === debugError.turnId) ?? null : null
@@ -8719,15 +9060,58 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenSetup={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
           authFamiliarId={familiar.id}
           harnessId={authRecoveryHarness(debugError?.harness, session?.harness, familiar.harness)}
+          usageLimitModel={debugError?.model ?? null}
+          modelOptions={composerModelOptions}
+          modelInventory={composerModelInventory}
+          onRetryWithModel={
+            lastFailedSend
+              ? (modelId) => retryFailedSend({ modelOverride: modelId, modelOverrideScope: "next-message" })
+              : undefined
+          }
+          onManageUsage={() => {
+            if (onOpenUrl) onOpenUrl(CLAUDE_USAGE_SETTINGS_URL);
+            else window.open(CLAUDE_USAGE_SETTINGS_URL, "_blank", "noopener,noreferrer");
+          }}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
           }
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
           onOpenProjects={
-            projectRootMissing
+            projectsFixNeeded
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
-              : undefined
+              : privateStateProjectRoot
+                ? () => {
+                    const root = privateStateProjectRoot;
+                    // Carry Retry’s original attachments and controls across Projects.
+                    // Preserve the existing text draft unless something newer
+                    // is typed there; attachments belong only to Retry.
+                    const failed = lastFailedSend;
+                    if (failed) {
+                      projectsRetryOwnedRef.current = true;
+                      projectsRetryCarry.save({ familiarId: familiar.id, chatId: retryChatId }, {
+                        failed, message: error, root,
+                        route: { sessionId, familiarId: familiar.id, projectRoot: activeProjectRoot, composerDraftKey, composeId: retryChatId, runtimeHost },
+                      });
+                    }
+                    if (failed && !failed.promptOverride && failed.text.trim() && !input.trim()) {
+                      setInput(failed.text);
+                      writeComposerDraft(scopedDraftKey, failed.text);
+                    }
+                    // Latches cover a Projects tab that hasn't mounted yet.
+                    // This chat's familiar goes along: a split or side chat
+                    // can belong to a different one from the sidebar's.
+                    markProjectsTabPending();
+                    markProjectFocusPending(root, familiar.id);
+                    // A side chat sits beside Home or Tasks, where nothing is
+                    // listening for the Projects tab. Go to Chat first.
+                    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+                    window.setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+                      window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root, familiarId: familiar.id } }));
+                    }, 0);
+                  }
+                : undefined
           }
           pickProjectOptions={
             projectRootRequired
@@ -8749,10 +9133,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : undefined
           }
           onDismiss={() => {
+            projectsRetryCarry.drop();
+            setLastFailedSend(null);
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
-            setProjectRootMissing(false);
+            setProjectsFixNeeded(false);
+            setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
             setEarlierRunId(null);
@@ -8857,6 +9244,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       </Modal>
     </section>
+    </UiBlockHostContext.Provider>
   );
 });
 
@@ -9558,9 +9946,6 @@ function TurnRowImpl({
           <div className="cave-linear-turn-right">
             <div className="cave-linear-turn-meta cave-linear-turn-meta--identity">
               <span className="cave-linear-turn-name">{turn.role === "user" ? operatorDisplayName : "System"}</span>
-              {turn.role === "user" ? (
-                <span className="cave-linear-turn-badge cave-linear-turn-badge--op">OP</span>
-              ) : null}
               {recency ? (
                 <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
                   {recency}
@@ -9682,7 +10067,7 @@ function TurnRowImpl({
           splitSegmentsForApprove(
             splitSegmentsForImages(
               splitSegmentsForPreviews(
-                splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
+                splitSegmentsForSpecs(splitSegmentsForUiBlocks([{ kind: "text", text: protectedQuestions.text }]), onOpenUrl),
                 onOpenPreview,
                 onOpenUrl,
               ),
@@ -9767,6 +10152,8 @@ function TurnRowImpl({
   const renderReasoning = (block: NonNullable<typeof reasoningBlocks>[number]) => (
     <ReasoningBlock key={block.id} plainText
       reasoning={block.text ?? (block.unavailableReason === "provider-withheld" ? "Provider withheld this summary." : block.phase === "running" && pending ? "Summary in progress." : "Summary unavailable.")}
+      // A placeholder describes a missing summary; its length is not one (#6057).
+      countWords={block.text !== undefined}
       pending={block.phase === "running" && pending}
       label={block.representation === "provider-progress" ? "Provider progress" : block.representation === "application-activity" ? "Activity description" : block.representation === "legacy-unverified" ? "Unverified reasoning text" : "Reasoning summary"}
       source={`${block.observation.producer.harness} · ${block.observation.source === "runtime-report" ? "provider report" : "Cave observation"}`}
@@ -9799,7 +10186,7 @@ function TurnRowImpl({
       ? (
           <div data-main-chat-activity-details={true}>
             {turn.progress?.length ? (
-              <ProgressGroup progress={turn.progress} pending={pending} collapsible />
+              <ProgressGroup progress={turn.progress} pending={pending} />
             ) : null}
             {!timeline && pending
               ? bubbleSegments?.map((segment) =>
@@ -9838,11 +10225,11 @@ function TurnRowImpl({
         const projection = extractChatRenderedText(text, { pending });
         if (pending) {
           const blocks = partitionStreamingMarkdown(projection.visible, { turnId: key, settled: !trailing });
-          return <StreamingMarkdownBlocks {...blocks} live={trailing} />;
+          return <UiBlockStateScope key={key}><StreamingMarkdownBlocks {...blocks} live={trailing} /></UiBlockStateScope>;
         }
-        return richProseSegments(projection.cardText).map((segment, index) => segment.kind === "text"
+        return <UiBlockStateScope key={key}>{richProseSegments(projection.cardText).map((segment, index) => segment.kind === "text"
           ? <ProgressiveMarkdownBlock key={`prose-${index}`} text={segment.text} />
-          : <div key={segment.key} className="my-2">{segment.node}</div>);
+          : <div key={segment.key} className="my-2">{segment.node}</div>)}</UiBlockStateScope>;
       }} />
     {rehydratedResearchBlock?.kind === "block" ? rehydratedResearchBlock.node : null}
   </> : undefined;
@@ -9861,8 +10248,7 @@ function TurnRowImpl({
 
   const supplementaryContent = (
     <div data-main-chat-supplementary-content={true}>
-      <ResponseModelStatus metadata={turn.responseMetadata} />
-      <ResponseControlStatus metadata={turn.responseMetadata} />
+      <ResponseRunDetails metadata={turn.responseMetadata} />
       {/* Agent-produced inline attachments: images render full-bleed
           (e.g. /image generations), audio/video mount as players, and
           everything else stays a file chip that opens the lightbox. */}
@@ -9937,7 +10323,42 @@ function TurnRowImpl({
     </div>
   );
 
+  // One author line per turn (#5954): the name, the time and the hover extras
+  // ride the response's status row ("Cody · Completed in 3:01 · 09:30"), so
+  // the bubble no longer repeats the author under a second header.
+  const authorName = <span className="cave-linear-turn-name">{familiar.display_name}</span>;
+  const authorMeta = (
+    <>
+      {recency ? (
+        <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
+          {recency}
+        </time>
+      ) : null}
+      <span className="cave-linear-turn-meta-extra reveal-on-hover">
+        <span className="cave-linear-turn-crest" aria-hidden="true">
+          <Icon name="ph:sparkle" width={13} height={13} />
+        </span>
+        {familiar.role ? (
+          <span className="cave-linear-turn-badge">{familiar.role}</span>
+        ) : null}
+        <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+        {metaPeek ? (
+          <span
+            className="cave-turn-peek focus-ring"
+            title={metaPeek}
+            tabIndex={0}
+            role="note"
+            aria-label={`Turn details — ${metaPeek}`}
+          >
+            <Icon name="ph:info" width={11} aria-hidden />
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+
   return (
+    <UiBlockStateScope key={turn.id}>
     <div
       data-turn-id={turn.id}
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
@@ -9970,56 +10391,37 @@ function TurnRowImpl({
               crest, role, token usage, and the details peek — collapse into a
               trailing cluster that reveals on turn hover / keyboard focus
               (reveal-scope on the turn content above). Nothing is removed; the
-              default view just reads "Name · 2h ago" like ChatGPT. */}
-          <div className={`cave-linear-turn-meta${turn.pending ? " cave-linear-turn-meta--streaming" : ""}`}>
-            <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus !== "complete" && !indicatorVisible && !turn.pending && (
-              <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
-                {lifecycleLabel(turnStatus)}
-              </span>
-            )}
-            {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
-                bubble action row is hover-revealed (and absent entirely when
-                the turn died with no text), and the lastFailedSend banner only
-                covers transport errors. Same gated callback as Regenerate. */}
-            {turn.error && onRegenerate ? (
-              <button
-                type="button"
-                aria-label="Retry failed turn"
-                title="Retry"
-                onClick={onRegenerate}
-                className="cave-turn-retry"
-              >
-                <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
-                Retry
-              </button>
-            ) : null}
-            {recency ? (
-              <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
-                {recency}
-              </time>
-            ) : null}
-            <span className="cave-linear-turn-meta-extra reveal-on-hover">
-              <span className="cave-linear-turn-crest" aria-hidden="true">
-                <Icon name="ph:sparkle" width={13} height={13} />
-              </span>
-              {familiar.role ? (
-                <span className="cave-linear-turn-badge">{familiar.role}</span>
-              ) : null}
-              <UsageText usage={turn.usage} costUsd={turn.costUsd} />
-              {metaPeek ? (
-                <span
-                  className="cave-turn-peek focus-ring"
-                  title={metaPeek}
-                  tabIndex={0}
-                  role="note"
-                  aria-label={`Turn details — ${metaPeek}`}
-                >
-                  <Icon name="ph:info" width={11} aria-hidden />
+              default view just reads "Name · 2h ago" like ChatGPT. Since #5954
+              the response row carries this line (author · status · time), so
+              this separate row renders only for the empty-success fallback,
+              which has no response row. */}
+          {showEmptySuccessfulFallback ? (
+            <div className={`cave-linear-turn-meta${turn.pending ? " cave-linear-turn-meta--streaming" : ""}`}>
+              {authorName}
+              {turnStatus !== "complete" && !indicatorVisible && !turn.pending && (
+                <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
+                  {lifecycleLabel(turnStatus)}
                 </span>
+              )}
+              {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
+                  bubble action row is hover-revealed (and absent entirely when
+                  the turn died with no text), and the lastFailedSend banner only
+                  covers transport errors. Same gated callback as Regenerate. */}
+              {turn.error && onRegenerate ? (
+                <button
+                  type="button"
+                  aria-label="Retry failed turn"
+                  title="Retry"
+                  onClick={onRegenerate}
+                  className="cave-turn-retry"
+                >
+                  <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+                  Retry
+                </button>
               ) : null}
-            </span>
-          </div>
+              {authorMeta}
+            </div>
+          ) : null}
 
           <div className="cave-linear-turn-body">
             {/* `cave-artifact-content` keeps artifact selection scoped to this
@@ -10051,6 +10453,8 @@ function TurnRowImpl({
                     <StreamingTurnResponse
                       turnId={turn.id}
                       familiarName={familiar.display_name}
+                      author={{ name: authorName, meta: authorMeta }}
+                      copyReveal="hover"
                       model={streamingModel}
                       density="full"
                       announceLifecycle={announceLifecycle}
@@ -10061,7 +10465,8 @@ function TurnRowImpl({
                       onRetry={turn.error ? onRegenerate : undefined}
                       onCopyCompleted={
                         streamingModel.committedText
-                          ? () => copyText(streamingModel.committedText)
+                          // coven:ui blocks copy as their readable lines (#6060).
+                          ? () => copyText(projectUiBlocksToReadable(streamingModel.committedText, { streaming: pending }))
                           : undefined
                       }
                       proseContent={proseContent}
@@ -10087,10 +10492,11 @@ function TurnRowImpl({
         </div>
       </div>
     </div>
+    </UiBlockStateScope>
   );
 }
 
-function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning summary", source, plainText }: { reasoning: string; durationMs?: number; pending: boolean; label?: string; source?: string; plainText?: boolean }) {
+function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning summary", source, plainText, countWords = true }: { reasoning: string; durationMs?: number; pending: boolean; label?: string; source?: string; plainText?: boolean; countWords?: boolean }) {
   const wordCount = useMemo(
     () => reasoning.split(/\s+/).filter(Boolean).length,
     [reasoning],
@@ -10101,11 +10507,13 @@ function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning sum
           <Icon name="ph:brain" width={12} aria-hidden />
           {label}
         </span>
-        <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {typeof durationMs === "number" && durationMs > 0
-            ? `Worked for ${fmtDuration(durationMs)}`
-            : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
-        </span>
+        {(typeof durationMs === "number" && durationMs > 0) || countWords ? (
+          <span className="cave-tool-summary__meta">
+            {typeof durationMs === "number" && durationMs > 0
+              ? `Worked for ${fmtDuration(durationMs)}`
+              : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
+          </span>
+        ) : null}
     </>}>
       <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         {source ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{source}</p> : null}
@@ -10124,155 +10532,79 @@ function currentProgress(progress: ProgressEvent[]): ProgressEvent | undefined {
   );
 }
 
-/**
- * The step list for a run, with a bar instead of a second set of counts.
- *
- * Inside RunActivityStrip this used to be a <details> nested in the strip's OWN
- * expanded panel — a disclosure reachable only by opening a disclosure — whose
- * summary re-rendered the exact chips ("2 running", "4 done") already showing
- * one row above it, under a shouted "PROGRESS" label that named the card rather
- * than saying anything about the run.
- *
- * A bar and "3 of 4" carry the same fact in one line, and carry it better:
- * counts make you do the division, a bar does not. The counts are not lost —
- * they are still one row up, where they were first.
- *
- * `collapsible` is why this is a prop rather than one shape. The card renders in
- * TWO places, and they are not the same situation: in the strip the reader has
- * already opened a panel to ask for it, so a second disclosure is pure friction;
- * in the transcript nobody asked, and expanding every assistant turn's full step
- * list by default buries the reply it belongs to. So the transcript keeps a
- * disclosure — it just gets the bar in its summary instead of duplicate chips.
- */
-function ProgressGroup({
-  progress,
-  pending,
-  collapsible = false,
-}: {
+/** Activity is already behind the turn or run-strip disclosure. Keep this
+ * inner timeline flat; individual diagnostics open only when requested. */
+function ProgressGroup({ progress, pending }: {
   progress: ProgressEvent[];
-  /** Whether the run is still in flight; drives the disclosure's default state. */
   pending: boolean;
-  /** Render as a <details>. True in the transcript, false inside the strip. */
-  collapsible?: boolean;
 }) {
   const settled = progress.filter((event) => event.status !== "running").length;
   const total = progress.length;
   const current = currentProgress(progress);
-  // Deliberately NOT "total when settled". A finished run can still carry a
-  // step marked running — the stream ends without a final event for it — and
-  // reporting "4 of 4" beside a row that is visibly still spinning is the exact
-  // self-contradiction this card is being repaired for. Counting what actually
-  // settled says "3 of 4", which is both honest and the more useful fact: the
-  // run ended without finishing that step.
+  const errors = progress.some((event) => event.status === "error");
+  const notices = progress.filter((event) => event.status === "notice").length;
   const percent = total > 0 ? Math.round((settled / total) * 100) : 0;
-  const label = current?.label ?? (pending ? "Working…" : "Steps");
-
-  const head = (
-    /* Utilities, not new classes: this card is reachable from the startup
-       graph, so a bespoke selector here is paid for by every route, and the
-       home CSS budget sits near zero headroom. The count reuses the
-       .cave-tool-count chip the strip above already ships. */
-    <>
-      <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]" title={label}>
-        {label}
-      </span>
-      <span className="cave-tool-count shrink-0 tabular-nums">
-        {settled} of {total}
-      </span>
-    </>
-  );
-
-  const bar = (
-    /* The bar restates the count for scanning, so it is aria-hidden: the
-       numbers beside it are the accessible version, and announcing both would
-       read the same fact twice — the failure this card is being repaired for. */
-    <span className="cave-progress-bar" aria-hidden>
-      {/* The 2% floor keeps a just-started run's fill visible instead of
-          collapsing it to an invisible sliver — but it applies only once
-          something HAS settled. Clamping unconditionally drew a bar at
-          "0 of 4", the card asserting progress that had not happened: the
-          same self-contradiction this rebuild removed from the counts,
-          reintroduced in the graphic beside them. */}
-      <span
-        className="cave-progress-bar__fill"
-        style={{ width: percent > 0 ? `${Math.max(2, percent)}%` : "0%" }}
-      />
-    </span>
-  );
-
-  const list = (
-    <div className="cave-progress-list">
-      {progress.map((event) => (
-        <ProgressRow key={event.id} event={event} />
-      ))}
-    </div>
-  );
-
-  if (!collapsible) {
-    return (
-      <div className="cave-progress-group mt-3">
-        <div className="flex min-w-0 items-baseline gap-2">{head}</div>
-        {bar}
-        {list}
-      </div>
-    );
-  }
+  const label = errors ? "Activity needs attention" : pending ? "Activity in progress" : "Run activity";
 
   return (
-    <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
-      <summary className="cave-tool-summary">
-        <span className="flex min-w-0 flex-1 items-baseline gap-2 normal-case tracking-normal">{head}</span>
-      </summary>
-      {bar}
-      {list}
-    </details>
+    <section className="cave-progress-group" aria-label={label} data-pending={pending || undefined}>
+      <div className="cave-progress-head">
+        <span className="cave-progress-heading">{label}</span>
+        <span className="cave-progress-count">{settled} of {total} settled</span>
+      </div>
+      {pending && current?.status === "running" ? <p className="cave-progress-current">{current.label}</p> : null}
+      {notices > 0 ? <p className="cave-progress-notices">{notices} {notices === 1 ? "notice" : "notices"} recorded</p> : null}
+      {pending ? (
+        <span className="cave-progress-bar" aria-hidden>
+          <span className="cave-progress-bar__fill" style={{ width: `${percent}%` }} />
+        </span>
+      ) : null}
+      <ol className="cave-progress-list" role="list">
+        {progress.map((event) => <ProgressRow key={event.id} event={event} pending={pending} />)}
+      </ol>
+    </section>
   );
 }
 
-// A single progress step. Its `detail` (often a long file path or tool call)
-// truncates inline; clicking it expands a full, wrapped, selectable panel below
-// the row so the cut-off text can actually be read on desktop and touch alike.
-// `title` keeps a hover tooltip as a fallback.
-function ProgressRow({ event }: { event: ProgressEvent }) {
-  const [open, setOpen] = useState(false);
-  const statusIcon =
-    event.status === "error"
-      ? "ph:warning-circle"
-      : event.status === "notice"
-        ? "ph:info"
-      : event.status === "done"
-        ? "ph:check-circle"
-        : "ph:circle-dashed";
+function ProgressRow({ event, pending }: { event: ProgressEvent; pending: boolean }) {
+  const statusIcon = event.status === "error" ? "ph:warning-circle"
+    : event.status === "notice" ? "ph:info"
+    : event.status === "done" ? "ph:check-circle" : "ph:circle-dashed";
+  const statusLabel = event.status === "error" ? "Error"
+    : event.status === "notice" ? "Notice"
+    : event.status === "done" ? "Complete" : pending ? "Running" : "Unfinished";
+  // Older runtime diagnostics use their whole explanation as the label. Keep
+  // that evidence intact and reachable, while giving the row a useful title.
+  const compatibilityNotice = event.status === "notice" && /compatibility/.test(event.id);
+  const longLabel = event.label.length > 120 || event.label.includes("\n");
+  const label = compatibilityNotice ? "Runtime compatibility notice"
+    : longLabel ? `${statusLabel} details` : event.label;
+  const detail = label !== event.label
+    ? [event.label, event.detail].filter(Boolean).join("\n\n") : event.detail;
+  const row = (
+    <>
+      <Icon name={statusIcon} width={14} aria-hidden />
+      <span className="cave-progress-label"><span className="sr-only">{statusLabel}: </span>{label}</span>
+      <span className="cave-progress-meta"><DurationText durationMs={event.durationMs} /></span>
+      {detail ? <Icon name="ph:caret-down" width={12} className="cave-progress-caret" aria-hidden /> : null}
+    </>
+  );
+  const rowClass = `cave-progress-row cave-progress-row--${event.status}`;
   return (
-    <div>
-      <div className={`cave-progress-row cave-progress-row--${event.status}`}>
-        <Icon name={statusIcon} width={12} aria-hidden />
-        <span className="min-w-0 flex-1 truncate" title={event.label}>{event.label}</span>
-        {event.detail ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            title={open ? "Hide detail" : event.detail}
-            className="focus-ring inline-flex min-w-0 max-w-[18rem] items-center gap-1 truncate rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-          >
-            <span className="truncate">{event.detail}</span>
-            <Icon
-              name="ph:caret-down"
-              width={9}
-              className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-              aria-hidden
-            />
-          </button>
-        ) : null}
-        <DurationText durationMs={event.durationMs} />
-      </div>
-      {open && event.detail ? (
-        <div className="mt-1 ml-5 whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-2 py-1 font-mono text-[length:var(--text-2xs)] leading-relaxed text-[var(--text-secondary)]">
-          {event.detail}
-        </div>
-      ) : null}
-    </div>
+    <li className="cave-progress-step" data-running={pending && event.status === "running" || undefined}>
+      {detail ? (
+        <details className="cave-progress-disclosure" onKeyDown={(keyEvent) => {
+          if (keyEvent.key !== "Escape" || !keyEvent.currentTarget.open) return;
+          keyEvent.preventDefault();
+          keyEvent.stopPropagation();
+          keyEvent.currentTarget.open = false;
+          keyEvent.currentTarget.querySelector("summary")?.focus();
+        }}>
+          <summary className={`${rowClass} focus-ring`}>{row}</summary>
+          <div className="cave-progress-detail">{detail}</div>
+        </details>
+      ) : <div className={rowClass}>{row}</div>}
+    </li>
   );
 }
 
@@ -10280,11 +10612,13 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
  *  readers get, plus the running/error counts that otherwise live only in a
  *  tinted (color-only) chip — so a screen reader hears "3 running" and
  *  "1 error" exactly like the eye sees them. */
-function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0): string {
+function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0, rejected = 0, cancelled = 0): string {
   return [
     summary ? `Tool activity: ${summary}` : "",
     requested ? `${requested} requested` : "",
     unknown ? `${unknown} outcome unknown` : "",
+    rejected ? `${rejected} rejected` : "",
+    cancelled ? `${cancelled} cancelled` : "",
     running ? `${running} running` : "",
     errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
   ]
@@ -10302,11 +10636,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // The per-tool rows mount on the group's first open (#5572): a collapsed
   // group otherwise builds every tool card of the turn up front.
   const [runsMounted, setRunsMounted] = useState(false);
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
   // The turn's own compact activity summary — count + distinct categories,
   // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
   // counters beside it, so trouble never reads as neutral mono.
@@ -10361,16 +10691,17 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         <summary
           className="cave-tool-summary focus-ring"
           aria-expanded={open}
-          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown)}
+          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown, rejected, cancelled)}
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-work-line__label">{summary}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
+          <span className="cave-tool-summary__meta cave-work-line__status">
             {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
             {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </summary>
         {runsMounted ? (
@@ -10440,29 +10771,26 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
 
   return (
     <ChatToolRunDisclosure
       repeated={repeated}
       statuses={tools.map((tool) => tool.status)}
       category={visual.category}
-      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${cancelled ? `, ${cancelled} cancelled` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
       summary={
         <>
           <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-tool-run__name">{displayName}</span>
           <span className="cave-tool-count">×{tools.length}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
+          <span className="cave-tool-summary__meta cave-tool-run__status">
             {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
             {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </>
       }
@@ -10685,14 +11013,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
               <span className="cave-edit-card__del">−{stat.deletions}</span>
             </span>
           </span>
-          <span className={[
-            "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
-            tool.status === "error"
-              ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
-              : isToolActive(tool.status)
-                ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-                : tool.status === "ok" ? "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]" : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-          ].join(" ")}>
+          <span className="cave-tool-status" data-status={toolStatusTone(tool.status)}>
             {toolStatusLabel(tool.status)}
           </span>
           <DurationText durationMs={tool.durationMs} />
@@ -10718,7 +11039,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
+      <summary className="cave-tool-summary cave-tool-block__summary focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
@@ -10736,17 +11057,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
           )
         ) : null}
-        <span className={[
-          "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
-          tool.status === "error"
-            ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
-            : isToolActive(tool.status)
-              ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-              : tool.status === "ok" ? "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]" : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-        ].join(" ")}>
-          {toolStatusLabel(tool.status)}
+        <span className="cave-tool-summary__meta">
+          <span className="cave-tool-status" data-status={toolStatusTone(tool.status)}>
+            {toolStatusLabel(tool.status)}
+          </span>
+          <DurationText durationMs={tool.durationMs} />
         </span>
-        <DurationText durationMs={tool.durationMs} />
       </summary>
       {bodyMounted ? provenance : null}
       {bodyMounted && tool.input ? (
@@ -10864,23 +11180,29 @@ const TurnRow = memo(TurnRowImpl, areTurnRowPropsEqual);
 
 
 /**
- * Persistent run-activity strip (pinned above the transcript). Surfaces what the
- * agent is doing *now* — the running tool (with its arg summary) or current
+ * Run-activity summary on the chat title row (#5953). Surfaces what the agent
+ * is doing *now* — the running tool (with its arg summary) or current
  * plan/todo step, plus running/done/issue counts — and, unlike the inline
  * per-turn ProgressGroup (hidden after settle, CHAT-D13-01), keeps a compact,
- * dismissible "last run" summary after the turn settles. Click to expand the
- * full ProgressGroup + tool list. Reads live turn data directly, so it works for
- * both segmented and legacy turns.
+ * dismissible "last run" summary after the turn settles. It used to be its own
+ * band above the transcript; it is now a chip whose details (the full running
+ * tool, any unverified runtime identity, the ProgressGroup and tool list) open
+ * in an anchored popover. Reads live turn data directly, so it works for both
+ * segmented and legacy turns.
  */
 function RunActivityStrip({
   activeTurn,
   lastTurn,
+  identityGaps = [],
 }: {
   activeTurn: Turn | undefined;
   lastTurn: Turn | undefined;
+  /** What the last run's runtime did not report about itself (#5953). */
+  identityGaps?: string[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelId = useId();
   const live = !!activeTurn;
   const turn = activeTurn ?? lastTurn;
@@ -10891,22 +11213,15 @@ function RunActivityStrip({
   const progress = turn.progress ?? [];
   if (tools.length === 0 && progress.length === 0) return null;
 
-  const runningTool = [...tools].reverse().find((t) => t.status === "running");
+  const toolCounts = toolStatusCounts(tools.map((t) => t.status));
+  const runningTool = [...tools].reverse().find((t) => toolStatusCounts([t.status]).running);
   const runningToolDetail = live && runningTool ? toolArgDetail(runningTool.name, runningTool.input) : "";
   const step = currentProgress(progress);
-  const running =
-    tools.filter((t) => t.status === "running").length +
-    progress.filter((p) => p.status === "running").length;
-  const issues =
-    tools.filter((t) => t.status === "error").length +
-    progress.filter((p) => p.status === "error").length;
-  const requested = tools.filter((t) => t.status === "requested").length;
-  const unknown = tools.filter((t) => t.status === "unknown").length;
-  const rejected = tools.filter((t) => t.status === "rejected").length;
+  const running = toolCounts.running + progress.filter((p) => p.status === "running").length;
+  const issues = toolCounts.error + progress.filter((p) => p.status === "error").length;
+  const { requested, unknown, rejected, cancelled } = toolCounts;
   const notices = progress.filter((p) => p.status === "notice").length;
-  const done =
-    tools.filter((t) => t.status === "ok").length +
-    progress.filter((p) => p.status === "done").length;
+  const done = toolCounts.ok + progress.filter((p) => p.status === "done").length;
 
   let headline: string;
   if (live && runningTool) {
@@ -10915,59 +11230,78 @@ function RunActivityStrip({
   } else if (live) {
     headline = step?.label ?? "Working…";
   } else {
-    headline = step?.label ?? "Last run";
+    headline = issues ? "Last run needs attention" : "Last run";
   }
 
+  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected || cancelled ? "is-notice" : "is-ok";
   return (
-    <div className="cave-run-activity shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[length:var(--text-xs)]">
-      <div className="flex items-center gap-2">
+    <div className={`cave-run-activity ${tint}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="cave-run-activity__trigger focus-ring"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        aria-haspopup="dialog"
+        aria-label={live ? "Agent activity (running)" : "Last run summary"}
+        title={live && runningTool && runningToolDetail ? `${runningTool.name}(${runningToolDetail})` : headline}
+      >
+        <Icon
+          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected || cancelled ? "ph:info" : "ph:check-circle"}
+          width={13}
+          className={`cave-run-activity__icon${live ? " animate-spin" : ""}`}
+          aria-hidden
+        />
+        {/* A clean settled run is just its icon and counts on the title row;
+            the trigger's name and tooltip still say "Last run". */}
+        {live || issues ? <span className="cave-run-activity__headline">{headline}</span> : null}
+        <span className="cave-run-activity__counts">
+          {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
+          {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
+          {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
+          {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
+          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
+          {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
+          {done ? <span className="cave-tool-count">{done} done</span> : null}
+        </span>
+        <Icon name={expanded ? "ph:caret-up" : "ph:caret-down"} width={11} className="cave-run-activity__caret" aria-hidden />
+      </button>
+      {!live ? (
         <button
           type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          aria-expanded={expanded}
-          aria-controls={panelId}
-          aria-label={live ? "Agent activity (running)" : "Last run summary"}
+          onClick={() => setDismissedId(turn.id)}
+          className="cave-run-activity__dismiss focus-ring"
+          aria-label="Dismiss last run summary"
         >
-          <Icon
-            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected ? "ph:info" : "ph:check-circle"}
-            width={13}
-            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : notices || unknown || rejected ? "text-[var(--text-secondary)]" : "text-[var(--color-success)]"}`}
-            aria-hidden
-          />
-          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{headline}</span>
-          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-            {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
-            {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
-            {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
-            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-            {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
-            {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
-            {done ? <span className="cave-tool-count">{done} done</span> : null}
-          </span>
-          <Icon name={expanded ? "ph:caret-up" : "ph:caret-down"} width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <Icon name="ph:x" width={11} aria-hidden />
         </button>
-        {!live ? (
-          <button
-            type="button"
-            onClick={() => setDismissedId(turn.id)}
-            className="shrink-0 rounded p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
-            aria-label="Dismiss last run summary"
-          >
-            <Icon name="ph:x" width={11} aria-hidden />
-          </button>
-        ) : null}
-      </div>
-      {expanded ? (
-        <div id={panelId} className="mt-1.5">
-          {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
-          {tools.length ? <ToolGroup tools={tools} /> : null}
-        </div>
-      ) : live && runningTool && runningToolDetail ? (
-        <div className="cave-run-activity-context" title={`${runningTool.name}(${runningToolDetail})`}>
-          <span className="cave-run-activity-context__tool">{runningTool.name}</span>({runningToolDetail})
-        </div>
       ) : null}
+      <Popover
+        open={expanded}
+        onOpenChange={setExpanded}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={360}
+        className="cave-run-activity-popover"
+        ariaLabel={live ? "Agent activity" : "Last run details"}
+      >
+        <PopoverBody>
+          <div id={panelId} className="cave-run-activity-panel">
+            {live && runningTool && runningToolDetail ? (
+              <div className="cave-run-activity-context" title={`${runningTool.name}(${runningToolDetail})`}>
+                <span className="cave-run-activity-context__tool">{runningTool.name}</span>({runningToolDetail})
+              </div>
+            ) : null}
+            {!live && identityGaps.length ? (
+              <div className="cave-run-activity-identity">Runtime unverified: {identityGaps.join(" · ")}</div>
+            ) : null}
+            {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
+            {tools.length ? <ToolGroup tools={tools} /> : null}
+          </div>
+        </PopoverBody>
+      </Popover>
     </div>
   );
 }

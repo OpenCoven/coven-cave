@@ -7,7 +7,10 @@
 
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use std::{
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicU8, AtomicUsize, Ordering},
+        mpsc, Arc,
+    },
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -45,9 +48,31 @@ const ASSET_PATH: &str = "assets/brand/cave-icon.png";
 /// would need a new dependency to do in a `const`. The test below asserts the
 /// literal still agrees with both halves, so they cannot drift apart.
 const ASSET_URL: &str = "https://raw.githubusercontent.com/OpenCoven/coven-cave/19db1c670ffa374d3a25cca014a8e184c0e54c5e/assets/brand/cave-icon.png";
-const RETRY_DELAY: Duration = Duration::from_secs(15);
-const REFRESH_DELAY: Duration = Duration::from_secs(60);
-const DISCORD_IPC_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How the presence worker paces itself. Tests use the same worker with much
+/// shorter waits.
+#[derive(Clone, Copy, Debug)]
+struct WorkerTiming {
+    /// Longest one IPC call (connect, or publish and its reply) may block.
+    ipc_timeout: Duration,
+    /// Wait before reconnecting after Discord is closed or drops the socket.
+    retry_delay: Duration,
+    /// Ceiling for the backoff that grows after each timed-out call.
+    max_retry_delay: Duration,
+    /// How often a connected worker refreshes the activity.
+    refresh_delay: Duration,
+    /// Abandoned operation threads allowed to be blocked at once before the
+    /// worker waits instead of trying again.
+    max_stranded: usize,
+}
+
+const PRODUCTION_TIMING: WorkerTiming = WorkerTiming {
+    ipc_timeout: Duration::from_secs(5),
+    retry_delay: Duration::from_secs(15),
+    max_retry_delay: Duration::from_secs(300),
+    refresh_delay: Duration::from_secs(60),
+    max_stranded: 2,
+};
 
 fn unix_now() -> i64 {
     SystemTime::now()
@@ -99,19 +124,44 @@ fn publish_activity(client: &mut impl DiscordIpc, started_at: i64) -> Result<(),
 }
 
 /// Run one IPC operation on a disposable thread so a blocking Unix socket or
-/// Windows named pipe cannot strand the presence worker. A timed-out
-/// operation's thread is intentionally detached; the caller must stop after a
-/// timeout rather than retrying and accumulating one blocked thread per retry.
-fn run_bounded_operation<T, F>(timeout: Duration, operation: F) -> Result<T, String>
+/// Windows named pipe cannot strand the presence worker.
+///
+/// Discord's IPC API does not expose its socket, so a blocked read cannot be
+/// cancelled. On timeout the operation thread is abandoned and counted in
+/// `stranded`; it releases that count itself when the blocked call finally
+/// returns, which happens once Discord closes the socket. The worker uses the
+/// count to stop trying while too many abandoned threads are still blocked,
+/// instead of giving up on presence for the rest of the session (#6021).
+fn run_bounded_operation<T, F>(
+    timeout: Duration,
+    stranded: &Arc<AtomicUsize>,
+    operation: F,
+) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
+    const RUNNING: u8 = 0;
+    const FINISHED: u8 = 1;
+    const ABANDONED: u8 = 2;
+
+    let state = Arc::new(AtomicU8::new(RUNNING));
+    let thread_state = Arc::clone(&state);
+    let thread_stranded = Arc::clone(stranded);
     let (sender, receiver) = mpsc::sync_channel(1);
     let operation_thread = thread::Builder::new()
         .name("discord-rich-presence-operation".into())
         .spawn(move || {
-            let _ = sender.send(operation());
+            let result = operation();
+            if thread_state
+                .compare_exchange(RUNNING, FINISHED, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                // The caller gave up on this call; give its slot back.
+                thread_stranded.fetch_sub(1, Ordering::SeqCst);
+                return;
+            }
+            let _ = sender.send(result);
         })
         .map_err(|error| format!("could not start Discord IPC operation: {error}"))?;
 
@@ -121,14 +171,26 @@ where
             Ok(result)
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            // Discord's IPC API does not expose the underlying socket, so the
-            // blocked read cannot be cancelled from this thread. Do not join
-            // it or start another operation after this timeout.
-            drop(operation_thread);
-            Err(format!(
-                "Discord IPC operation timed out after {}s",
-                timeout.as_secs_f32()
-            ))
+            // Count before abandoning, so the thread's release can never run
+            // ahead of the claim and wrap the counter.
+            stranded.fetch_add(1, Ordering::SeqCst);
+            if state
+                .compare_exchange(RUNNING, ABANDONED, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                drop(operation_thread);
+                return Err(format!(
+                    "Discord IPC operation timed out after {}s",
+                    timeout.as_secs_f32()
+                ));
+            }
+            // It finished in the instant after the timeout: keep its result.
+            stranded.fetch_sub(1, Ordering::SeqCst);
+            let result = receiver
+                .recv()
+                .map_err(|_| "Discord IPC operation stopped unexpectedly".to_string());
+            let _ = operation_thread.join();
+            result
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             let _ = operation_thread.join();
@@ -137,18 +199,119 @@ where
     }
 }
 
-fn run_bounded_client_operation<F>(
-    client: DiscordIpcClient,
+fn run_bounded_client_operation<C, F>(
+    client: C,
+    timeout: Duration,
+    stranded: &Arc<AtomicUsize>,
     operation: F,
-) -> Result<(DiscordIpcClient, Result<(), String>), String>
+) -> Result<(C, Result<(), String>), String>
 where
-    F: FnOnce(&mut DiscordIpcClient) -> Result<(), String> + Send + 'static,
+    C: DiscordIpc + Send + 'static,
+    F: FnOnce(&mut C) -> Result<(), String> + Send + 'static,
 {
-    run_bounded_operation(DISCORD_IPC_TIMEOUT, move || {
+    run_bounded_operation(timeout, stranded, move || {
         let mut client = client;
         let result = operation(&mut client);
         (client, result)
     })
+}
+
+fn next_backoff(current: Duration, timing: &WorkerTiming) -> Duration {
+    current.saturating_mul(2).min(timing.max_retry_delay)
+}
+
+/// The reconnecting presence loop, generic over the client so tests can drive
+/// it with a fake that blocks like a socket Discord stopped answering.
+///
+/// A timed-out call never ends the loop. It used to: one slow call (a Discord
+/// restart, or a starved machine) logged "stopping blocked IPC worker" and
+/// presence was gone until Cave restarted, leaving only Discord's
+/// process-detected placeholder entry (#6021). Now the worker backs off and
+/// tries again with a fresh client, never the blocked one, and pauses while
+/// `timing.max_stranded` abandoned calls are still blocked.
+fn run_worker<C, N, K>(
+    new_client: N,
+    started_at: i64,
+    timing: &WorkerTiming,
+    stranded: &Arc<AtomicUsize>,
+    keep_running: K,
+) where
+    C: DiscordIpc + Send + 'static,
+    N: Fn() -> C,
+    K: Fn() -> bool,
+{
+    let mut backoff = timing.retry_delay;
+    while keep_running() {
+        if stranded.load(Ordering::SeqCst) >= timing.max_stranded {
+            log::debug!(
+                "[discord-presence] waiting for Discord to release {} blocked calls",
+                stranded.load(Ordering::SeqCst)
+            );
+            thread::sleep(backoff);
+            continue;
+        }
+
+        let mut client = match run_bounded_client_operation(
+            new_client(),
+            timing.ipc_timeout,
+            stranded,
+            |client| client.connect().map_err(|error| error.to_string()),
+        ) {
+            Ok((client, Ok(()))) => client,
+            Ok((_, Err(error))) => {
+                log::debug!("[discord-presence] Discord unavailable: {error}");
+                thread::sleep(timing.retry_delay);
+                continue;
+            }
+            Err(error) => {
+                backoff = next_backoff(backoff, timing);
+                log::warn!(
+                    "[discord-presence] {error}; retrying with a fresh connection in {}s",
+                    backoff.as_secs()
+                );
+                thread::sleep(backoff);
+                continue;
+            }
+        };
+
+        let mut first_publish = true;
+        loop {
+            if !keep_running() {
+                return;
+            }
+            match run_bounded_client_operation(
+                client,
+                timing.ipc_timeout,
+                stranded,
+                move |client| publish_activity(client, started_at),
+            ) {
+                Ok((next_client, Ok(()))) => {
+                    client = next_client;
+                    backoff = timing.retry_delay;
+                    if first_publish {
+                        log::info!("[discord-presence] Coven Cave presence published");
+                        first_publish = false;
+                    }
+                    thread::sleep(timing.refresh_delay);
+                }
+                Ok((_, Err(error))) => {
+                    log::debug!("[discord-presence] connection lost: {error}");
+                    break;
+                }
+                Err(error) => {
+                    // The blocked client went with its abandoned thread.
+                    backoff = next_backoff(backoff, timing);
+                    log::warn!(
+                        "[discord-presence] {error}; retrying with a fresh connection in {}s",
+                        backoff.as_secs()
+                    );
+                    break;
+                }
+            }
+        }
+
+        thread::sleep(backoff);
+    }
 }
 
 /// Starts one reconnecting IPC worker for the local Discord desktop client.
@@ -175,56 +338,14 @@ pub fn start() {
     if let Err(error) = thread::Builder::new()
         .name("discord-rich-presence".into())
         .spawn(move || {
-            let started_at = unix_now();
-            loop {
-                let (mut client, connection) = match run_bounded_client_operation(
-                    DiscordIpcClient::new(application_id),
-                    |client| client.connect().map_err(|error| error.to_string()),
-                ) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        log::warn!("[discord-presence] stopping blocked IPC worker: {error}");
-                        return;
-                    }
-                };
-                if let Err(error) = connection {
-                    log::debug!("[discord-presence] Discord unavailable: {error}");
-                    thread::sleep(RETRY_DELAY);
-                    continue;
-                }
-
-                let mut first_publish = true;
-                loop {
-                    let (next_client, result) =
-                        match run_bounded_client_operation(client, move |client| {
-                            publish_activity(client, started_at)
-                        }) {
-                            Ok(result) => result,
-                            Err(error) => {
-                                log::warn!(
-                                    "[discord-presence] stopping blocked IPC worker: {error}"
-                                );
-                                return;
-                            }
-                        };
-                    client = next_client;
-                    match result {
-                        Ok(()) => {
-                            if first_publish {
-                                log::info!("[discord-presence] Coven Cave presence published");
-                                first_publish = false;
-                            }
-                        }
-                        Err(error) => {
-                            log::debug!("[discord-presence] connection lost: {error}");
-                            break;
-                        }
-                    }
-                    thread::sleep(REFRESH_DELAY);
-                }
-
-                thread::sleep(RETRY_DELAY);
-            }
+            let stranded = Arc::new(AtomicUsize::new(0));
+            run_worker(
+                || DiscordIpcClient::new(application_id),
+                unix_now(),
+                &PRODUCTION_TIMING,
+                &stranded,
+                || true,
+            );
         })
     {
         log::warn!("[discord-presence] could not start worker: {error}");
@@ -234,13 +355,17 @@ pub fn start() {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_activity, publish_activity, run_bounded_operation, ASSET_COMMIT, ASSET_PATH,
-        ASSET_URL, DISPLAY_NAME,
+        build_activity, next_backoff, publish_activity, run_bounded_operation, run_worker,
+        WorkerTiming, ASSET_COMMIT, ASSET_PATH, ASSET_URL, DISPLAY_NAME, PRODUCTION_TIMING,
     };
     use discord_rich_presence::{activity, error::Error, DiscordIpc};
     use serde_json::{json, Value};
     use std::{
         collections::VecDeque,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex,
+        },
         thread,
         time::{Duration, Instant},
     };
@@ -469,8 +594,9 @@ mod tests {
 
     #[test]
     fn bounded_ipc_operation_returns_when_the_operation_stalls() {
+        let stranded = Arc::new(AtomicUsize::new(0));
         let started = Instant::now();
-        let result = run_bounded_operation(Duration::from_millis(25), || {
+        let result = run_bounded_operation(Duration::from_millis(25), &stranded, || {
             thread::sleep(Duration::from_millis(250));
         });
 
@@ -481,5 +607,227 @@ mod tests {
             "bounded IPC operation took {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn an_abandoned_operation_releases_its_slot_when_it_finally_returns() {
+        let stranded = Arc::new(AtomicUsize::new(0));
+        let result = run_bounded_operation(Duration::from_millis(10), &stranded, || {
+            thread::sleep(Duration::from_millis(80));
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            stranded.load(Ordering::SeqCst),
+            1,
+            "the blocked call is counted"
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while stranded.load(Ordering::SeqCst) != 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            stranded.load(Ordering::SeqCst),
+            0,
+            "the slot is released once Discord lets the call return"
+        );
+    }
+
+    #[test]
+    fn a_finished_operation_is_never_counted_as_stranded() {
+        let stranded = Arc::new(AtomicUsize::new(0));
+        let value = run_bounded_operation(Duration::from_millis(200), &stranded, || 7)
+            .expect("a quick operation returns its value");
+        assert_eq!(value, 7);
+        assert_eq!(stranded.load(Ordering::SeqCst), 0);
+    }
+
+    /// What the next fake client should do. Shared with the test so it can see
+    /// how many clients the worker created and how often it published.
+    #[derive(Default)]
+    struct Script {
+        /// Per created client, in order: block `connect` for this long.
+        connect_stalls: VecDeque<Duration>,
+        /// Per created client, in order: block `set_activity` for this long.
+        publish_stalls: VecDeque<Duration>,
+        clients_created: usize,
+        publishes: usize,
+    }
+
+    struct ScriptedClient {
+        script: Arc<Mutex<Script>>,
+        connect_stall: Duration,
+        publish_stall: Duration,
+    }
+
+    impl ScriptedClient {
+        fn create(script: &Arc<Mutex<Script>>) -> Self {
+            let mut guard = script.lock().unwrap();
+            guard.clients_created += 1;
+            let connect_stall = guard.connect_stalls.pop_front().unwrap_or_default();
+            let publish_stall = guard.publish_stalls.pop_front().unwrap_or_default();
+            Self {
+                script: Arc::clone(script),
+                connect_stall,
+                publish_stall,
+            }
+        }
+    }
+
+    impl DiscordIpc for ScriptedClient {
+        fn get_client_id(&self) -> &str {
+            "test-client"
+        }
+
+        fn connect_ipc(&mut self) -> Result<(), Error> {
+            thread::sleep(self.connect_stall);
+            Ok(())
+        }
+
+        fn write(&mut self, _data: &[u8]) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn read(&mut self, _buffer: &mut [u8]) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn send(&mut self, _data: Value, _opcode: u8) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn set_activity(&mut self, _activity_payload: activity::Activity<'_>) -> Result<(), Error> {
+            thread::sleep(self.publish_stall);
+            self.script.lock().unwrap().publishes += 1;
+            Ok(())
+        }
+
+        fn recv(&mut self) -> Result<(u32, Value), Error> {
+            Ok((1, json!({ "evt": null })))
+        }
+
+        fn close(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    const TEST_TIMING: WorkerTiming = WorkerTiming {
+        ipc_timeout: Duration::from_millis(30),
+        retry_delay: Duration::from_millis(5),
+        max_retry_delay: Duration::from_millis(40),
+        refresh_delay: Duration::from_millis(5),
+        max_stranded: 2,
+    };
+
+    /// Run the worker until `done` holds or the deadline passes.
+    fn run_until(
+        script: &Arc<Mutex<Script>>,
+        stranded: &Arc<AtomicUsize>,
+        done: impl Fn(&Script) -> bool,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let factory_script = Arc::clone(script);
+        let check_script = Arc::clone(script);
+        run_worker(
+            move || ScriptedClient::create(&factory_script),
+            1_700_000_000,
+            &TEST_TIMING,
+            stranded,
+            move || !done(&check_script.lock().unwrap()) && Instant::now() < deadline,
+        );
+    }
+
+    #[test]
+    fn a_connect_that_times_out_does_not_end_presence() {
+        // Before #6021 the worker returned here and presence was gone until
+        // Cave restarted. A blocked connect must lead to a fresh, working one.
+        let script = Arc::new(Mutex::new(Script {
+            connect_stalls: VecDeque::from([Duration::from_millis(400)]),
+            ..Script::default()
+        }));
+        let stranded = Arc::new(AtomicUsize::new(0));
+
+        run_until(&script, &stranded, |s| s.publishes >= 1);
+
+        let script = script.lock().unwrap();
+        assert!(
+            script.publishes >= 1,
+            "presence must be published after the timeout"
+        );
+        assert!(script.clients_created >= 2, "the retry uses a fresh client");
+    }
+
+    #[test]
+    fn a_publish_that_hangs_reconnects_with_a_fresh_client() {
+        // Discord recreating its socket leaves the old one unanswered: the
+        // publish blocks, and the worker must come back on a new connection.
+        let script = Arc::new(Mutex::new(Script {
+            publish_stalls: VecDeque::from([Duration::from_millis(400)]),
+            ..Script::default()
+        }));
+        let stranded = Arc::new(AtomicUsize::new(0));
+
+        run_until(&script, &stranded, |s| {
+            s.clients_created >= 2 && s.publishes >= 2
+        });
+
+        let script = script.lock().unwrap();
+        assert!(
+            script.clients_created >= 2,
+            "a fresh client replaces the blocked one"
+        );
+        assert!(script.publishes >= 2, "the fresh client publishes presence");
+    }
+
+    #[test]
+    fn blocked_calls_never_pile_up_past_the_cap() {
+        // Every connect blocks far longer than the test runs. The worker must
+        // stop creating clients once `max_stranded` calls are blocked, rather
+        // than leaking one thread per retry.
+        let script = Arc::new(Mutex::new(Script {
+            connect_stalls: VecDeque::from(vec![Duration::from_secs(5); 16]),
+            ..Script::default()
+        }));
+        let stranded = Arc::new(AtomicUsize::new(0));
+        let deadline = Instant::now() + Duration::from_millis(400);
+        let factory_script = Arc::clone(&script);
+        let peak = Arc::new(AtomicUsize::new(0));
+        let peak_probe = Arc::clone(&peak);
+        let stranded_probe = Arc::clone(&stranded);
+        run_worker(
+            move || ScriptedClient::create(&factory_script),
+            1_700_000_000,
+            &TEST_TIMING,
+            &stranded,
+            move || {
+                peak_probe.fetch_max(stranded_probe.load(Ordering::SeqCst), Ordering::SeqCst);
+                Instant::now() < deadline
+            },
+        );
+
+        assert!(
+            peak.load(Ordering::SeqCst) <= TEST_TIMING.max_stranded,
+            "at most {} blocked calls, saw {}",
+            TEST_TIMING.max_stranded,
+            peak.load(Ordering::SeqCst)
+        );
+        assert!(
+            script.lock().unwrap().clients_created <= TEST_TIMING.max_stranded,
+            "no new client while the cap of blocked calls is reached"
+        );
+    }
+
+    #[test]
+    fn backoff_doubles_to_a_ceiling_and_production_keeps_a_bounded_cap() {
+        assert_eq!(
+            next_backoff(Duration::from_secs(15), &PRODUCTION_TIMING),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            next_backoff(Duration::from_secs(200), &PRODUCTION_TIMING),
+            PRODUCTION_TIMING.max_retry_delay
+        );
+        assert_eq!(PRODUCTION_TIMING.ipc_timeout, Duration::from_secs(5));
+        assert!(PRODUCTION_TIMING.max_stranded >= 1 && PRODUCTION_TIMING.max_stranded <= 4);
     }
 }

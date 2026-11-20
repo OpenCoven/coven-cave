@@ -1,6 +1,10 @@
 export const PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE =
   "PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE";
 
+/** No Touch ID prompt can appear on this device, so folder pins cannot change here. */
+export const PROJECT_FOLDER_AUTHENTICATION_UNAVAILABLE_CODE =
+  "project_folder_authentication_unavailable";
+
 export const PROJECT_ROOT_WORKSPACE_HELP =
   "Project folders can live anywhere on this computer — any folder works except your home folder itself or the top of a drive.";
 

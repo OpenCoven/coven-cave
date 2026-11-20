@@ -443,7 +443,7 @@ test("listSubdirs is the single place the hiding default lives", () => {
   // folders must not smuggle node_modules back into the picker.
   assert.match(
     src,
-    /\.filter\(\(d\) => d\.isDirectory\(\) && !SKIP\.has\(d\.name\)\)/,
+    /\.filter\(\(d\) => isBrowsableDirectoryEntry\(dir, d\) && !SKIP\.has\(d\.name\)\)/,
     "build-noise filtering stays unconditional",
   );
 });

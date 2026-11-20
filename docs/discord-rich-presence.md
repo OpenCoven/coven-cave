@@ -116,7 +116,36 @@ action; Discord's equivalent is the Spectate flow, which needs `Secrets` and a
 worker implements.
 
 The worker retries while Discord is closed and reconnects after Discord
-restarts. The native app icon and Discord art asset are managed separately.
+restarts. Every IPC call runs under a 5-second timeout. A call that times out
+(a Discord restart can leave the old socket unanswered, and a starved machine
+can miss the budget) does **not** end the worker: it backs off, doubling from
+15 seconds to a 5-minute ceiling, and reconnects with a fresh client, never the
+blocked one. The backoff resets after a successful publish. The abandoned call's
+thread stays blocked until Discord closes that socket, so the worker waits
+rather than retries while two such calls are outstanding, which bounds the
+leak. Before #6021 one timed-out call stopped presence until Cave restarted.
+
+The native app icon and Discord art asset are managed separately.
+
+### "CovenCave" with a "?" and a game timer
+
+That entry is **not** this card. It is Discord's own process-detected activity
+for the `CovenCave` executable (see below), shown when Rich Presence is not
+connected. It always has a placeholder icon. Check the connection directly:
+
+```bash
+cave=$(pgrep -f '/CovenCave.app/Contents/MacOS/app$')
+peers=$(lsof -nP -a -U -p "$cave" | awk 'NR > 1 { sub(/^->/, "", $NF); print $NF }')
+lsof -nP -U | awk '/discord-ipc/ { print $6 }' | grep -F -x -f <(printf '%s\n' "$peers")
+```
+
+On macOS, the connecting side of a Unix socket shows only its peer's address
+(`->0x…`), never the path, so `lsof -p <cave> | grep discord-ipc` finds
+nothing even while Cave is connected. The check above matches Cave's peer
+addresses against Discord's `discord-ipc-*` sockets instead. A printed address
+means Cave is connected; no output means it isn't. On a build with the #6021
+recovery (v0.5.14 or later), Cave reconnects within its backoff. An older
+build stays disconnected until Cave is quit and reopened.
 
 ## What Rich Presence does not control
 

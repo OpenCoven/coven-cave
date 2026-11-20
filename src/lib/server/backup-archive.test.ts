@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.join(process.cwd(), "artifacts", "backup-archive-test");
@@ -14,6 +14,9 @@ await mkdir(path.join(sourceHome, "cave", "conversations"), { recursive: true })
 await mkdir(path.join(sourceHome, "journal"), { recursive: true });
 await mkdir(path.join(sourceHome, "workspaces", "repo"), { recursive: true });
 await writeFile(path.join(sourceHome, "cave", "config.json"), JSON.stringify({ multiHost: { mode: "local" } }));
+// Retirement must preserve even unparseable legacy pathfinder data byte-for-byte.
+const legacySalemBytes = Buffer.from("7b226c6567616379223aff000d0a7d", "hex");
+await writeFile(path.join(sourceHome, "cave", "salem-pathfinder.json"), legacySalemBytes);
 await writeFile(path.join(sourceHome, "cave", "conversations", "chat-1.json"), JSON.stringify({ sessionId: "chat-1", text: "private chat" }));
 await writeFile(path.join(sourceHome, "journal", "entry.md"), "# Journal\n");
 await writeFile(path.join(sourceHome, "cave", "local-vault.key"), `${Buffer.alloc(32, 7).toString("base64")}\n`);
@@ -38,6 +41,8 @@ const {
 
 const passphrase = "correct horse battery staple";
 const { archive, manifest } = await buildBackupArchive(passphrase);
+assert.ok(manifest.entries.some((entry) => entry.path === "salem-pathfinder.json"), "retired Salem data remains in encrypted backup");
+assert.deepEqual(await readFile(path.join(sourceHome, "cave", "salem-pathfinder.json")), legacySalemBytes, "backup never rewrites legacy Salem bytes");
 const archiveText = archive.toString("utf8");
 assert.equal(archiveText.includes("SECRET_SHOULD_NOT_APPEAR"), false, "plaintext .env secret is encrypted inside the envelope");
 assert.equal(archiveText.includes(Buffer.alloc(32, 7).toString("base64")), false, "vault key is not plaintext in the archive");
@@ -150,6 +155,7 @@ await restoreBackupArchive(archive, passphrase, {
   },
 });
 assert.equal(recoveryCalls, 1);
+assert.deepEqual(await readFile(path.join(restoreHome, "cave", "salem-pathfinder.json")), legacySalemBytes, "restore preserves malformed legacy Salem bytes");
 assert.equal(await readFile(path.join(restoreHome, "cave", "conversations", "chat-1.json"), "utf8"), JSON.stringify({ sessionId: "chat-1", text: "private chat" }));
 assert.equal((await readFile(path.join(restoreHome, "cave", "local-vault.key"), "utf8")).trim(), Buffer.alloc(32, 7).toString("base64"));
 const restoredResearchManifest = path.join(
@@ -240,6 +246,86 @@ assert.throws(
   /path not allowed|path is invalid|manifest does not match payload/,
   "restore validation rejects traversal paths",
 );
+
+// Durable attachment references must still resolve after restoring history.
+const attachmentHome = path.join(root, "attachment-source", ".coven");
+const attachmentDirectory = path.join(attachmentHome, "cave", "chat-attachments");
+const attachmentId = "11111111-1111-4111-8111-111111111111.png";
+const attachmentBytes = Buffer.from([0, 255, 1, 13, 10, 128, 42, 0]);
+const attachmentConversation = JSON.stringify({
+  sessionId: "attachment-chat", familiarId: "fixture", harness: "claude",
+  turns: [{ role: "user", attachments: [{ storedId: attachmentId, mimeType: "image/png" }] }],
+});
+await mkdir(attachmentDirectory, { recursive: true });
+await mkdir(path.join(attachmentHome, "cave", "conversations"), { recursive: true });
+await writeFile(path.join(attachmentDirectory, attachmentId), attachmentBytes);
+await writeFile(path.join(attachmentHome, "cave", "conversations", "attachment-chat.json"), attachmentConversation);
+process.env.COVEN_HOME = attachmentHome;
+const attachmentBackup = await buildBackupArchive(passphrase);
+assert.ok(attachmentBackup.manifest.entries.some((entry) => entry.root === "cave" && entry.path === `chat-attachments/${attachmentId}`), "a backed-up transcript's durable attachment bytes are included");
+const attachmentPlaintext = await decryptBackupArchive(attachmentBackup.archive, passphrase);
+assert.deepEqual(Buffer.from(attachmentPlaintext.files.find((file) => file.path === `chat-attachments/${attachmentId}`)!.data, "base64"), attachmentBytes);
+const attachmentRestoreHome = path.join(root, "attachment-restore", ".coven");
+process.env.COVEN_HOME = attachmentRestoreHome;
+for (let repeat = 0; repeat < 2; repeat++) {
+  await restoreBackupArchive(attachmentBackup.archive, passphrase);
+  assert.deepEqual(await readFile(path.join(attachmentRestoreHome, "cave", "chat-attachments", attachmentId)), attachmentBytes);
+  assert.equal(await readFile(path.join(attachmentRestoreHome, "cave", "conversations", "attachment-chat.json"), "utf8"), attachmentConversation);
+}
+if (process.platform !== "win32") {
+  assert.equal((await lstat(path.join(attachmentRestoreHome, "cave", "chat-attachments"))).mode & 0o777, 0o700);
+  assert.equal((await lstat(path.join(attachmentRestoreHome, "cave", "chat-attachments", attachmentId))).mode & 0o777, 0o600);
+  process.env.COVEN_HOME = attachmentHome;
+  const outsideAttachment = path.join(root, "outside-attachment.txt");
+  const outsideBytes = "outside private bytes must stay outside";
+  await writeFile(outsideAttachment, outsideBytes);
+  const unsafeAttachment = path.join(attachmentDirectory, "22222222-2222-4222-8222-222222222222.txt");
+  await symlink(outsideAttachment, unsafeAttachment);
+  await assert.rejects(() => buildBackupArchive(passphrase), /Chat attachment backup entry is unsafe/, "attachment backup never follows a linked file");
+  await rm(unsafeAttachment);
+  await link(outsideAttachment, unsafeAttachment);
+  await assert.rejects(() => buildBackupArchive(passphrase), /Chat attachment backup entry is unsafe/, "attachment backup never admits a hard-linked file");
+  await rm(unsafeAttachment);
+  const movedAttachments = path.join(root, "moved-attachment-store");
+  await rename(attachmentDirectory, movedAttachments);
+  await symlink(movedAttachments, attachmentDirectory);
+  await assert.rejects(() => buildBackupArchive(passphrase), /Chat attachment backup path is unsafe/, "a linked attachment root is refused");
+  await rm(attachmentDirectory);
+  await rename(movedAttachments, attachmentDirectory);
+  let attachmentSwapped = false;
+  await assert.rejects(() => buildBackupArchive(passphrase, {
+    beforeSourceRead: async (file) => {
+      if (file.rel !== `chat-attachments/${attachmentId}`) return;
+      attachmentSwapped = true;
+      await rm(path.join(attachmentDirectory, attachmentId));
+      await symlink(outsideAttachment, path.join(attachmentDirectory, attachmentId));
+    },
+  }), /ELOOP|Chat attachment backup entry changed/, "an attachment swapped after enumeration cannot leak outside bytes");
+  assert.equal(attachmentSwapped, true);
+  await rm(path.join(attachmentDirectory, attachmentId));
+  await writeFile(path.join(attachmentDirectory, attachmentId), attachmentBytes);
+  let ancestorSwapped = false;
+  await assert.rejects(() => buildBackupArchive(passphrase, {
+    beforeSourceRead: async (file) => {
+      if (ancestorSwapped || file.rel !== `chat-attachments/${attachmentId}`) return;
+      await rename(attachmentDirectory, movedAttachments);
+      await symlink(movedAttachments, attachmentDirectory);
+      ancestorSwapped = true;
+    },
+  }), /Chat attachment backup directory identity changed/, "an attachment ancestor swap is refused");
+  assert.equal(ancestorSwapped, true);
+  await rm(attachmentDirectory);
+  await rename(movedAttachments, attachmentDirectory);
+  const unsafeAttachmentRestore = path.join(root, "unsafe-attachment-restore", ".coven");
+  const outsideAttachmentDirectory = path.join(root, "outside-attachment-directory");
+  await mkdir(path.join(unsafeAttachmentRestore, "cave"), { recursive: true });
+  await mkdir(outsideAttachmentDirectory);
+  await symlink(outsideAttachmentDirectory, path.join(unsafeAttachmentRestore, "cave", "chat-attachments"));
+  process.env.COVEN_HOME = unsafeAttachmentRestore;
+  await assert.rejects(() => restoreBackupArchive(attachmentBackup.archive, passphrase), /Chat attachment backup restore directory is unsafe/, "a linked destination cannot redirect restored attachment bytes");
+  await assert.rejects(() => readFile(path.join(outsideAttachmentDirectory, attachmentId)), /ENOENT/);
+  assert.equal(await readFile(outsideAttachment, "utf8"), outsideBytes);
+}
 
 await rm(root, { recursive: true, force: true });
 console.log("backup-archive.test.ts: ok");

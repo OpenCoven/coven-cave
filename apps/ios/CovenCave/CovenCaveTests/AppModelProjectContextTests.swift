@@ -5354,6 +5354,57 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.projectContextError, message)
     }
 
+    /// The iPhone wedge: once the path flag read "unavailable", a refresh the
+    /// desktop answered was discarded and forced back to offline, so tapping
+    /// Retry could never reconnect.
+    func testRetryReconnectsWhenDesktopAnswersDespiteStaleOfflinePath() async {
+        let foundURL = URL(string: "http://cave.test:3000")!
+        let client = ControlledCoreClient(projects: [], grants: grants(), familiars: [])
+        let app = makeApp(
+            coreResourceClientFactory: { _ in client },
+            baseURLDiscoverer: { _ in .found(foundURL) }
+        )
+        app.connection = CaveConnection(host: foundURL.absoluteString)
+        await app.updateConnectionPath(available: false)
+        XCTAssertEqual(app.connectionState, .unreachable(.diagnosis(for: .offline)))
+
+        await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+
+        XCTAssertEqual(app.connectionState, .connected)
+    }
+
+    /// Only a refresh that STARTED on an unavailable path may override it. A
+    /// path lost while a probe is in flight keeps the honest offline state.
+    func testPathLostMidProbeKeepsHonestOfflineState() async {
+        @MainActor final class Holder { var app: AppModel? }
+        let holder = Holder()
+        let foundURL = URL(string: "http://cave.test:3000")!
+        let client = ControlledCoreClient(projects: [], grants: grants(), familiars: [])
+        let app = makeApp(
+            coreResourceClientFactory: { _ in client },
+            baseURLDiscoverer: { _ in
+                await holder.app?.updateConnectionPath(available: false)
+                return .found(foundURL)
+            }
+        )
+        holder.app = app
+        app.connection = CaveConnection(host: foundURL.absoluteString)
+
+        await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+
+        XCTAssertEqual(app.connectionState, .unreachable(.diagnosis(for: .offline)))
+    }
+
+    func testRetryOnLostPathStaysOfflineWhenDesktopDoesNotAnswer() async {
+        let app = makeApp(baseURLDiscoverer: { _ in .unreachable(.timeout) })
+        app.connection = CaveConnection(host: "http://cave.test:3000")
+        await app.updateConnectionPath(available: false)
+
+        await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+
+        XCTAssertEqual(app.connectionState, .unreachable(.diagnosis(for: .offline)))
+    }
+
     func testConnectWithRetrySuccessfulRetryBecomesConnectedAfterInitialProjectContextFailure() async {
         let message = "Choose a project in Cave before opening it on this device."
         let foundURL = URL(string: "http://cave.test:3000")!

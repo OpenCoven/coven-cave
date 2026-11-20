@@ -61,7 +61,7 @@ async function sweepStaleStagedFiles(stagingDir: string, now = Date.now()): Prom
       // `<uuid>.<ext>` shape from the write path keeps the sweep to its own
       // litter.
       if (!STAGED_FILE_NAME.test(entry.name)) continue;
-      const target = path.join(stagingDir, entry.name);
+      const target = path.join(/* turbopackIgnore: true */ stagingDir, entry.name);
       try {
         const meta = await lstat(target);
         // A symlink planted here is not ours; removing what it points at would
@@ -105,7 +105,7 @@ export async function writeAttachmentsToRuntime(
   } catch {
     return filePaths;
   }
-  const stagingDir = path.join(realStagingRoot, ATTACHMENT_STAGING_DIR);
+  const stagingDir = path.join(/* turbopackIgnore: true */ realStagingRoot, ATTACHMENT_STAGING_DIR);
   await sweepStaleStagedFiles(stagingDir);
   for (const [index, attachment] of attachments.entries()) {
     const payload = cleanImageDataUrl(attachment.dataUrl) ??
@@ -133,7 +133,7 @@ export async function writeAttachmentsToRuntime(
     try {
       await mkdir(stagingDir, { recursive: true, mode: 0o700 });
       const filePath = path.join(
-        stagingDir,
+        /* turbopackIgnore: true */ stagingDir,
         `${crypto.randomUUID()}.${attachmentExtension({ ...attachment, mimeType })}`,
       );
       await writeFile(filePath, bytes, { mode: 0o600 });
@@ -210,17 +210,24 @@ export function cleanupStagedAttachmentFiles(filePaths: ReadonlyMap<number, stri
 /**
  * Resolve at most ten repository-relative files without allowing absolute,
  * traversal, or symlink-escape paths into a harness prompt.
+ * `root` is the server-authorized runtime cwd. The optional picker root is
+ * only a consistency check, never authority to select a different directory.
  */
 export async function resolveMentionedFiles(
   relPaths: unknown,
   root: unknown,
+  mentionedFilesRoot?: unknown,
 ): Promise<string[]> {
   if (!Array.isArray(relPaths) || relPaths.length === 0) return [];
   if (typeof root !== "string" || !path.isAbsolute(root)) return [];
   let realRoot: string;
   try {
-    realRoot = await realpath(path.resolve(root));
+    realRoot = await realpath(path.resolve(/* turbopackIgnore: true */ root));
     if (!(await stat(realRoot)).isDirectory()) return [];
+    if (mentionedFilesRoot !== undefined) {
+      if (typeof mentionedFilesRoot !== "string" || !path.isAbsolute(mentionedFilesRoot)) return [];
+      if (await realpath(mentionedFilesRoot) !== realRoot) return [];
+    }
   } catch {
     return [];
   }
@@ -228,7 +235,7 @@ export async function resolveMentionedFiles(
   for (const rel of relPaths.slice(0, MAX_MENTIONED_FILES)) {
     if (typeof rel !== "string" || !rel || rel.includes("\0") || path.isAbsolute(rel)) continue;
     if (rel.split(/[\\/]+/).includes("..")) continue;
-    const candidate = path.resolve(realRoot, rel);
+    const candidate = path.resolve(/* turbopackIgnore: true */ realRoot, rel);
     if (candidate === realRoot || !candidate.startsWith(realRoot + path.sep)) continue;
     try {
       const real = await realpath(candidate);

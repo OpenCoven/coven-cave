@@ -240,8 +240,8 @@ export function resolveChatProjectSelection(args: {
   // A chat that RAN in a project's worktree keeps that root when reopened
   // later, when the view's opener root no longer matches (cave-k0ra): a
   // recorded cwd under a registered project's `.worktrees/` directory is as
-  // intentional as the opener hand-off above — the git chip, env panel, and
-  // enhance mode belong to that checkout, not to "No project". Scoped to
+  // intentional as the opener hand-off above — the git chip, its Environment
+  // popover, and enhance mode belong to that checkout, not to "No project". Scoped to
   // `.worktrees/` containment on purpose: a session recorded in the
   // familiar's own workspace (or any other unregistered dir) still resolves
   // to bare No-project, so its cwd is never surfaced or re-asserted.

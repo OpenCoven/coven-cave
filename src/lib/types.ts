@@ -1,6 +1,8 @@
 import type { ChatAttention } from "./chat-attention.ts";
 
 export type Familiar = {
+  /** Effective configured access on a project-scoped roster, never a send grant. */
+  projectAccess?: "read" | "write";
   id: string;
   name?: string;
   display_name: string;

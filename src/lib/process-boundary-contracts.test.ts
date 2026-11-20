@@ -74,7 +74,7 @@ const resetTransaction = mobileRuntime.slice(
 );
 for (const marker of [
   "const current = await readTailscaleServeStatus(runTailscale)",
-  'const reset = await runTailscale(["serve", "reset"])',
+  'const reset = await runServeRemovals(',
   "const verified = await readTailscaleServeStatus(runTailscale)",
   "return await finishVerifiedRemoval(false)",
 ]) {
@@ -85,9 +85,14 @@ for (const marker of [
   );
 }
 assert.ok(
-  resetTransaction.indexOf('const reset = await runTailscale(["serve", "reset"])')
+  resetTransaction.indexOf('const reset = await runServeRemovals(')
     < resetTransaction.indexOf("return await finishVerifiedRemoval(false)"),
   "app-stop must remove and verify Serve before stopping the owned backend",
+);
+assert.doesNotMatch(
+  mobileRuntime,
+  /\["serve", "reset"\]/,
+  "removing Cave's route must not reset other apps' Serve ports (#6518)",
 );
 assert.ok(
   resetTransaction.indexOf("await afterVerifiedRouteRemoval?.()")

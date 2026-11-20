@@ -361,9 +361,12 @@
 .fa-identity__stats {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Two labelled session counts plus streak and trust (issue 6357): a 2×2
+     grid keeps each definition-bearing label on its own readable line. */
+  grid-template-columns: repeat(2, 1fr);
   border-top: 1px solid var(--border-hairline);
 }
+.fa-identity__stats > span:nth-child(-n + 2) { border-bottom: 1px solid var(--border-hairline); }
 .fa-identity__stats > span {
   display: flex;
   flex-direction: column;
@@ -372,7 +375,7 @@
   padding: var(--space-2) var(--space-1);
   border-right: 1px solid var(--border-hairline);
 }
-.fa-identity__stats > span:last-child { border-right: 0; }
+.fa-identity__stats > span:nth-child(2n) { border-right: 0; }
 .fa-identity__stats b {
   display: inline-flex;
   align-items: center;
@@ -389,7 +392,7 @@
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-.fa-identity__streak { color: var(--color-warning); }
+.fa-identity__streak { color: var(--text-primary); }
 .fa-identity__trust { color: var(--accent-presence); }
 
 /* ── Dock: renown ───────────────────────────────────────────────────────── */
@@ -434,8 +437,7 @@
   background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   color: var(--accent-presence);
 }
-.fa-band-crest--warn,
-.fa-contract-card__crest {
+.fa-band-crest--warn {
   border-color: color-mix(in oklch, var(--color-warning) 40%, transparent);
   background: color-mix(in oklch, var(--color-warning) 12%, transparent);
   color: var(--color-warning);
@@ -526,7 +528,7 @@
   color: var(--text-secondary);
 }
 .fa-renown__foot b { color: var(--text-primary); font-weight: 600; }
-.fa-renown__bolt { color: var(--color-warning); flex: none; }
+.fa-renown__bolt { color: var(--text-muted); flex: none; }
 .fa-renown__next {
   display: inline-flex;
   align-items: center;
@@ -544,7 +546,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--color-warning);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   white-space: nowrap;
 }
@@ -764,7 +766,7 @@
   width: 140px;
   height: 140px;
   border-radius: var(--radius-pill);
-  background: radial-gradient(circle, color-mix(in oklch, var(--color-warning) 12%, transparent), transparent 70%);
+  background: radial-gradient(circle, color-mix(in oklch, var(--text-secondary) 8%, transparent), transparent 70%);
   pointer-events: none;
 }
 .fa-contract-card__head {
@@ -781,7 +783,7 @@
   gap: 3px;
   font-family: var(--font-mono);
 }
-.fa-contract-card__score b { font-size: var(--text-md); font-weight: 700; color: var(--color-warning); }
+.fa-contract-card__score b { font-size: var(--text-md); font-weight: 700; color: var(--text-primary); }
 .fa-contract-card__score span { font-size: var(--text-2xs); color: var(--text-muted); }
 .fa-contract-card__bars { position: relative; display: flex; gap: 3px; }
 .fa-contract-card__bar {
@@ -3595,4 +3597,77 @@
   .fa-lattice__views {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── issue 6357: one meaning per colour ─────────────────────────────────────── */
+/* Neutral: counts, tokens, durations, selection. Tone borders only for good/bad. */
+.fa-pulse-stat--neutral { border-left-color: var(--border-hairline); --fa-tone: var(--text-primary); }
+.fa-runtime-row__provider {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+/* Pass vs fail reads in greyscale too: the fail remainder is hatched, the pass
+   fill is solid, and the rate is always written beside the bar. */
+.fa-runtime-row__bar {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--color-danger) 45%, transparent) 0 3px,
+    color-mix(in oklch, var(--color-danger) 15%, transparent) 3px 6px
+  );
+}
+/* Fewer than five attempts: still shown, but too thin to compare on. */
+.fa-runtime-row--thin { opacity: 0.6; }
+.fa-runtime-row--thin .fa-runtime-row__bar i { background: color-mix(in oklch, var(--color-success) 55%, var(--bg-raised)); }
+.fa-runtime-coverage .fa-runtime-coverage__gap { color: var(--text-secondary); }
+.fa-modal-facts__value--zero { color: var(--text-muted); }
+.fa-trust-row--head > span {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 640px) {
+  .fa-trust-row--head > span:nth-child(2) { display: none; }
+}
+
+/* The contract is not a caution by itself: its crest is neutral, and only a
+   failing property (red) or a needs-review count (yellow) carries a tone. */
+.fa-contract-card__crest,
+.fa-band-crest--neutral {
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+/* Zero is muted grey, never red (issue 6357). */
+.fa-pulse-stat--zero { border-left-color: var(--border-hairline); --fa-tone: var(--text-muted); }
+.fa-renown-modal__position {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.fa-renown__head .fa-icon-btn { margin-left: var(--space-1); }
+/* The contract detail now lives inside the shared Modal shell (issue 6357):
+   drop the anchored floating-panel frame and let the dialog size it. */
+.fa-contract-panel.fa-contract-panel--modal {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+.fa-contract-panel--modal .fa-contract-panel__head { padding: 0 0 var(--space-3); background: none; }
+.fa-contract-panel--modal .fa-contract-panel__body { min-height: 18rem; }
+/* Five renown rungs: one row when there is room. */
+.fa-trust-bands--ladder { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .fa-trust-bands--ladder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

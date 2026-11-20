@@ -11,6 +11,7 @@ type Corpus = {
   identityScenarios: Array<{ id: string; metadata: ChatResponseMetadata; expected: unknown }>;
   toolScenarios: Array<{ id: string; events: Tool[]; expected: Tool[] }>;
   reasoningScenarios: Array<{ id: string; blocks: unknown[]; expected: ChatReasoningBlock[] }>;
+  reasoningPrivacySentinels: { private: Record<string, string>; continuationToken: string };
 };
 // One resource is bundled into the native unit-test target and read here.
 // These fixtures qualify display folds, not runtime admission or UI behavior.
@@ -43,6 +44,10 @@ for (const scenario of corpus.reasoningScenarios) {
     assert.deepEqual(blocks, scenario.expected, `${scenario.id}: pass ${pass}`);
   }
   assert.deepEqual(JSON.parse(JSON.stringify(blocks)), scenario.expected, `${scenario.id}: stored JSON`);
+  // Withheld text and opaque continuation siblings never survive the fold (#6057).
+  for (const sentinel of Object.values(corpus.reasoningPrivacySentinels.private)) {
+    assert.ok(!JSON.stringify(blocks).includes(sentinel), `${scenario.id}: ${sentinel}`);
+  }
 }
 console.log(`shared activity corpus: ${corpus.identityScenarios.length} identity, ${corpus.toolScenarios.length} tool, ${corpus.reasoningScenarios.length} reasoning scenarios passed`);
 

@@ -1,0 +1,56 @@
+{
+  "applicationOrTestEdits": false,
+  "baseline": {
+    "test": "AgentActivityUITests/testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain",
+    "passed": true,
+    "tests": 1,
+    "failures": 0,
+    "log": "/tmp/cave-6069-background-retry1.log",
+    "xcresult": "/tmp/cave-6069-background-retry1.xcresult",
+    "summary": "background-xctest-summary.json"
+  },
+  "liveLane": {
+    "report": "live-recovery.json",
+    "test": "ActivityRecoveryUITests/testRenderedRecoveryRetainsSavedActivityAndOutput",
+    "tests": 1,
+    "failures": 0,
+    "terminalHarnessExitCode": 0,
+    "oneProviderRequest": true,
+    "oneToolInvocation": true,
+    "sourceFingerprintUnchanged": true,
+    "daemonServerProviderCleanupVerified": true,
+    "summary": "live-xctest-summary.json"
+  },
+  "navigation": {
+    "configuration": "Debug simulator, existing fixtures; not Release performance",
+    "tests": [
+      {
+        "name": "AgentActivityUITests/testTimelineKeepsLocalChoicesThroughCompletionAndBackground",
+        "seconds": 52.707
+      },
+      {
+        "name": "PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink",
+        "seconds": 125.956
+      },
+      {
+        "name": "PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+        "seconds": 72.229
+      }
+    ],
+    "failures": 0,
+    "terminalExitCode": 0,
+    "xcresult": "/tmp/cave-6069-navigation-retry1.xcresult",
+    "summary": "navigation-xctest-summary.json"
+  },
+  "limits": [
+    "Historical hit-test failure did not reproduce; no root-cause fix or flake-elimination claim.",
+    "This development build is not a nominated release candidate. The complete 114-entry packet has not been rerun here.",
+    "Synthetic external provider only; no real-provider canary.",
+    "Loopback HTTP with simulated forwarded-peer headers; no physical remote ingress or managed-device pairing acceptance.",
+    "No human keyboard/VoiceOver, physical-device Release performance, or full native-complete acceptance.",
+    "Desktop navigation was not rerun by this native investigation.",
+    "Debug fixture tests are supporting evidence and do not substitute for the real-daemon lane.",
+    "Approval/change authority remains unavailable.",
+    "Other #5766/#5767 criteria and original ownership/gates remain required."
+  ]
+}

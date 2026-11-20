@@ -1,0 +1,7 @@
+.chat-send-later { display: grid; gap: var(--space-3); color: var(--text-secondary); }
+.chat-send-later label, .chat-send-later h3, .chat-send-later strong { color: var(--text-primary); }
+.chat-send-later__preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 8lh; overflow: auto; }
+.chat-send-later__list { display: grid; gap: var(--space-4); list-style: none; padding: 0; }
+.chat-send-later__list li { display: flex; align-items: start; gap: var(--space-3); border-top: 1px solid var(--border-hairline); padding-top: var(--space-3); }
+.chat-send-later__list li > div { flex: 1; min-width: 0; }
+.chat-send-later time { display: block; color: var(--text-muted); }

@@ -141,7 +141,7 @@ assert.match(styles, /\.composer-actions__panel[\s\S]*overscroll-behavior: conta
 
 assert.match(
   context,
-  /export\s+type\s+ComposerContextView\s*=\s*\|?\s*null\s*\|\s*"project"\s*\|\s*"runtime"\s*\|\s*"model"\s*\|\s*"branch"\s*\|\s*"worktree"/,
+  /export\s+type\s+ComposerContextView\s*=\s*\|?\s*null\s*\|\s*"project"\s*\|\s*"runtime"\s*\|\s*"model"\s*\|\s*"branch"\s*\|\s*"worktree"[\s\S]{0,240}?\|\s*"branch-list"/,
 );
 assert.match(context, /export\s+type\s+ComposerContextProps\s*=\s*\{/);
 assert.match(context, /export\s+function\s+useComposerContextActions/);

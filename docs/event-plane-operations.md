@@ -7,7 +7,7 @@ surface falls back to the polling it had before.
 
 Design: [the event-plane spec](superpowers/specs/2026-08-28-demand-driven-websocket-event-plane-design.md).
 Plan: [the implementation plan](superpowers/plans/2026-08-28-demand-driven-websocket-event-plane.md).
-Tracking: `cave-qjvbb` on the Cave project.
+Tracking: `cave-qjvbb` closed on 2026-10-26 as complete on #5869's evidence (Val, #6111). The plane still ships off by default (`COVEN_CAVE_EVENT_PLANE_ENABLED` unset), and turning it on by default needs its own decision.
 
 ## At a glance
 

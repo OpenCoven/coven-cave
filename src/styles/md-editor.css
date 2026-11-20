@@ -83,6 +83,15 @@
   caret-color: var(--accent-presence);
 }
 
+/* Hyphenation is for words: inline code and code blocks keep their exact
+   spelling (#5944). */
+.md-editor-visual .milkdown .ProseMirror code,
+.md-editor-visual .milkdown .ProseMirror pre,
+.md-editor-visual .milkdown .milkdown-code-block {
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+
 .md-editor--reader .md-editor-visual .milkdown .ProseMirror {
   --cave-reading-width: 74ch;
   padding: var(--space-6) var(--space-6) var(--space-12);

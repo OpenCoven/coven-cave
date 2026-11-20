@@ -13,9 +13,15 @@ type NativeMicrophonePermission = {
 
 type InvokeCommand = (command: string) => Promise<unknown>;
 
+/** The desktop shell's OS, or null in a browser tab. */
+export type DesktopPlatform = "macos" | "windows" | "linux" | null;
+
 type MicrophoneAccessDependencies = {
   nativeMac?: boolean;
   detectNativeMac?: () => Promise<boolean>;
+  /** Overrides OS detection; `nativeMac: true` implies "macos". */
+  desktopPlatform?: DesktopPlatform;
+  detectDesktopPlatform?: () => Promise<DesktopPlatform>;
   invoke?: InvokeCommand;
   getUserMedia?: () => Promise<MediaStream>;
 };
@@ -46,9 +52,31 @@ function errorName(error: unknown): string {
   return "";
 }
 
+/**
+ * Where a denied microphone is re-enabled. The macOS shell can open the pane
+ * itself; Windows and Linux desktops get the path spelled out, and only a
+ * browser tab is told about "site" settings (#5970).
+ */
+export function microphoneDeniedHint(
+  canOpenSettings: boolean,
+  platform: DesktopPlatform = null,
+): string {
+  if (canOpenSettings) {
+    return "Allow Coven Cave under System Settings → Privacy & Security → Microphone, then retry.";
+  }
+  if (platform === "windows") {
+    return "Allow CovenCave to use the microphone under Windows Settings → Privacy & security → Microphone, then retry.";
+  }
+  if (platform === "linux") {
+    return "Allow CovenCave to use the microphone in your system's privacy or sound settings, then retry.";
+  }
+  return "Allow microphone access for this site in your browser settings, then retry.";
+}
+
 export function classifyMicrophoneCaptureError(
   error: unknown,
   canOpenSettings = false,
+  platform: DesktopPlatform = null,
 ): MicrophoneAccessError {
   if (error instanceof MicrophoneAccessError) return error;
 
@@ -56,9 +84,7 @@ export function classifyMicrophoneCaptureError(
     case "NotAllowedError":
       return new MicrophoneAccessError(
         "microphone_denied",
-        canOpenSettings
-          ? "Allow Coven Cave under System Settings → Privacy & Security → Microphone, then retry."
-          : "Allow microphone access for this site in your browser settings, then retry.",
+        microphoneDeniedHint(canOpenSettings, platform),
         canOpenSettings,
       );
     case "SecurityError":
@@ -104,20 +130,31 @@ function defaultGetUserMedia(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
-async function isNativeMacPlatform(): Promise<boolean> {
-  if (!isTauri()) return false;
+async function detectDesktopPlatform(): Promise<DesktopPlatform> {
+  if (!isTauri()) return null;
   const { platform } = await import("@tauri-apps/plugin-os");
-  return platform() === "macos";
+  const os = platform();
+  return os === "macos" || os === "windows" || os === "linux" ? os : null;
 }
 
 export async function requestMicrophoneStream(
   dependencies: MicrophoneAccessDependencies = {},
 ): Promise<MediaStream> {
   let nativeMac: boolean;
+  let desktopPlatform: DesktopPlatform = null;
   try {
-    nativeMac = dependencies.nativeMac ?? await (dependencies.detectNativeMac ?? isNativeMacPlatform)();
+    if (dependencies.nativeMac !== undefined || dependencies.detectNativeMac) {
+      nativeMac = dependencies.nativeMac ?? await dependencies.detectNativeMac!();
+      desktopPlatform = nativeMac ? "macos" : dependencies.desktopPlatform ?? null;
+    } else {
+      desktopPlatform =
+        dependencies.desktopPlatform ??
+        await (dependencies.detectDesktopPlatform ?? detectDesktopPlatform)();
+      nativeMac = desktopPlatform === "macos";
+    }
   } catch {
     nativeMac = false;
+    desktopPlatform = null;
   }
   const invoke = dependencies.invoke ?? defaultInvoke;
 
@@ -150,7 +187,7 @@ export async function requestMicrophoneStream(
   try {
     return await (dependencies.getUserMedia ?? defaultGetUserMedia)();
   } catch (error) {
-    throw classifyMicrophoneCaptureError(error, nativeMac);
+    throw classifyMicrophoneCaptureError(error, nativeMac, desktopPlatform);
   }
 }
 

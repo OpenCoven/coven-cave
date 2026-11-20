@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import {
   mkdirSync,
@@ -17,8 +17,8 @@ const ENTRY_POINT = path.join(ROOT, "scripts", "tweet-thread-validator-cli.ts");
 const PUNYCODE_ENTRY_POINT = createRequire(import.meta.url).resolve("punycode/");
 export const VALIDATOR_BUNDLE_PATH = path.join(
   ROOT,
+  "artifacts",
   "marketplace",
-  "plugins",
   "tweet-thread-lab",
   "bin",
   "tweet-thread-validate.mjs",
@@ -56,6 +56,10 @@ export async function checkTweetThreadValidatorBundle(
   outputPath = VALIDATOR_BUNDLE_PATH,
 ) {
   const expected = await generateTweetThreadValidatorBundle();
+  if (outputPath === VALIDATOR_BUNDLE_PATH) {
+    const pins = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "payloads.json"), "utf8"));
+    return createHash("sha256").update(expected).digest("hex") === pins.plugins["tweet-thread-lab"].fileSha256["bin/tweet-thread-validate.mjs"];
+  }
   let actual;
   try {
     actual = readFileSync(outputPath);
@@ -88,7 +92,7 @@ async function runCli() {
   if (checkOnly) {
     if (!await checkTweetThreadValidatorBundle()) {
       console.error(
-        "Tweet thread validator bundle is missing or drifted. Run `pnpm protocol:tweet-thread:validator` and commit the result.",
+        "Tweet thread validator bundle is missing or drifted. Run `pnpm protocol:tweet-thread:validator` and publish the result from OpenCoven/marketplace, then refresh the payload pins.",
       );
       process.exitCode = 1;
       return;
@@ -98,7 +102,7 @@ async function runCli() {
   }
   await writeTweetThreadValidatorBundle();
   console.log(
-    "generated marketplace/plugins/tweet-thread-lab/bin/tweet-thread-validate.mjs",
+    "generated artifacts/marketplace/tweet-thread-lab/bin/tweet-thread-validate.mjs",
   );
 }
 

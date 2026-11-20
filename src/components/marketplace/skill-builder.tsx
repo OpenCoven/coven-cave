@@ -20,6 +20,7 @@
 //  - a dry-run tester on the success panel — trigger check + narration-only
 //    walkthrough through POST /api/skills/dry-run (cave-cyfc).
 
+import { firstUseAllowsExecution } from "@/lib/first-use-execution";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
@@ -134,7 +135,7 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
   const [draftError, setDraftError] = useState<string | null>(null);
   const draftWithAi = useCallback(async () => {
     const goal = draftGoal.trim();
-    if (!goal || drafting) return;
+    if (!goal || drafting || !(await firstUseAllowsExecution())) return;
     setDrafting(true);
     setDraftError(null);
     try {
@@ -226,7 +227,7 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
   const proseFieldsRef = useRef({ name, description, instructions });
   proseFieldsRef.current = { name, description, instructions };
   const cavemanize = useCallback(async () => {
-    if (!instructions.trim() || cavemanning || saving) return;
+    if (!instructions.trim() || cavemanning || saving || !(await firstUseAllowsExecution())) return;
     setCavemanning(true);
     setCavemanError(null);
     try {
@@ -497,9 +498,10 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
                     size="xs"
                     leadingIcon="ph:magic-wand-fill"
                     loading={enhancer.state.phase === "loading"}
-                    disabled={!instructions.trim()}
+                    disabled={!instructions.trim() || Boolean(enhancer.unavailableReason)}
                     onClick={() => enhancer.enhance()}
-                    title="Rewrite the instructions in place — applied only if you haven't typed meanwhile"
+                    title={enhancer.unavailableReason ?? "Rewrite the instructions in place — applied only if you haven't typed meanwhile"}
+                    aria-describedby={enhancer.unavailableReason ? "skill-builder-enhance-unavailable" : undefined}
                   >
                     Enhance
                   </Button>
@@ -531,10 +533,22 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
               placeholder="Markdown the familiar follows — when to use the skill, the steps, and how to verify the result."
               className={`${INPUT_CLASS} resize-y font-mono text-[length:var(--text-sm)] leading-relaxed`}
             />
-            {enhancer.state.phase === "error" ? (
-              <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
-                {enhancer.state.message}
+            {enhancer.unavailableReason ? (
+              <p id="skill-builder-enhance-unavailable" role="note" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                {enhancer.unavailableReason}
               </p>
+            ) : null}
+            {enhancer.state.phase === "error" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
+                  {enhancer.state.message}
+                </p>
+                {enhancer.state.retryable ? (
+                  <Button variant="ghost" size="xs" onClick={enhancer.retry}>
+                    Retry
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </div>
 
@@ -629,7 +643,7 @@ export function SkillDryRunTester({
   const probe = useCallback(
     async (mode: "trigger" | "walkthrough") => {
       const line = scenario.trim();
-      if (!line || probing) return;
+      if (!line || probing || !(await firstUseAllowsExecution())) return;
       setProbing(mode);
       setError(null);
       setVerdict(null);

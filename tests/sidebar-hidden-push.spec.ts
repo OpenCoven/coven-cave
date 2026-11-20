@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { SHELL_NAV_MIN_PX } from "../src/components/shell-layout";
 
 async function seedClosedSidebar(page: Page) {
   await page.addInitScript(() => {
@@ -25,7 +26,7 @@ async function expectNavSettled(
       const width =
         (await navPanel.boundingBox())?.width ?? (expected === "open" ? 0 : 1);
       return expected === "open"
-        ? expanded === "true" && width >= 220
+        ? expanded === "true" && width >= SHELL_NAV_MIN_PX
         : expanded === "false" && width <= 1;
     })
     .toBe(true);
@@ -79,8 +80,9 @@ test("closing navigation removes the rail and opening pushes the main panel", as
 
   const openNav = await navPanel.boundingBox();
   const openDetail = await detail.boundingBox();
-  expect(openNav?.width ?? 0).toBeGreaterThanOrEqual(220);
-  expect((openDetail?.x ?? 0) - (closedDetail?.x ?? 0)).toBeGreaterThanOrEqual(200);
+  expect(openNav?.width ?? 0).toBeGreaterThanOrEqual(SHELL_NAV_MIN_PX);
+  // The detail moves by about the nav's width; 20px absorbs separator chrome.
+  expect((openDetail?.x ?? 0) - (closedDetail?.x ?? 0)).toBeGreaterThanOrEqual(SHELL_NAV_MIN_PX - 20);
 
   await toggle.click();
   await expectNavSettled(toggle, navPanel, "closed");

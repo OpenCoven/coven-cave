@@ -62,6 +62,7 @@ export type ComposerImproveActions = {
     onEnhance: (intent: EnhanceIntent) => void;
     disabled?: boolean;
     loading?: boolean;
+    unavailableReason?: string | null;
   };
 };
 
