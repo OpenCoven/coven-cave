@@ -8,13 +8,24 @@ const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(route, /connectors\?: string\[\];/, "SendBody accepts connector ids");
 assert.match(
   route,
-  /import \{ parseConnectorIds, prepareTurnConnectors \} from "@\/lib\/connectors";/,
+  /import \{ hasGitHubTokenInEnv, parseConnectorIds, prepareTurnConnectors \} from "@\/lib\/connectors";/,
+);
+assert.match(route, /import \{ hasGhStoredLogin \} from "@\/lib\/server\/gh-login-status";/);
+assert.match(
+  route,
+  /const connectorEnv = !sshRuntime && localRuntimePlan \? localRuntimePlan\.env : null;/,
+  "only a local launch env can carry connector credentials",
 );
 assert.match(
   route,
-  /const turnConnectors = prepareTurnConnectors\(\s*parseConnectorIds\(body\.connectors\),\s*!sshRuntime && localRuntimePlan \? localRuntimePlan\.env : null,\s*\);/,
-  "only a local launch env can carry connector credentials",
+  /const githubStoredLogin =\s*connectorEnv !== null &&\s*requestedConnectors\.includes\("github"\) &&\s*!hasGitHubTokenInEnv\(connectorEnv\)\s*\?\s*await hasGhStoredLogin\(connectorEnv\)\s*:\s*false;/,
+  "the stored gh login is probed only for a local GitHub request with no token, against the harness env",
 );
+assert.match(
+  route,
+  /const turnConnectors = prepareTurnConnectors\(requestedConnectors, connectorEnv, \{\s*githubStoredLogin,\s*\}\);/,
+);
+assert.doesNotMatch(route, /gh auth token/, "the send route never reads the keyring token");
 const prepared = route.indexOf("const turnConnectors =");
 assert.ok(
   prepared > route.lastIndexOf("localRuntimePlan = createLocalRuntimePlan("),
