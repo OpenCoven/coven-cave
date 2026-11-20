@@ -113,6 +113,7 @@ export const SUITES = {
     "scripts/test-alias-loader.test.mjs",
     "scripts/research-package-config.test.mjs",
     "scripts/submissions-build-config.test.mjs",
+    "scripts/reflection-replay.test.mjs",
     "scripts/check-version-continuity.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/install-playwright-ci.test.mjs",
@@ -2328,6 +2329,7 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  "scripts/reflection-replay.test.mjs",
   "scripts/client-v1-conformance.test.mjs",
   // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
   "scripts/cave-performance-report.test.mjs",
