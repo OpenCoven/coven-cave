@@ -57,6 +57,7 @@ struct PermissionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
+        .caveNavigationExitBlocked(!busyKeys.isEmpty)
     }
 
     @ViewBuilder private var content: some View {

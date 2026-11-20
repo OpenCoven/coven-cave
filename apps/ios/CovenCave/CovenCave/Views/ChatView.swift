@@ -509,17 +509,17 @@ struct ChatView: View {
                     .zIndex(20)
             }
         }
-        .sheet(isPresented: $showCommands) {
+        .caveSheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
         }
-        .sheet(isPresented: $showNewChat) {
+        .caveSheet(isPresented: $showNewChat) {
             NewChatView(initialFamiliarIds: thread.familiarIds) { fresh in
                 showNewChat = false
                 flushDraftPersistence()
                 _ = app.requestOpen(fresh)
             }
         }
-        .sheet(isPresented: $showModelPicker) {
+        .caveSheet(isPresented: $showModelPicker) {
             ModelPickerSheet(
                 options: presentedModelPickerOptions,
                 current: modelPresentationIsCurrent ? modelPickerCurrent : "",
@@ -530,22 +530,22 @@ struct ChatView: View {
                 _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
         }
-        .sheet(isPresented: $showFamiliarPicker) {
+        .caveSheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { familiar in
                 showFamiliarPicker = false
                 switchTo(familiar)
             }
         }
-        .sheet(item: $forwardingMessage) { message in
+        .caveSheet(item: $forwardingMessage) { message in
             FamiliarPickerSheet(title: "Forward to familiar") { familiar in
                 forwardingMessage = nil
                 forward(message, to: familiar)
             }
         }
-        .sheet(item: $permissionsFamiliar) { familiar in
+        .caveSheet(item: $permissionsFamiliar) { familiar in
             FamiliarPermissionsSheet(familiar: familiar)
         }
-        .sheet(isPresented: $showPermissionFamiliarPicker) {
+        .caveSheet(isPresented: $showPermissionFamiliarPicker) {
             FamiliarPickerSheet(
                 title: "Choose a familiar",
                 familiarIds: thread.familiarIds
@@ -554,10 +554,11 @@ struct ChatView: View {
                 permissionsFamiliar = familiar
             }
         }
-        .sheet(item: $responseReader) { item in
+        .caveSheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
+                .presentationDetents([.large])
         }
-        .sheet(item: $toolOutputTarget) { target in
+        .caveSheet(item: $toolOutputTarget) { target in
             if target.scope == toolOutputScope {
                 ToolOutputDetailView(target: target)
                     .id(target.id)
@@ -569,7 +570,7 @@ struct ChatView: View {
                 toolOutputTarget = nil
             }
         }
-        .fullScreenCover(item: $voiceCall) { model in
+        .caveFullScreenCover(item: $voiceCall) { model in
             LiveVoiceCallView(model: model,
                               avatarSource: app.client?.familiarAvatarSource(for: model.familiar))
         }
@@ -628,11 +629,11 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: .caveZoomContent)) { note in
             if let target = note.object as? ZoomTarget { zoomTarget = target }
         }
-        .fullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
+        .caveFullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
             ZoomableContentView(target: target)
                 .onAppear { CavePerformanceFixture.recordZoomFootprint(.presented) }
         }
-        .sheet(isPresented: $showSessionPicker) {
+        .caveSheet(isPresented: $showSessionPicker) {
             if let familiarId = thread.familiarIds.first,
                let familiar = app.familiar(familiarId) {
                 NavigationStack {
@@ -1559,7 +1560,7 @@ struct ChatView: View {
         }
         // The "+" menu's attach destinations. The pickers hang off the composer
         // (not the menu rows) so the menu can dismiss before they present.
-        .sheet(item: $scheduledReplyLaunch) { launch in
+        .caveSheet(item: $scheduledReplyLaunch) { launch in
             ScheduledChatSheet(client: launch.client, sessionId: launch.sessionId, message: launch.message,
                 canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
                 onScheduled: {
@@ -3060,6 +3061,7 @@ private struct UnreadDividerView: View {
 
 struct ResponseReaderView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     let item: ResponseReaderItem
     @State private var mdHeight: CGFloat = 0
     @AppStorage("cave:reader:fontScale") private var fontScale: Double = 1.0
@@ -3082,6 +3084,7 @@ struct ResponseReaderView: View {
                             scrollCommand: scrollCommand,
                             onHeadings: { headings = $0 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("Response reader content")
                 .background(theme.background.ignoresSafeArea())
                 .navigationTitle(item.title)
                 .navigationBarTitleDisplayMode(.inline)
@@ -3092,10 +3095,9 @@ struct ResponseReaderView: View {
     @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
-                UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
-                Haptics.tap()
+                app.navigationDrawerOpen = true
             } label: {
-                Label("Copy response", systemImage: "doc.on.doc")
+                Label("Open navigation", systemImage: "line.3.horizontal")
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
@@ -3117,6 +3119,12 @@ struct ResponseReaderView: View {
                 .accessibilityLabel("Table of contents")
             }
             Menu {
+                Button {
+                    UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
+                    Haptics.tap()
+                } label: {
+                    Label("Copy response", systemImage: "doc.on.doc")
+                }
                 Section("Text size") {
                     Button { fontScale = min(fontScale + 0.1, 1.8) } label: {
                         Label("Larger", systemImage: "textformat.size.larger")
