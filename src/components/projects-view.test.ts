@@ -108,14 +108,15 @@ test("stale project permissions are visible and repaired only after an explicit 
   assert.match(view, /Stale project permissions repaired\./, "repair completion is announced to assistive technology");
 });
 
-test("the supreme familiar renders locked at Full", () => {
-  assert.match(view, /isSupreme\(familiar\.id, grantsData\?\.supremeFamiliarId \?\? null\)/, "supreme comes from the console API");
-  assert.match(view, /state: "write", direct: "write", groupNames: \[\] \}/, "supreme rows pin to Full");
-  assert.match(view, /supreme familiar — full access to everything, always\./, "explains the lock");
-  assert.match(view, /const locked = supreme && !blocked;/, "the lock lifts only on a folder holding Cave's private state (#6451)");
-  assert.match(view, /if \(supreme && !writeBlocked\.has\(project\.id\)\) \{/, "where the real grant shows instead of a synthetic Full");
-  assert.match(view, /disabled=\{pending \|\| locked\}/, "supreme rows don't cycle");
-  assert.match(view, /disabled=\{pendingIds\.has\(row\.id\) \|\| \(supreme && !blocked\)\}/, "nor do its tree chips");
+test("the supreme familiar shows and edits its real grants (#6473)", () => {
+  // The server gives the supreme familiar no access beyond its grants, so
+  // Projects must not paint a synthetic Full or lock its controls.
+  assert.doesNotMatch(view, /isSupreme\(/, "no supreme special case in the access map");
+  assert.doesNotMatch(view, /state: "write", direct: "write", groupNames: \[\] \}/, "no synthetic Full rows");
+  assert.doesNotMatch(view, /full access to everything/, "no all-access note");
+  assert.match(view, /disabled=\{pending\}/, "every row's pill cycles its real grant");
+  assert.match(view, /disabled=\{pendingIds\.has\(row\.id\)\}/, "and so does every tree chip");
+  assert.match(view, /const controlsDisabled = !familiar \|\| busyAll;/, "bulk controls stay available");
 });
 
 test("command-palette focus scrolls and flashes the row", () => {

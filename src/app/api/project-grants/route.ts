@@ -103,8 +103,9 @@ export async function GET() {
     inspectProjectPermissionIntegrity(),
     listPrivateStateProjectIds(),
   ]);
-  // `supremeFamiliarId` has access to every project regardless of grants — the
-  // Permissions UI marks it as all-access and locks its toggles on. `audit` is a
+  // `supremeFamiliarId` names the familiar that may draft grant proposals. It
+  // gets no project access beyond its real grants, and Projects shows and edits
+  // those like any other familiar's (#6473). `audit` is a
   // bounded recent window of access decisions for the console's audit log.
   // `accessGroups` ride along so one fetch can render effective (direct + group)
   // access. `mobileMutationsAllowed` lets the iOS console render editable vs

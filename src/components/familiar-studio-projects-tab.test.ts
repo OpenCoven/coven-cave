@@ -51,7 +51,7 @@ assert.match(projectsView, /count: groupCount/, "the Groups tab carries a count 
 // ── The activity variant suppresses the duplicated matrix ────────────────────
 assert.match(tab, /variant\?: FamiliarProjectsVariant/, "the component takes a variant");
 assert.match(tab, /const showMatrix = variant === "full"/, "full mode is the only one that renders the matrix");
-assert.match(tab, /\{!showMatrix \? null : supreme \? \(/, "activity mode drops the grant matrix entirely");
+assert.match(tab, /\{!showMatrix \? null : projects\.length === 0 \? \(/, "activity mode drops the grant matrix entirely");
 
 // ── The standalone Settings → Permissions section is gone ────────────────────
 assert.doesNotMatch(shell, /PermissionsSection/, "shell no longer mounts a standalone Permissions section");
@@ -92,9 +92,9 @@ assert.match(tab, /access group/i, "explains group-derived access");
 assert.match(tab, /\/api\/grant-proposals\/\$\{id\}/, "resolves a proposal by id");
 assert.match(tab, /method: "PATCH"/, "proposal decisions are a PATCH");
 assert.match(tab, /JSON\.stringify\(\{ decision \}\)/, "sends only the accept/reject decision");
-// The supreme (all-access) familiar is surfaced, not toggle-able.
-assert.match(tab, /isSupreme\(familiar\.id, supremeFamiliarId\)/, "marks the supreme (all-access) familiar");
-assert.match(tab, /has access to every project/i, "explains the all-access familiar");
+// The supreme familiar gets the same grant matrix as any other (#6473).
+assert.doesNotMatch(tab, /isSupreme\(/, "no supreme special case");
+assert.doesNotMatch(tab, /has access to every project/i, "no all-access claim");
 // Everything is filtered to THIS familiar.
 assert.match(tab, /p\.targetFamiliarId === familiar\.id/, "requests are scoped to this familiar");
 assert.match(tab, /e\.familiarId === familiar\.id/, "audit is scoped to this familiar");
