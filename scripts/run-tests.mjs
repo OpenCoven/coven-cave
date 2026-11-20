@@ -584,6 +584,7 @@ export const SUITES = {
     "src/lib/theme-sync-keys.test.ts",
     "src/lib/theme-runtime.test.ts",
     "src/lib/preferences-schema.test.ts",
+    "src/lib/quick-chat-shortcut-pref.test.ts",
     "src/lib/sidecar-smoke-preferences.test.ts",
     "src/lib/app-preferences.test.ts",
     "src/lib/app-preferences-runtime.test.ts",

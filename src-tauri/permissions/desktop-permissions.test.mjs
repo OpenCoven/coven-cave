@@ -99,6 +99,7 @@ const requiredPermissionIds = [
   "allow-record-daemon-reliability-measurement",
   "allow-set-traffic-lights-visible",
   "allow-open-chat-window",
+  "allow-set-quick-chat-shortcut",
   "allow-shell-reveal-path",
   "allow-shell-pick-directory",
   "allow-open-tailscale-app",
@@ -140,6 +141,7 @@ const requiredCommands = [
   "record_daemon_reliability_measurement",
   "set_traffic_lights_visible",
   "open_chat_window",
+  "set_quick_chat_shortcut",
   "shell_reveal_path",
   "offline_cache_read",
   "offline_cache_write",
@@ -1063,6 +1065,27 @@ const loopbackOrigins = [
   "http://[::1]:3020/",
   "http://127.0.0.1:64203/",
 ];
+
+test("only the main window can turn the fixed Quick Chat shortcut on or off (#5980)", () => {
+  const capability = JSON.parse(readFileSync(new URL("../capabilities/loopback-quick-chat-shortcut.json", import.meta.url), "utf8"));
+  assertMainLoopbackOnly(capability);
+  assert.deepEqual(capability.permissions, ["allow-set-quick-chat-shortcut"], "the shortcut capability grants nothing else");
+  assert.match(
+    commandPermissions,
+    /identifier = "allow-set-quick-chat-shortcut"[\s\S]{0,240}commands\.allow = \["set_quick_chat_shortcut"\]/,
+    "the permission allows exactly the shortcut command",
+  );
+  const quickChat = JSON.parse(readFileSync(new URL("../capabilities/loopback-quick-chat.json", import.meta.url), "utf8"));
+  assert.equal(quickChat.permissions.includes("allow-set-quick-chat-shortcut"), false, "the tray Quick Chat cannot change it");
+  const shortcutRust = readFileSync(new URL("../src/quick_chat_shortcut.rs", import.meta.url), "utf8");
+  assert.match(
+    shortcutRust,
+    /pub\(super\) fn set_quick_chat_shortcut\(\s*webview: tauri::Webview,\s*enabled: bool,\s*\)[\s\S]{0,200}is_registered_main_window\(app, webview\.label\(\)\)/,
+    "the command refuses every webview but the main window and takes no caller-supplied key",
+  );
+  assert.match(tauriSetupRust, /set_quick_chat_shortcut,/, "the command is registered");
+  assert.match(tauriSetupRust, /plugin\(quick_chat_shortcut_plugin\(\)\)\?;\s*apply_saved_quick_chat_shortcut\(app\.handle\(\)\);/, "launch applies the saved preference");
+});
 
 function assertMainLoopbackOnly(capability) {
   assert.deepEqual(capability.webviews, managedMainWebviews, `${capability.identifier} must cover only the managed main webview`);

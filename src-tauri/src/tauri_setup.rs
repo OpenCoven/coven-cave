@@ -342,6 +342,7 @@ pub fn run() {
             shell_pick_directory,
             set_traffic_lights_visible,
             open_chat_window,
+            set_quick_chat_shortcut,
             #[cfg(target_os = "macos")]
             microphone::microphone_permission_request,
             #[cfg(target_os = "macos")]
@@ -569,6 +570,11 @@ pub fn run() {
                 app.handle().plugin(updater_builder.build())?;
             }
             app.handle().plugin(tauri_plugin_process::init())?;
+            // The opt-in Quick Chat shortcut (#5980). The plugin is always
+            // present; the key itself is held only while the saved
+            // preference is on.
+            app.handle().plugin(quick_chat_shortcut_plugin())?;
+            apply_saved_quick_chat_shortcut(app.handle());
 
             // Dev builds: when the configured dev server (tauri.conf.json
             // `build.devUrl` — `pnpm dev`) is live, point the main webview
