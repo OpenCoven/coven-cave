@@ -75,7 +75,7 @@ test("short onboarding resumes and opens an editable real-chat draft without aut
   await expect(guide).toBeVisible();
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("assistant-desktop.png") });
   await guide.getByRole("button", { name: /^Nova/ }).click();
-  await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
+  await expect(guide.locator('li[aria-current="step"]')).toContainText("Choose a project");
   await guide.getByRole("button", { name: "Close", exact: true }).click();
   expect(f.getState().step).toBe("project");
   await page.reload();
@@ -359,9 +359,9 @@ test("a removed familiar stays visible for explicit scope repair before choosing
   const removed = guide.getByRole("checkbox", { name: /Unavailable familiar nova/ });
   await expect(removed).toBeChecked(); expect(f.getState().defaults?.familiarIds).toEqual(["nova"]);
   await guide.getByRole("button", { name: "Back to assistants", exact: true }).click();
-  await guide.getByRole("button", { name: /Meet the others/ }).click();
+  await guide.getByRole("button", { name: /Choose or create a familiar/ }).click();
   await guide.getByRole("button", { name: /^Sage/ }).click();
-  await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
+  await expect(guide.locator('li[aria-current="step"]')).toContainText("Choose a project");
   await guide.getByText("Familiar scope and defaults", { exact: true }).click();
   await removed.click();
   await expect(removed).toHaveCount(0); f.restore();
@@ -397,9 +397,9 @@ test("changing from a Write actor to a Read actor requires a new access choice",
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await guide.getByRole("radio", { name: /^Full Read, create/ }).check();
   await guide.getByRole("button", { name: "Back to assistants", exact: true }).click();
-  await guide.getByRole("button", { name: /Meet the others/ }).click();
+  await guide.getByRole("button", { name: /Choose or create a familiar/ }).click();
   await guide.getByRole("button", { name: /^Sage/ }).click();
-  await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
+  await expect(guide.locator('li[aria-current="step"]')).toContainText("Choose a project");
   await expect(guide.getByRole("radio", { name: /^Full Read, create/ })).not.toBeChecked();
   await expect(guide.getByRole("button", { name: "Continue with Read", exact: true })).toBeDisabled();
   await guide.getByRole("radio", { name: /^Read Explore files/ }).check();
