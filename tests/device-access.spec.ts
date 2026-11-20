@@ -27,6 +27,12 @@ test("browser requests approval, survives reload, and displays denial without gr
     await route.fulfill({ status: 201, json: { ok: true, device: current } });
   });
   await page.goto("/connect");
+  // The label is server-rendered and controlled. Typing before React hydrates
+  // it is reset by hydration, so the request would carry the default label (#6517).
+  await page.waitForFunction(() => {
+    const input = document.querySelector("#device-label");
+    return Boolean(input && Object.keys(input).some((key) => key.startsWith("__reactFiber$")));
+  });
   await page.getByLabel("Device label").fill("My phone");
   await page.getByRole("button", { name: "Request access", exact: true }).click();
   await expect(page.getByText("abcdef01", { exact: true })).toBeVisible();
