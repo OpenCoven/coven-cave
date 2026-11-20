@@ -305,7 +305,9 @@ test("the guide contains keyboard focus and fits narrow light and alternate-them
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/?mode=home");
   const trigger = page.getByRole("button", { name: "Continue setup", exact: true });
+  await expect(trigger).toBeEnabled();
   await trigger.focus();
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await expect(guide).toBeVisible();
