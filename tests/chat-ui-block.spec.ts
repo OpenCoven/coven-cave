@@ -388,3 +388,60 @@ test("Copy hands back a block's readable lines, never its markup (#6060)", async
     `Here is the status.\n\n${STATUS_READABLE}\n\nExports needs attention.`,
   );
 });
+
+// #6521: rendered qualification of composer pre-fill. Decided on #5947 and
+// #6065: pre-fill appends below an existing draft and never sends.
+const PREFILL_TEXT = "Upgrade our workspace to 8 seats, billed monthly.";
+for (const draft of [
+  { name: "an empty draft", before: "", after: PREFILL_TEXT },
+  { name: "a whitespace-only draft", before: "   \n  ", after: PREFILL_TEXT },
+  { name: "an existing draft", before: "Keep this line.", after: `Keep this line.\n\n${PREFILL_TEXT}` },
+]) {
+  test(`pre-fill into ${draft.name}: focus, caret at end, one polite announcement, undo, no send`, async ({ page }) => {
+    const { chat, sends } = await setup(page, SHOWCASE_REPLY);
+    const composer = page.getByRole("textbox", { name: "Message", exact: true });
+    if (draft.before) await composer.fill(draft.before);
+    await expect(composer).toHaveValue(draft.before);
+    const polite = page.locator('[role="status"][aria-live="polite"]').last();
+    const announcements: string[] = [];
+    await page.exposeFunction("__recordPoliteAnnouncement", (text: string) => announcements.push(text));
+    await polite.evaluate((region) => {
+      new MutationObserver(() => {
+        const text = region.textContent?.trim();
+        if (text) (window as unknown as { __recordPoliteAnnouncement: (t: string) => void }).__recordPoliteAnnouncement(text);
+      }).observe(region, { childList: true, characterData: true, subtree: true });
+    });
+
+    await chat.getByRole("group", { name: "Seat pricing" }).getByRole("button", { name: "Draft upgrade request" }).click();
+    await expect(composer).toHaveValue(draft.after);
+    await expect(composer).toBeFocused();
+    const caret = await composer.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd, field.value.length]);
+    expect(caret, "caret sits at the end with nothing selected").toEqual([draft.after.length, draft.after.length, draft.after.length]);
+    await expect.poll(() => announcements).toEqual(["Draft added to the composer. Nothing was sent."]);
+    await page.waitForTimeout(500);
+    expect(announcements, "announced exactly once").toHaveLength(1);
+    expect(sends, "pre-fill never sends").toEqual([]);
+
+    // One undo restores the draft as it was before the pre-fill.
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(composer, "a single undo restores the previous draft").toHaveValue(draft.before);
+    expect(sends).toEqual([]);
+  });
+}
+
+test("after the pre-filled text is edited, undo no longer restores the earlier draft", async ({ page }) => {
+  const { chat } = await setup(page, SHOWCASE_REPLY);
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Keep this line.");
+  await chat.getByRole("group", { name: "Seat pricing" }).getByRole("button", { name: "Draft upgrade request" }).click();
+  await expect(composer).toHaveValue(`Keep this line.\n\n${PREFILL_TEXT}`);
+  // Focus moves on the next frame. Typing before it would press Space on the
+  // still-focused button and pre-fill a second time.
+  await expect(composer).toBeFocused();
+  await page.keyboard.type(" Thanks");
+  await expect(composer).toHaveValue(`Keep this line.\n\n${PREFILL_TEXT} Thanks`);
+  await page.keyboard.press("ControlOrMeta+z");
+  // Native undo takes over: the user's own typing may be undone, the pre-fill is kept.
+  await expect(composer).not.toHaveValue("Keep this line.");
+  expect(await composer.inputValue()).toContain(PREFILL_TEXT);
+});

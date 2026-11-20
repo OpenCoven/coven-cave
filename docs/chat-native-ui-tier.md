@@ -85,7 +85,7 @@ Rejected at parse time: function calls, property access, indexing, assignment, a
 A `Button` does exactly one thing:
 
 - `set="seats" to={10}` sets local State, or
-- `prefill="text"` appends the text to this chat's composer (below any existing draft) and focuses it. Nothing is sent. ChatView announces "Draft added to the composer. Nothing was sent."
+- `prefill="text"` appends the text to this chat's composer (below any existing draft, replacing a whitespace-only one) and focuses it with the caret at the end. Nothing is sent. ChatView announces "Draft added to the composer. Nothing was sent." While the composer still holds exactly the pre-filled text, one Cmd/Ctrl+Z restores the earlier draft and announces "Draft restored." Once the person edits the text, undo is the browser's own again. The browser's undo stack can't carry the pre-fill itself: React sets the value, and WebKit would merge it with the typing before it (#6521). `tests/chat-ui-block.spec.ts` checks every row in Chromium and, through the `composer-prefill-webkit` project, in WebKit.
 
 There is no send, link, fetch, file, or submit action in the catalog. This follows the approve card's rule that selecting doesn't send. Prefill reaches the composer only through `UiBlockHostContext`, which ChatView provides per pane. A read-only chat provides `prefill: null`, and its prefill buttons render disabled.
 

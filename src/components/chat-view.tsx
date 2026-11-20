@@ -3407,8 +3407,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
   // never sends; an existing draft is kept and the text is appended below it.
+  // The browser's undo stack can't hold this edit (React sets the value, and
+  // WebKit would merge it with the typing before it), so the composer keeps
+  // one explicit undo step: the first Cmd/Ctrl+Z while the composer still
+  // holds exactly the pre-filled text restores the earlier draft (#6521).
+  const prefillUndoRef = useRef<{ before: string; after: string } | null>(null);
   const prefillComposerFromUiBlock = useCallback((text: string) => {
-    setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text));
+    const before = inputRef.current?.value ?? "";
+    const after = before.trim() ? `${before.replace(/\s+$/, "")}\n\n${text}` : text;
+    prefillUndoRef.current = { before, after };
+    setInput(after);
     requestAnimationFrame(() => {
       const field = inputRef.current;
       if (!field) return;
@@ -7392,6 +7400,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // One undo after a coven:ui pre-fill restores the draft it replaced.
+    const prefillUndo = prefillUndoRef.current;
+    if (prefillUndo) {
+      if (e.currentTarget.value !== prefillUndo.after) {
+        prefillUndoRef.current = null;
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        prefillUndoRef.current = null;
+        setInput(prefillUndo.before);
+        const field = e.currentTarget;
+        requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+        announce("Draft restored.");
+        return;
+      }
+    }
     // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
