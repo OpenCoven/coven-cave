@@ -119,6 +119,7 @@ dependencies = [
  "block2",
  "discord-rich-presence",
  "fs2",
+ "gtk",
  "hkdf",
  "keyring",
  "libc",

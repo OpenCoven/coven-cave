@@ -1313,6 +1313,7 @@ export const SUITES = {
     "src/lib/onboarding-gate.test.ts",
     "src/lib/onboarding-prerequisites.test.ts",
     "src/lib/server/managed-node-toolchain.test.ts",
+    "src/lib/server/codex-login-status.test.ts",
     "src/lib/server/owned-directory-write.test.ts",
     "src/lib/server/onboarding-diagnostics.test.ts",
     "src/lib/server/onboarding-core-tools.test.ts",

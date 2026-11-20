@@ -337,6 +337,17 @@ assert.match(
   "hiding platforms atomically apply clamped bounds before revealing the child",
 );
 
+assert.match(
+  showWebviewFn,
+  /#\[cfg\(target_os = "linux"\)\]\s*place_linux_browser\(webview, x, y, w, h\)\?/,
+  "Linux positions the GTK overlay before showing a browser child",
+);
+assert.match(
+  rustBrowser,
+  /connect_get_child_position[\s\S]*?gtk_widget_reparent[\s\S]*?overlay\.add_overlay\(child\)/,
+  "Linux retains the main WebKit drawing surface and allocates links in the pane, including when it shrinks",
+);
+
 // Hide and show must cover the SAME platform set. A platform that hides the
 // widget but never shows it again strands the browser invisible forever —
 // which is how extending the Linux hide (cave-vb79) could have gone wrong.

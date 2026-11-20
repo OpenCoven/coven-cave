@@ -222,8 +222,17 @@ try {
   assert.equal(malformed.sessionId, "canvas-session", "repair keeps the original hidden session when no new session event arrives");
   assert.equal(sentBody.sessionId, "canvas-session", "repair resumes the original Canvas-origin run");
 
+  globalThis.fetch = async () => responseFor([
+    { kind: "error", code: "harness_auth_required", harness: "codex", message: "Sign-in required" },
+    { kind: "done", isError: true },
+  ]);
+  const login = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(login.authFailure?.loginCommand, "codex login");
+  assert.equal(login.authFailure?.harnessLabel, "Codex");
+
   globalThis.fetch = async () => new Response("offline", { status: 503 });
   const transport = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(transport.authFailure, undefined);
   assert.equal(transport.failure, "transport", "HTTP/runtime failures are never classified as repairable format failures");
 } finally {
   globalThis.fetch = originalFetch;

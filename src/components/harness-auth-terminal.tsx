@@ -17,7 +17,8 @@ export function HarnessAuthTerminal({
   intent?: "connect" | "switch-account";
 }) {
   const [threadId] = useState(() => `cave.auth.${crypto.randomUUID()}`);
-  const command = failure.loginCommand;
+  const [deviceLogin, setDeviceLogin] = useState(false);
+  const command = deviceLogin ? "codex login --device-auth" : failure.loginCommand;
 
   return (
     <Modal open onClose={onClose} breadcrumb={[intent === "switch-account" ? "Switch account" : "Connect", failure.harnessLabel ?? "Runtime"]} wide
@@ -28,7 +29,9 @@ export function HarnessAuthTerminal({
       }
     >
       <p className="mb-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
-        {intent === "switch-account" ? (
+        {deviceLogin ? (
+          <>Open the address shown below on the device with your passkey or security key. Enter the code there, then close this terminal when sign-in finishes.</>
+        ) : intent === "switch-account" ? (
           <>Choose your other {failure.harnessLabel ?? "runtime"} account in the sign-in page. This changes the sign-in used by
             other local {failure.harnessLabel ?? "runtime"} CLI launches, not only this chat. Existing running sessions keep
             their current account. API keys or Vault credentials can override CLI sign-in.
@@ -37,8 +40,13 @@ export function HarnessAuthTerminal({
           ? "If the CLI does not prompt, enter /login. " : ""}
         Close this terminal and retry the message when connected.</>}
       </p>
+      {intent === "connect" && failure.harness === "codex" && !deviceLogin ? (
+        <button type="button" className="focus-ring mb-3 rounded-md border border-[var(--border-strong)] px-3 py-1.5 text-[var(--text-primary)]" onClick={() => setDeviceLogin(true)}>
+          Sign in on another device
+        </button>
+      ) : null}
       <div className="h-80 overflow-hidden rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]">
-        <BottomTerminal disposeOnUnmount threadId={threadId} label={`${failure.harnessLabel ?? "Runtime"} sign-in`}
+        <BottomTerminal key={deviceLogin ? "device" : "local"} useServerPty disposeOnUnmount threadId={deviceLogin ? `${threadId}.device` : threadId} label={`${failure.harnessLabel ?? "Runtime"} sign-in`}
           onReady={(writer) => { if (command) writer.write(`${command}\r`); }} />
       </div>
     </Modal>
