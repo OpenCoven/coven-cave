@@ -387,7 +387,7 @@ assert.doesNotMatch(
 );
 assert.match(
   chat,
-  /\.sheet\(isPresented: \$showNewChat\) \{\s*NewChatView\(initialFamiliarIds: thread\.familiarIds\)/,
+  /\.caveSheet\(isPresented: \$showNewChat\) \{\s*NewChatView\(initialFamiliarIds: thread\.familiarIds\)/,
   "/new and replacement flows must preserve participants in explicit New Chat configuration",
 );
 assert.match(
