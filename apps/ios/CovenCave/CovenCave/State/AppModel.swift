@@ -3240,6 +3240,10 @@ final class AppModel {
                 generated: false
             ),
         ]
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-list-statuses") {
+            serverSessions[0].status = "running"
+            serverSessions[1].status = "failed"
+        }
         sessionsLoaded = true
 
         cardThreadLinks["cold-launch"] = "ui-preview-empty-chat"

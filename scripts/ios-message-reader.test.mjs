@@ -68,7 +68,7 @@ assert.match(
 
 assert.match(
   chatView,
-  /\.sheet\(item: \$responseReader\) \{ item in[\s\S]*ResponseReaderView\(item: item\)/,
+  /\.caveSheet\(item: \$responseReader\) \{ item in[\s\S]*ResponseReaderView\(item: item\)/,
   "ChatView should present the response reader as an item sheet",
 );
 

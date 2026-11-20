@@ -138,7 +138,7 @@ test("voice retains one captured presentation and permanently ends it on authori
   assert.match(chat, /@State private var voiceCall: LiveVoiceCallModel\?/);
   // The cover presents the one captured model; the header avatar source
   // (#5714) is presentation data, never a second model or call authority.
-  assert.match(chat, /\.fullScreenCover\(item: \$voiceCall\) \{ model in\s*LiveVoiceCallView\(model: model,\s*avatarSource: app\.client\?\.familiarAvatarSource\(for: model\.familiar\)\)\s*\}/);
+  assert.match(chat, /\.caveFullScreenCover\(item: \$voiceCall\) \{ model in\s*LiveVoiceCallView\(model: model,\s*avatarSource: app\.client\?\.familiarAvatarSource\(for: model\.familiar\)\)\s*\}/);
   assert.doesNotMatch(chat, /showVoiceCall/);
   assert.match(chat, /private func beginVoiceCall[\s\S]*let callThread = thread[\s\S]*captureConnectionDispatchLease\(\)[\s\S]*LiveVoiceCallModel\([\s\S]*client: client,[\s\S]*authorityIsCurrent: \{[\s\S]*dispatchIsCurrent\(binding, in: callThread, lease: dispatchLease\)[\s\S]*binding\.matches\(callThread, includingSessions: true\)/);
   assert.match(view, /init\(model: LiveVoiceCallModel, avatarSource: CaveImageSource\? = nil\) \{\s*_model = State\(initialValue: model\)\s*self\.avatarSource = avatarSource\s*\}/);

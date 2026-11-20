@@ -37,14 +37,7 @@ until intentionally migrated by the active program.
 
 - Native iOS is **chat-only**: conversations, chat search, familiar selection
   within chat, permissions, and configuration that enables or customizes chat.
-- Chats opens to global conversations, including direct and group chats and
-  sessions started on other devices. Hydrated sessions appear once, not once
-  as a local thread and again as a server row. Pins, archive visibility,
-  title/familiar search, and the familiar and project filters organize the
-  list without a global project filter. The project strip appears when chats
-  span more than one project, as one menu at accessibility text sizes; it
-  narrows only the visible list and never changes a chat's binding or the
-  application's scope.
+- Chats opens to global conversations, including direct and group chats and sessions started on other devices. Hydrated sessions appear once, not once as a local thread and again as a server row. Pins, archive visibility, title/familiar search, and the familiar and project filters organize the list without a global project filter. Status, project, familiar, and archive visibility filters share one horizontally scrolling row of menus at every text size. The project menu appears when chats span more than one project; it narrows only the visible list and never changes a chat's binding or the application's scope.
 - The drawer contains Chats, recent conversations, New chat, Search chats, and
   Settings. There is no Tasks, Automations, Projects, Needs You, standalone
   Familiar hub, workspace browser, global search, or terminal destination.
@@ -81,6 +74,7 @@ until intentionally migrated by the active program.
 - Settings contains appearance, permissions, connection, security, chat
   notifications/export, and legal information. Promotional/community browsing
   is outside the mobile chat surface.
+- A shared navigation rail stays available in wide and landscape windows across Chats, Settings, and app-owned chat presentations, including the response reader, New chat, permissions, model/session selection, scheduled replies, content zoom, and calls. The rail appears when the presentation spans at least 600 points including horizontal safe areas; genuinely narrow windows retain the drawer. Keyboard height does not change that choice. Presentation navigation waits for each sheet or cover to dismiss before routing through the persistent shell, and honors existing launch/save guards and keeps navigation disabled during an active call. System pickers and locked or unconfigured authentication screens retain their protected flows.
 - The open drawer preserves spatial context by presenting the live destination
   as a rounded, offset page.
 - Theme values come from `ChromePalette`; Dynamic Type, VoiceOver, Reduce
