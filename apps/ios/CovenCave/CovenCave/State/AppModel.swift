@@ -4908,8 +4908,7 @@ final class AppModel {
                 projects: nextProjects,
                 familiars: nextFamiliars,
                 directGrants: grants.grants ?? [],
-                groups: grants.accessGroups ?? [],
-                supremeFamiliarId: grants.supremeFamiliarId
+                groups: grants.accessGroups ?? []
             )
             let selectionResolution = try await resolveProjectContextSelection(
                 using: client,
