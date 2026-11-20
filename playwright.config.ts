@@ -66,6 +66,9 @@ const E2E_AGENTIC_RECOMMENDATIONS =
   process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS ?? "false";
 
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
+// #6521: composer pre-fill rows must pass in WebKit too (the macOS app runs
+// in WKWebView, whose undo grouping differs from Chromium's).
+const COMPOSER_PREFILL_TESTS = /pre-fill into|undo no longer restores the earlier draft/;
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
@@ -252,6 +255,13 @@ export default defineConfig({
       name: "voice-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /voice-call\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
+      name: "composer-prefill-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /chat-ui-block\.spec\.ts/,
+      grep: COMPOSER_PREFILL_TESTS,
       use: { ...devices["Desktop Safari"] },
     },
     {
