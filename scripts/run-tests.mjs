@@ -282,6 +282,7 @@ export const SUITES = {
     "scripts/doctor-exec-performance.test.mjs",
     "scripts/soak-performance.test.mjs",
     "scripts/native-harness-teardown.test.mjs",
+    "scripts/native-harness-command.test.mjs",
     "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/daemon-lifecycle-probe.test.mjs",

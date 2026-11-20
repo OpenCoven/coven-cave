@@ -34,6 +34,17 @@ test("workflow and script changes run their validation lanes", () => {
   assert.equal(classifyCiPaths(["scripts/native-harness-teardown.test.mjs"]).ios, true);
 });
 
+test("native command owner-only changes run the native harness qualification", () => {
+  for (const file of [
+    "scripts/native-harness-command.mjs",
+    "scripts/native-harness-command.py",
+    "scripts/native-harness-command.test.mjs",
+  ]) {
+    assert.equal(classifyCiPaths([file]).ios, true, file);
+    assert.equal(classifyCiPaths([file]).frontend, true, file);
+  }
+});
+
 test("standalone continuity sources always run the lightweight docs contracts", () => {
   for (const file of [
     "AGENTS.md",
