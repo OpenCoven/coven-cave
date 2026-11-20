@@ -127,6 +127,7 @@ keyring = { version = "3", default-features = false, features = ["apple-native"]
 # The trade is that the secret does not survive a logout; the cache treats the
 # resulting entries as undecryptable and refills (offline_cache.rs).
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
 keyring = { version = "3", default-features = false, features = ["linux-native"] }
 
 # Unix lifecycle tests hard-kill exact owned process groups. Keep libc
