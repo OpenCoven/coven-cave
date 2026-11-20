@@ -273,14 +273,6 @@
     gap: var(--space-1);
   }
 
-  :root[data-tauri-titlebar] .sidebar-minimal .sidebar-version {
-    padding-inline: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-2xs);
-  }
-
   :root[data-tauri-titlebar] .chat-inner-rail .cnav__title-row {
     border-bottom: 0;
   }
