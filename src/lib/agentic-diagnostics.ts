@@ -133,7 +133,3 @@ const processDiagnostics = createAgenticDiagnosticRing();
 export function recordAgenticDiagnostic(input: AgenticDiagnosticInput): AgenticDiagnosticEvent {
   return processDiagnostics.record(input);
 }
-
-export function recentAgenticDiagnostics(): readonly AgenticDiagnosticEvent[] {
-  return processDiagnostics.events();
-}

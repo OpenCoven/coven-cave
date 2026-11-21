@@ -6,14 +6,9 @@
 // assigned task; the helpers turn one into a board card, a card connection, or
 // an issue.
 
-import type { CardAsanaKind, CardAsanaLink } from "@/lib/cave-board-types";
+import type { CardAsanaKind } from "@/lib/cave-board-types";
 import { publishBoardChanged } from "@/lib/board-cache-events";
-import {
-  mergeLinksWithAsana,
-  mergeTaskAsanaLinks,
-  taskAsanaLinkFromAsanaItem,
-  taskAsanaLinkFromUrl,
-} from "@/lib/task-asana";
+import { taskAsanaLinkFromAsanaItem } from "@/lib/task-asana";
 
 export type AsanaItem = {
   kind: CardAsanaKind;
@@ -59,10 +54,6 @@ export type AsanaWorkspacesResponse = {
   error?: string;
 };
 
-export function asanaItemToContext(item: AsanaItem): { title: string; url: string; projectName?: string } {
-  return { title: item.title, url: item.url, projectName: item.projectName };
-}
-
 /**
  * Create a board card seeded from an Asana task, mirroring
  * createBoardCardFromGitHubItem. The card lands in the Inbox column with the
@@ -97,39 +88,6 @@ export async function createBoardCardFromAsanaItem(
     }
     publishBoardChanged();
     return { ok: true, cardId: data.card?.id as string | undefined };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Network error" };
-  }
-}
-
-/** Attach an Asana task (item or bare permalink URL) to an existing card,
- *  merging with whatever connections the card already has. */
-export async function attachAsanaItemToCard(
-  cardId: string,
-  item: AsanaItem | string,
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const asanaLink = typeof item === "string" ? taskAsanaLinkFromUrl(item) : taskAsanaLinkFromAsanaItem(item);
-    if (!asanaLink) return { ok: false, error: "not a recognizable Asana URL" };
-    const url = typeof item === "string" ? item : item.url;
-    const getRes = await fetch("/api/board");
-    const getData = await getRes.json().catch(() => null);
-    const cards: Array<{ id: string; links?: string[]; asana?: CardAsanaLink[] }> = getData?.cards ?? [];
-    const existing = cards.find((c) => c.id === cardId);
-    const asana = mergeTaskAsanaLinks(existing?.asana ?? [], asanaLink);
-    const mergedLinks = mergeLinksWithAsana([...new Set([...(existing?.links ?? []), url])], asana);
-
-    const res = await fetch(`/api/board/${cardId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ links: mergedLinks, asana }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok) {
-      return { ok: false, error: data?.error ?? `HTTP ${res.status}` };
-    }
-    publishBoardChanged();
-    return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
   }
