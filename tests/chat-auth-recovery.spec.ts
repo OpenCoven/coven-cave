@@ -1,14 +1,20 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 const ISO = "2026-10-03T00:00:00.000Z";
 test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 async function setup(page: Page, configuration: boolean, empty = false) {
   const sends: Array<Record<string, unknown>> = [];
+  const project = { id: "p1", name: "Coven Cave", root: "/tmp/coven-cave" };
+  await installCompletedFirstUse(page, {
+    project, familiarIds: ["nova"], actingFamiliarId: "nova", harness: "claude",
+    permissionMode: "full", seedWorkspaceScope: true,
+  });
   await page.addInitScript(() => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "nova");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
-    localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: {
     ok: true,
@@ -20,7 +26,7 @@ async function setup(page: Page, configuration: boolean, empty = false) {
     sessions: [{ id: "auth-recovery", title: "Auth recovery", status: "idle", project_root: "/tmp/coven-cave", harness: "copilot", familiarId: "nova", model: "test", runtime: "local:/tmp/coven-cave", exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO }],
   } }));
   await page.route("**/api/projects**", (route) => route.fulfill({ json: {
-    ok: true, projects: [{ id: "p1", name: "Coven Cave", root: "/tmp/coven-cave", access: "write" }],
+    ok: true, projects: [{ ...project, access: "write" }],
   } }));
   await page.route("**/api/chat/conversation/**", (route) => route.fulfill({ json: {
     ok: true, conversation: { activeLeafId: "a1", turns: [{ id: "a1", parentId: null, role: "assistant", text: "Ready for a message.", createdAt: ISO }] },
