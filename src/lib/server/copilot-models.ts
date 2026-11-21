@@ -1,3 +1,4 @@
+import { ModelInventoryCache, positiveLimit } from "./model-inventory-cache.ts";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { normalizeCopilotModels } from "../copilot-models.ts";
@@ -116,35 +117,8 @@ type CopilotModelDependencies = {
   maxConcurrentDiscoveries?: number;
 };
 
-type CacheEntry = { expiresAt: number; models: RuntimeModelOption[] };
-const cache = new Map<string, CacheEntry>();
+const cache = new ModelInventoryCache();
 const inFlight = new Map<string, Promise<RuntimeModelOption[]>>();
-
-function positiveLimit(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
-    ? value
-    : fallback;
-}
-
-function pruneExpiredCache(now: number): void {
-  for (const [key, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(key);
-  }
-}
-
-function cacheModels(
-  key: string,
-  entry: CacheEntry,
-  maxEntries: number,
-): void {
-  cache.delete(key);
-  cache.set(key, entry);
-  while (cache.size > maxEntries) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    cache.delete(oldest);
-  }
-}
 
 function copilotScopeKey(
   familiarId: string | null | undefined,
@@ -301,14 +275,14 @@ async function discoverCopilotModels(
   if (models.length > 0) {
     const now = dependencies.now ?? Date.now;
     const currentTime = now();
-    pruneExpiredCache(currentTime);
-    cacheModels(
+    cache.set(
       cacheKey,
       {
         expiresAt: currentTime + (dependencies.cacheMs ?? CACHE_MS),
         models,
       },
       positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
+      currentTime,
     );
   }
   return models;
@@ -337,11 +311,8 @@ export async function listCopilotModelInventory(
   }
   const key = copilotScopeKey(familiarId, env);
   const now = dependencies.now ?? Date.now;
-  pruneExpiredCache(now());
-  const cached = cache.get(key);
+  const cached = cache.get(key, now());
   if (cached) {
-    cache.delete(key);
-    cache.set(key, cached);
     return { models: [...cached.models], provenance: "cached" };
   }
   const pending = inFlight.get(key);
