@@ -54,10 +54,17 @@ await check(
 );
 
 await check(
-  "project file requires path",
+  "project file denies a request without a permission-check path",
   "/api/project-file",
-  400,
-  (json) => json?.ok === false && json.error === "missing path param",
+  403,
+  (json) => json?.ok === false && json.error === "missing project path for permission check",
+);
+
+await check(
+  "project file reads a text fixture from the local workspace",
+  "/api/project-file?path=fixtures/api-http-smoke/project-file.txt",
+  200,
+  (json) => json?.ok === true && json.kind === "text" && /^Cave project file smoke fixture\.\r?\n$/.test(json.content),
 );
 
 await check(
