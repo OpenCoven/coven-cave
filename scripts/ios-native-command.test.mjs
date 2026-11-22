@@ -227,7 +227,7 @@ with pathlib.Path(${JSON.stringify(calls)}).open('a') as f: f.write(json.dumps(a
 if args == ['simctl','list','devices','12345678-1234-1234-1234-123456789ABC','--json']:
     print(json.dumps({'devices':{'runtime':[{'udid':'12345678-1234-1234-1234-123456789ABC','state':'Booted'}]}}))
     sys.exit(0)
-print('CAVE_SCROLL_TRACE_WRITE_ERROR fixture')
+print('CAVE_SCROLL_TRACE_WRITE_ERROR')
 sys.exit(17)
 `, { mode: 0o755 });
     const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, RUNNER_TEMP: dir,
@@ -243,11 +243,11 @@ sys.exit(17)
     assert.deepEqual(invoked[0], ['simctl', 'list', 'devices', '12345678-1234-1234-1234-123456789ABC', '--json']);
     assert.deepEqual(invoked[1], ['simctl', 'spawn', '12345678-1234-1234-1234-123456789ABC',
       'log', 'show', '--style', 'compact', '--last', '70m', '--predicate',
-      'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
+      'process == "CovenCave" AND eventMessage == "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
     const log = await readFile(path.join(dir, 'scroll-pan-marker.log'), 'utf8');
     assert.match(log, /Marker query started: \d{4}-\d\d-\d\dT/);
     assert.match(log, /Marker query finished: \d{4}-\d\d-\d\dT.*status=17/);
-    assert.match(log, /CAVE_SCROLL_TRACE_WRITE_ERROR fixture/);
+    assert.match(log, /CAVE_SCROLL_TRACE_WRITE_ERROR/);
     assert.match(log, /Marker reader exit: 17/);
     const invalidDir = path.join(dir, 'invalid');
     await mkdir(invalidDir);
@@ -296,7 +296,7 @@ if args == ['simctl','list','devices','${udid}','--json']:
     code=int(os.environ.get('MARKER_METADATA_EXIT','0'))
     if not code: print(pathlib.Path(os.environ['MARKER_METADATA']).read_text())
     sys.exit(code)
-print('CAVE_SCROLL_TRACE_WRITE_ERROR fixture')
+print('CAVE_SCROLL_TRACE_WRITE_ERROR')
 sys.exit(int(os.environ.get('MARKER_QUERY_EXIT','0')))
 `, { mode: 0o755 });
     const device = { udid, state: 'Shutdown', dataPath: data };
@@ -333,7 +333,7 @@ sys.exit(int(os.environ.get('MARKER_QUERY_EXIT','0')))
       assert.equal(invoked.length, scenario.queried ? 2 : 1, `${scenario.name}: reject before any log read`);
       if (scenario.queried) {
         assert.deepEqual(invoked[1], ['--sdk', 'macosx', 'log', 'show', '--directory', await realpath(store),
-          '--style', 'compact', '--last', '70m', '--predicate', 'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
+          '--style', 'compact', '--last', '70m', '--predicate', 'process == "CovenCave" AND eventMessage == "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
         const log = await readFile(path.join(runnerTemp, 'scroll-pan-marker.log'), 'utf8');
         const reader = JSON.parse(log.split('\n').find((line) => line.startsWith('Marker reader: ')).slice('Marker reader: '.length));
         assert.equal(reader.selectedUUID, udid);
@@ -361,7 +361,7 @@ await test('marker budget admits a delayed reader and still drains an unresponsi
     const metadata = path.join(dir, 'metadata.json');
     await writeFile(metadata, JSON.stringify({ devices: { runtime: [{ udid, state: 'Shutdown', dataPath: data }] } }));
     const query = ['--sdk', 'macosx', 'log', 'show', '--directory', await realpath(store),
-      '--style', 'compact', '--last', '70m', '--predicate', 'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"'];
+      '--style', 'compact', '--last', '70m', '--predicate', 'process == "CovenCave" AND eventMessage == "CAVE_SCROLL_TRACE_WRITE_ERROR"'];
     await writeFile(path.join(bin, 'xcrun'), `#!/usr/bin/env python3
 import json,os,pathlib,signal,sys,time
 args=sys.argv[1:]

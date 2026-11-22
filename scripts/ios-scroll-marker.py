@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
-PREDICATE = 'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"'
+PREDICATE = 'process == "CovenCave" AND eventMessage == "CAVE_SCROLL_TRACE_WRITE_ERROR"'
 
 
 def query_command(udid, payload):
