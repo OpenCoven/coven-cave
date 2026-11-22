@@ -815,4 +815,92 @@ const pinnedCancelled = await board.transitionCard(pinnedCancellation.id, {
 assert.equal(pinnedCancelled?.primaryBlockerId, "pinned-cancellation");
 assert.equal(pinnedCancelled?.primaryBlockerPinned, true);
 
+// ── #6562: "someone retries or repairs" clears the failure blocker ──────────
+// (docs/orchestration-ready-tasks.md). Retry used to leave the system
+// execution dependency unresolved and its approval-bound next step in place,
+// so the retried task could never be dispatched again.
+const retried = await board.transitionCard(running.id, { to: "queued", retry: true });
+assert.equal(retried?.lifecycle, "queued");
+assert.equal(retried?.retryCount, running.maxRetries + 1);
+const retriedBlocker = retried?.dependencies?.find((entry) => entry.id === failureBlocker?.id);
+assert.equal(retriedBlocker?.state, "resolved", "retry resolves the system failure blocker");
+assert.match(retriedBlocker?.evidence ?? "", /^Retried at /);
+assert.ok(retriedBlocker?.resolvedAt, "the resolution is timestamped");
+assert.equal(retried?.nextStep, null, "retry clears the system's review-the-failure step");
+assert.equal(retried?.primaryBlockerId, null, "no primary blocker points at a resolved failure");
+assert.equal(retried?.needsHuman, false);
+assert.equal(orchestration.deriveReadiness(retried!, (await board.loadBoard()).cards), "ready");
+const redispatched = await board.transitionCard(running.id, { to: "dispatched" });
+assert.equal(redispatched?.lifecycle, "dispatched", "a retried task can be dispatched again");
+
+const requeued = await board.transitionCard(cancelledRun.id, { to: "queued" });
+const requeuedBlocker = requeued?.dependencies?.find((entry) => entry.kind === "execution");
+assert.equal(requeuedBlocker?.state, "resolved", "re-queue resolves the cancellation blocker too");
+assert.match(requeuedBlocker?.evidence ?? "", /^Re-queued at /);
+assert.equal(requeued?.nextStep, null);
+assert.equal(requeued?.retryCount, cancelled?.retryCount, "a re-queue is not counted as a retry");
+
+const humanRetried = await board.transitionCard(humanRun.id, { to: "queued", retry: true });
+assert.deepEqual(humanRetried?.nextStep, humanActionStep, "retry keeps a human next step");
+
+const pinnedRetried = await board.transitionCard(pinnedFailure.id, { to: "queued", retry: true });
+assert.equal(pinnedRetried?.primaryBlockerId, pinnedBlocker.id, "retry keeps a pinned blocker that is still unresolved");
+assert.equal(pinnedRetried?.primaryBlockerPinned, true);
+assert.equal(
+  pinnedRetried?.dependencies?.find((entry) => entry.id === pinnedBlocker.id)?.state,
+  pinnedBlocker.state,
+  "retry never resolves a blocker it didn't synthesize",
+);
+assert.ok(
+  pinnedRetried?.dependencies?.filter((entry) => entry.kind === "execution").every((entry) => entry.state === "resolved"),
+);
+
+// ── #6562: a launch refusal that needs a person is recorded on the card,
+// once, and the confirmation that clears it resolves it everywhere.
+const folderRef = "project-folder:proj-nova";
+const launchA = await board.createCard({ title: "Launch blocked A" });
+const launchB = await board.createCard({ title: "Launch blocked B" });
+const blockedA = await board.recordLaunchBlocker(launchA.id, {
+  ref: folderRef,
+  kind: "human",
+  label: "Confirm Nova’s project folder so this task can start",
+});
+assert.equal(blockedA?.lifecycle, "queued", "recording a launch blocker never changes the lifecycle");
+assert.equal(blockedA?.status, launchA.status);
+const recorded = blockedA?.dependencies?.filter((entry) => entry.ref === folderRef) ?? [];
+assert.equal(recorded.length, 1);
+assert.equal(recorded[0].origin, "system");
+assert.equal(recorded[0].state, "unresolved");
+assert.equal(orchestration.deriveReadiness(blockedA!, (await board.loadBoard()).cards), "waiting");
+const again = await board.recordLaunchBlocker(launchA.id, {
+  ref: folderRef,
+  kind: "human",
+  label: "Confirm Nova’s project folder so this task can start",
+});
+assert.equal(again?.dependencies?.filter((entry) => entry.ref === folderRef).length, 1, "a repeated refusal is not duplicated");
+await board.recordLaunchBlocker(launchB.id, {
+  ref: folderRef,
+  kind: "human",
+  label: "Confirm Nova’s project folder so this task can start",
+});
+const resolvedIds = await board.resolveLaunchBlockers(folderRef, "Nova’s folder was confirmed");
+assert.deepEqual(resolvedIds.sort(), [launchA.id, launchB.id].sort());
+for (const id of [launchA.id, launchB.id]) {
+  const after = (await board.loadBoard()).cards.find((card) => card.id === id)!;
+  const dep = after.dependencies?.find((entry) => entry.ref === folderRef);
+  assert.equal(dep?.state, "resolved");
+  assert.equal(dep?.evidence, "Nova’s folder was confirmed");
+  assert.equal(orchestration.deriveReadiness(after, (await board.loadBoard()).cards), "ready");
+}
+assert.deepEqual(await board.resolveLaunchBlockers(folderRef, "again"), [], "resolving twice touches nothing");
+const humanRef = await board.createCard({
+  title: "Human-written blocker with the same ref",
+  dependencies: [{ ...blocker, id: "human-folder", ref: folderRef }],
+});
+assert.deepEqual(await board.resolveLaunchBlockers(folderRef, "confirmed"), [], "a human-written blocker is never resolved by automation");
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === humanRef.id)?.dependencies?.[0]?.state,
+  "unresolved",
+);
+
 console.log("cave-board-orchestration.test.ts OK");

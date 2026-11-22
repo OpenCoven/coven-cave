@@ -99,6 +99,23 @@ When a session fails or is cancelled, or retries run out, the Cave synthesizes a
 to choose retry or repair. Failure-blocked and dependency-blocked are the same
 contract — there is no second, weaker path into Blocked.
 
+Retrying or re-queuing is that choice. Moving the task back to `queued`
+resolves the system `execution` dependencies with evidence ("Retried at …" or
+"Re-queued at …") and clears the system's next step, so the task can be
+dispatched again. Human-written dependencies, pinned blockers, and next steps
+stay as they are (#6562).
+
+A launch refusal that only a person can clear is recorded the same way. When a
+task chat is refused because its project's folder is unconfirmed (#6215), the
+task gets one system dependency with ref `project-folder:<projectId>`. A
+repeat refusal doesn't add another. Confirming the folder resolves it on every
+task that carries it, and a declined confirmation resolves nothing. The
+lifecycle and column don't change; the task is just waiting.
+
+Starting a task chat dispatches a task only when it is `queued`, ready, and
+has no next step awaiting approval. A task that is waiting can still have its
+chat opened to discuss it.
+
 ## What Enhance may and may not do
 
 Enhance proposes dependencies and next steps. It **auto-applies only** when all
