@@ -140,7 +140,6 @@ export function grantChangeOriginLabel(change: Pick<ConsoleGrantChange, "actor" 
   }
 }
 
-export type PermissionTab = "access" | "requests" | "audit";
 export type AuditFilter = "all" | AuditDecision;
 
 /** Stable key for a (familiar, project) grant pair. */
@@ -454,4 +453,3 @@ export function accessRollupLabel(rollup: AccessRollup): string {
   if (parts.length === 0) return "no access";
   return parts.join(" · ");
 }
-

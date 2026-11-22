@@ -357,4 +357,3 @@ export const invalidate = surfaceWarmCache.invalidate;
 export const invalidateIfDefined = surfaceWarmCache.invalidateIfDefined;
 export const abort = surfaceWarmCache.abort;
 export const abortWarm = surfaceWarmCache.abortWarm;
-export const surfaceWarmCacheSnapshot = surfaceWarmCache.snapshot;
