@@ -1655,6 +1655,30 @@ function applyExecutionBlocker(
   next.needsHuman = true;
 }
 
+/**
+ * "Someone retries or repairs" clears a failure blocker
+ * (docs/orchestration-ready-tasks.md, #6562). Resolve only the execution
+ * dependencies the Cave synthesized, with evidence, and drop the system's
+ * review-the-failure step. Human-written blockers and next steps stay.
+ */
+function clearExecutionBlockers(next: Card, evidence: string, now: string): void {
+  const dependencies = Array.isArray(next.dependencies) ? next.dependencies : [];
+  const cleared = new Set<string>();
+  next.dependencies = dependencies.map((dependency) => {
+    if (!dependency || dependency.origin !== "system" || dependency.kind !== "execution" || dependency.state !== "unresolved") {
+      return dependency;
+    }
+    cleared.add(dependency.id);
+    return { ...dependency, state: "resolved", resolvedAt: now, resolvedBy: "system", evidence };
+  });
+  if (next.primaryBlockerId && cleared.has(next.primaryBlockerId)) {
+    const remaining = next.dependencies.find((dependency) => dependency?.state === "unresolved");
+    next.primaryBlockerId = remaining?.id ?? null;
+    next.primaryBlockerPinned = false;
+  }
+  if (next.nextStep?.origin === "system") next.nextStep = null;
+}
+
 export async function transitionCard(
   id: string,
   { to, reason, retry }: TransitionInput,
@@ -1699,6 +1723,7 @@ export async function transitionCard(
     if (retry) {
       next.retryCount = current.retryCount + 1;
     }
+    clearExecutionBlockers(next, `${retry ? "Retried" : "Re-queued"} at ${now}`, now);
     next.status = "backlog";
     next.needsHuman = false;
   } else if (to === "cancelled") {
@@ -1715,6 +1740,88 @@ export async function transitionCard(
   board.cards[idx] = next;
   await saveBoard(board, [next.id]);
   return next;
+  });
+}
+
+/**
+ * Record a launch refusal that only a person can clear (for example an
+ * unconfirmed project folder, #6215) as one system dependency on the card,
+ * keyed by `ref` so a repeated refusal is not duplicated (#6562). The
+ * lifecycle and column don't change: the task is simply waiting.
+ */
+export async function recordLaunchBlocker(
+  id: string,
+  blocker: { ref: string; kind: TaskDependency["kind"]; label: string },
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const idx = board.cards.findIndex((card) => card.id === id);
+    if (idx < 0) return null;
+    const current = board.cards[idx];
+    const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+    if (dependencies.some((dependency) => dependency?.ref === blocker.ref && dependency.state === "unresolved")) {
+      return current;
+    }
+    const now = new Date().toISOString();
+    const next: Card = {
+      ...current,
+      dependencies: [...dependencies, {
+        id: crypto.randomUUID(),
+        kind: blocker.kind,
+        label: blocker.label,
+        ref: blocker.ref,
+        state: "unresolved",
+        origin: "system",
+        createdAt: now,
+      }],
+      updatedAt: now,
+    };
+    delete next.predatesDependencies;
+    assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true });
+    board.cards[idx] = next;
+    await saveBoard(board, [next.id]);
+    return next;
+  });
+}
+
+/**
+ * Resolve every unresolved system launch blocker with this `ref`, with
+ * evidence, across the board. Returns the ids of the cards it changed.
+ */
+export async function resolveLaunchBlockers(ref: string, evidence: string): Promise<string[]> {
+  const isOpenLaunchBlocker = (dependency: TaskDependency | null | undefined): dependency is TaskDependency =>
+    !!dependency && dependency.ref === ref && dependency.origin === "system" && dependency.state === "unresolved";
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const now = new Date().toISOString();
+    const changed: Card[] = [];
+    board.cards = board.cards.map((current) => {
+      const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+      if (!dependencies.some(isOpenLaunchBlocker)) {
+        return current;
+      }
+      const next: Card = {
+        ...current,
+        dependencies: dependencies.map((dependency) =>
+          isOpenLaunchBlocker(dependency)
+            ? { ...dependency, state: "resolved", resolvedAt: now, resolvedBy: "system", evidence }
+            : dependency),
+        updatedAt: now,
+      };
+      if (next.primaryBlockerId && !next.dependencies!.some((dependency) => dependency?.id === next.primaryBlockerId && dependency.state === "unresolved")) {
+        next.primaryBlockerId = next.dependencies!.find((dependency) => dependency?.state === "unresolved")?.id ?? null;
+        next.primaryBlockerPinned = false;
+      }
+      try {
+        assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true, allowReadyBlocked: true });
+      } catch {
+        return current; // Leave a card the contract would reject untouched.
+      }
+      changed.push(next);
+      return next;
+    });
+    if (changed.length) await saveBoard(board, changed.map((card) => card.id));
+    return changed.map((card) => card.id);
   });
 }
 

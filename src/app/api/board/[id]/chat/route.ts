@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
-import { loadBoard, updateCard } from "@/lib/cave-board";
+import { loadBoard, recordLaunchBlocker, transitionCard, updateCard, type Card } from "@/lib/cave-board";
+import { deriveReadiness } from "@/lib/task-orchestration";
+import { projectFolderBlockerLabel, projectFolderBlockerRef } from "@/lib/task-launch-blockers";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
@@ -94,6 +96,48 @@ export async function POST(
   let projectRoot: string | null = null;
   const projects = await loadProjects();
 
+  // #6562: a refusal only a person can clear (an unconfirmed folder, #6215)
+  // is recorded on the task once, so the board says what it waits on. The
+  // Touch ID confirmation resolves it. Best-effort: never masks the refusal.
+  const recordFolderBlocker = async (error: ChatProjectLaunchError) => {
+    if (error.code !== "project_root_unconfirmed" || !card.projectId) return;
+    const name = projects.find((project) => project.id === card.projectId)?.name ?? "";
+    try {
+      await recordLaunchBlocker(card.id, {
+        ref: projectFolderBlockerRef(card.projectId),
+        kind: "human",
+        label: projectFolderBlockerLabel(name),
+      });
+    } catch {
+      /* the refusal itself is the authoritative answer */
+    }
+  };
+
+  // #6562: a started task chat moves a ready, queued task to dispatched, so
+  // the board shows it under Running. A task waiting on a blocker or on an
+  // approval-bound next step keeps its lifecycle: opening its chat to
+  // discuss it is not dispatching it.
+  const markTaskStarted = async (started: Card, sessionId: string): Promise<Card> => {
+    try {
+      const latest = await loadBoard();
+      const current = latest.cards.find((candidate) => candidate.id === started.id);
+      if (
+        !current ||
+        current.lifecycle !== "queued" ||
+        current.nextStep?.requiresApproval ||
+        deriveReadiness(current, latest.cards) !== "ready"
+      ) {
+        return started;
+      }
+      return (await transitionCard(current.id, {
+        to: "dispatched",
+        reason: `Task chat started (session ${sessionId})`,
+      })) ?? started;
+    } catch {
+      return started; // The chat started; a lifecycle refusal must not undo that.
+    }
+  };
+
   if (card.projectId) {
     const assignedProject = projectById(card.projectId, projects);
     if (!assignedProject) {
@@ -176,6 +220,7 @@ export async function POST(
     authorizedProjectId = authorized.projectId;
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
+      await recordFolderBlocker(error);
       return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
     }
     throw error;
@@ -189,6 +234,7 @@ export async function POST(
       return null;
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) {
+        await recordFolderBlocker(error);
         return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
       }
       throw error;
@@ -340,10 +386,11 @@ export async function POST(
       recordSessionFamiliar(sessionId, familiarId),
       setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
     ]);
+    const started = await markTaskStarted(updated, sessionId);
     return NextResponse.json({
       ok: true,
       reused: false,
-      card: updated,
+      card: started,
       sessionId,
       familiarId,
       projectRoot: sessionRoot,
@@ -451,6 +498,20 @@ export async function POST(
         { status: 409 },
       );
     }
+    // #6562: the local daemon's socket refused or is missing, so the POST
+    // provably never landed. A trusted runtime can start through native Chat
+    // on this computer instead. Never for an SSH familiar or a server hub
+    // (that would run the task on the wrong host), and never after a timeout,
+    // which may have created the session.
+    if (
+      res.status === 0 &&
+      res.error === "daemon offline" &&
+      !sshBound &&
+      !hubAuthority &&
+      isTrustedChatHarness(binding.harness)
+    ) {
+      return reserveNativeChatTask();
+    }
     return NextResponse.json(
       { ok: false, error: daemonMsg ?? res.error ?? `daemon http ${res.status}` },
       { status: 502 },
@@ -478,11 +539,12 @@ export async function POST(
     recordSessionFamiliar(sessionId, familiarId),
     setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
   ]);
+  const started = await markTaskStarted(updated, sessionId);
 
   return NextResponse.json({
     ok: true,
     reused: false,
-    card: updated,
+    card: started,
     sessionId,
     familiarId,
     worktree,
