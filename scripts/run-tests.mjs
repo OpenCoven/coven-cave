@@ -1549,6 +1549,7 @@ export const SUITES = {
     "src/app/api/chat/stream/status/route.test.ts",
     "src/lib/harness-failure.test.ts",
     "src/components/harness-fix-actions.test.ts",
+    "src/components/board-filter-hidden-sections.test.ts",
     "src/components/board-inspector-debug.test.ts",
     "src/components/board-view-display.test.ts",
     "src/components/calendar-view-primitives.test.ts",

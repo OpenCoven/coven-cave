@@ -1551,6 +1551,7 @@ export function BoardView({
           </div>
         ) : isMobile ? (
           <BoardCardStack cards={filtered} familiars={familiars} sessions={sessions}
+            hiddenStatuses={excludedStatus}
             selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
             onMoveStatus={moveCardToStatus}
@@ -1560,6 +1561,7 @@ export function BoardView({
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
+            hiddenStatuses={excludedStatus}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}

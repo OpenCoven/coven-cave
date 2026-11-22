@@ -37,6 +37,8 @@ type Props = {
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinkingId?: string | null;
+  /** Statuses the toolbar Filter excludes: no section and no tab (#6561). */
+  hiddenStatuses?: ReadonlySet<CardStatus>;
 };
 
 /**
@@ -58,11 +60,19 @@ export function BoardCardStack({
   onJumpToSession,
   onOpenTaskChat,
   chatLinkingId,
+  hiddenStatuses,
 }: Props) {
   const {
-    value: filter,
+    value: selectedFilter,
     select: selectFilter,
   } = useSurfaceHistory<FilterValue>({ id: "board:stack-filter", initial: "all", coalesceMs: 700 });
+  const visibleSections = useMemo(
+    () => (hiddenStatuses?.size ? SECTIONS.filter((s) => !hiddenStatuses.has(s.id)) : SECTIONS),
+    [hiddenStatuses],
+  );
+  // A tab the toolbar Filter has since excluded shows All rather than nothing.
+  const filter: FilterValue =
+    selectedFilter !== "all" && hiddenStatuses?.has(selectedFilter) ? "all" : selectedFilter;
   // Resolve familiars ONCE (5 hook subscriptions) and use O(1) lookups per row —
   // replaces the per-row linear familiar/session scans + per-row resolution.
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
@@ -85,19 +95,19 @@ export function BoardCardStack({
   const filterTabs = useMemo<TabItem<FilterValue>[]>(
     () => [
       { id: "all", label: "All", count: cards.length },
-      ...SECTIONS.map((s) => ({ id: s.id, label: s.label, count: counts[s.id] })),
+      ...visibleSections.map((s) => ({ id: s.id, label: s.label, count: counts[s.id] })),
     ],
-    [cards.length, counts],
+    [cards.length, counts, visibleSections],
   );
 
   const sections = useMemo(() => {
     const grouped = new Map<CardStatus, Card[]>();
     for (const s of SECTIONS) grouped.set(s.id, []);
     for (const c of cards) grouped.get(c.status)?.push(c);
-    return SECTIONS
+    return visibleSections
       .filter((s) => filter === "all" || filter === s.id)
       .map((s) => ({ ...s, cards: grouped.get(s.id) ?? [] }));
-  }, [cards, filter]);
+  }, [cards, filter, visibleSections]);
 
   return (
     <div className="board-card-stack">
