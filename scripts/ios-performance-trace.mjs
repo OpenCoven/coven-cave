@@ -230,3 +230,165 @@ export function markdownTable(rows, cycles, phase = "warm") {
   }
   return lines.join("\n");
 }
+
+// Main-thread hitches (#5748). The Hitches instrument exports a `hitches`
+// table, one row per hitch with the process it is attributed to, and a
+// `hitches-frame-lifetimes` table with one row per rendered frame. Hitches
+// are attributed to the measured spans they overlap. Frames prove the
+// instrument was live: a span with no frame in the trace is unobserved, which
+// is reported apart from a span that rendered without hitching.
+
+/** The ratified #5292 budget: every hitch during a measured navigation is shorter than this. */
+export const HITCH_BUDGET_MS = 100;
+
+/**
+ * Rows of one exported table as objects keyed by the schema's column
+ * mnemonics, each value `{ fmt, text }`. Cells are positional, so an empty
+ * `<sentinel/>` cell keeps the columns after it aligned.
+ */
+export function parseTableRows(xml) {
+  const schema = /<schema\b[^>]*>([\s\S]*?)<\/schema>/.exec(xml);
+  if (!schema) return [];
+  const columns = [...schema[1].matchAll(/<mnemonic>([^<]*)<\/mnemonic>/g)].map((match) => match[1]);
+  const definitions = new Map();
+  const rows = [];
+  for (const row of xml.matchAll(/<row>([\s\S]*?)<\/row>/g)) {
+    const children = rowChildren(row[1], definitions);
+    const cells = {};
+    columns.forEach((column, index) => {
+      const child = children[index];
+      cells[column] = child && child.tag !== "sentinel" ? resolve(child, definitions) : null;
+    });
+    rows.push(cells);
+  }
+  return rows;
+}
+
+function nanosecondsOf(cell) {
+  const value = Number(cell?.text);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** The PID in a process cell's display format, such as `CovenCave (412)`. */
+function processPid(cell) {
+  const match = /\((\d+)\)\s*$/.exec(cell?.fmt ?? "");
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Hitches from an exported `hitches` table, ordered by time. `own` is whether
+ * the hitch belongs to the measured process `pid`. Without a known PID every
+ * hitch counts as Cave's, so attribution can overcount but never hide one.
+ */
+export function parseHitches(xml, startSeconds, { pid = null } = {}) {
+  const hitches = [];
+  for (const row of parseTableRows(xml)) {
+    const start = nanosecondsOf(row.start);
+    const duration = nanosecondsOf(row.duration);
+    if (start === null || duration === null) continue;
+    const hitchPid = processPid(row.process);
+    hitches.push({
+      at: startSeconds + start / 1e9,
+      durationMs: duration / 1e6,
+      pid: hitchPid,
+      own: pid === null || hitchPid === pid,
+      system: row["is-system"]?.text === "1" || /^(yes|true)$/i.test(row["is-system"]?.fmt ?? ""),
+    });
+  }
+  return hitches.sort((a, b) => a.at - b.at);
+}
+
+/** Rendered frames from an exported `hitches-frame-lifetimes` table: `{ at, end }` in Unix seconds. */
+export function parseFrames(xml, startSeconds) {
+  const frames = [];
+  for (const row of parseTableRows(xml)) {
+    const start = nanosecondsOf(row.start);
+    if (start === null) continue;
+    const at = startSeconds + start / 1e9;
+    frames.push({ at, end: at + (nanosecondsOf(row.duration) ?? 0) / 1e9 });
+  }
+  return frames.sort((a, b) => a.at - b.at);
+}
+
+const overlaps = (at, end, from, to) => at <= to && end >= from;
+
+/**
+ * Per measured span: whether a frame was rendered during it, Cave's hitches
+ * that overlap it, and other processes' overlapping hitches (not counted).
+ * `hitchData` is `{ recorded, hitches, frames }` for the round, or null when
+ * the round's recording had no Hitches instrument.
+ */
+export function hitchesBySpan(spans, hitchData) {
+  return spans.map((span) => {
+    const from = span.begin;
+    const to = span.begin + span.durationMs / 1000;
+    if (!hitchData?.recorded) return { span: span.span, recorded: false, observed: false, hitches: [], other: 0 };
+    const touching = hitchData.hitches.filter((h) => overlaps(h.at, h.at + h.durationMs / 1000, from, to));
+    return {
+      span: span.span,
+      recorded: true,
+      observed: hitchData.frames.some((frame) => overlaps(frame.at, frame.end, from, to)),
+      hitches: touching.filter((h) => h.own).map((h) => h.durationMs),
+      other: touching.filter((h) => !h.own).length,
+    };
+  });
+}
+
+/** The same attribution for a whole measured cycle window, under the name `(cycle window)`. */
+export function hitchesInWindow(window, hitchData) {
+  const durationMs = (window.end - window.start) * 1000;
+  return hitchesBySpan([{ span: "(cycle window)", begin: window.start, durationMs }], hitchData)[0];
+}
+
+function hitchVerdict({ spans, observed, longestMs }) {
+  if (spans === 0 || observed === 0) return "unobserved";
+  if (longestMs !== null && longestMs >= HITCH_BUDGET_MS) return "violated";
+  return observed < spans ? "met where observed" : "met";
+}
+
+/**
+ * Per-span hitch totals over every round: spans measured, spans with a frame
+ * in the trace (`observed`), spans with no Hitches data at all (`notRecorded`),
+ * Cave's hitch count, spans with any hitch, the longest hitch, other
+ * processes' hitches, and the verdict against the < 100 ms budget. The
+ * `(cycle window)` row, when present, covers each whole measured cycle.
+ */
+export function summarizeHitches(rounds) {
+  const totals = new Map();
+  for (const round of rounds) {
+    for (const entry of round) {
+      const row = totals.get(entry.span) ?? {
+        span: entry.span, spans: 0, observed: 0, notRecorded: 0, hitchCount: 0, spansWithHitch: 0, longestMs: null, otherProcess: 0,
+      };
+      row.spans += 1;
+      if (!entry.recorded) row.notRecorded += 1;
+      if (entry.observed) row.observed += 1;
+      row.hitchCount += entry.hitches.length;
+      if (entry.hitches.length) row.spansWithHitch += 1;
+      for (const ms of entry.hitches) row.longestMs = row.longestMs === null ? ms : Math.max(row.longestMs, ms);
+      row.otherProcess += entry.other;
+      totals.set(entry.span, row);
+    }
+  }
+  return [...totals.values()]
+    .sort((a, b) => (a.span === "(cycle window)") - (b.span === "(cycle window)") || a.span.localeCompare(b.span))
+    .map((row) => ({ ...row, verdict: row.notRecorded === row.spans ? "not recorded" : hitchVerdict(row) }));
+}
+
+export function hitchTable(rows, cycles, phase = "warm") {
+  const lines = [
+    `| span (${phase}, ${cycles} cycles) | spans | observed | hitches | spans with a hitch | longest hitch ms | < ${HITCH_BUDGET_MS} ms |`,
+    "|---|---:|---:|---:|---:|---:|---|",
+  ];
+  for (const row of rows) {
+    const notes = [
+      row.notRecorded && row.notRecorded < row.spans ? `${row.notRecorded} not recorded` : null,
+      row.otherProcess ? `${row.otherProcess} other-process hitches, not counted` : null,
+    ].filter(Boolean);
+    const name = row.span.startsWith("(") ? row.span : `\`${row.span}\``;
+    const note = notes.length ? ` (${notes.join("; ")})` : "";
+    const longest = row.longestMs === null ? "—" : row.longestMs.toFixed(1);
+    lines.push(`| ${name}${note} | ${row.spans} | ${row.observed} | ${row.hitchCount} | ${row.spansWithHitch} | ${longest} | ${row.verdict} |`);
+  }
+  return lines.join("\n");
+}
