@@ -1,0 +1,11 @@
+node --test scripts/native-harness-command.test.mjs scripts/native-harness-teardown.test.mjs
+node --experimental-strip-types --test scripts/mobile-process-ownership.test.ts
+node --test scripts/ci-paths.test.mjs
+node scripts/check-tests-wired.mjs
+pnpm lint
+pnpm test
+pnpm build
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --unit-suite --destination 4AD47D27-9F91-4ECB-B7EE-016DF2ABF17D --derived-data /private/tmp/nova6195-20261117/NativeDerived --evidence /private/tmp/nova6195-20261117/census-final/native-evidence
+node scripts/ios-xctest-summary.mjs --result-bundle /private/tmp/nova6195-20261117/census-final/native-evidence/native-transport.xcresult --tests-dir apps/ios/CovenCave/CovenCaveTests --xcodebuild-outcome success
+xcrun xcresulttool get test-results summary --path /private/tmp/nova6195-20261117/census-final/native-frozen/native-transport.xcresult --format json
+xcrun xcresulttool get test-results tests --path /private/tmp/nova6195-20261117/census-final/native-frozen/native-transport.xcresult --format json

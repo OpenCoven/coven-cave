@@ -574,6 +574,17 @@ echo "==> assembling traced sidecar runtime → $DEST"
 node "$ROOT/scripts/sidecar-runtime-closure.mjs" \
   "$ROOT" "$STANDALONE" "$PNPM_STAGE/node_modules" "$DEST"
 
+if [ "$BUILD_PLATFORM" = "darwin" ]; then
+  CONFIRMATION_HELPER="$ROOT/native/confirm-project-folder"
+  if [ ! -x "$CONFIRMATION_HELPER" ]; then
+    echo "ERROR: the macOS folder-confirmation helper was not built" >&2
+    exit 1
+  fi
+  mkdir -p "$DEST/native"
+  cp "$CONFIRMATION_HELPER" "$DEST/native/confirm-project-folder"
+  chmod 755 "$DEST/native/confirm-project-folder"
+fi
+
 echo "==> pruning sidecar runtime for the release target"
 prune_foreign_native_packages "$DEST/node_modules"
 fix_node_pty_spawn_helpers "$DEST/node_modules"

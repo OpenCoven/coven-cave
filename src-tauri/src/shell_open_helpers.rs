@@ -84,6 +84,58 @@ pub(super) fn validate_x_oauth_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The release URLs update surfaces may open from the loopback-served UI:
+/// `…/releases/latest`, `…/releases/tag/v<version>` and
+/// `…/releases/download/v<version>/<asset>` on github.com, for this repository
+/// only, with no port, credentials, query or fragment.
+#[cfg(desktop)]
+pub(super) fn validate_update_release_url(url: &str) -> Result<(), String> {
+    const RELEASES: &str = "/OpenCoven/coven-cave/releases/";
+    let untrusted = || "Update release URL is not trusted".to_string();
+    let parsed =
+        Url::parse(url).map_err(|_| "Update release link requires a valid URL".to_string())?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("github.com")
+        || parsed.port().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(untrusted());
+    }
+    let rest = parsed.path().strip_prefix(RELEASES).ok_or_else(untrusted)?;
+    let tag = |value: &str| {
+        let Some(version) = value.strip_prefix('v') else {
+            return false;
+        };
+        (1..=64).contains(&version.len())
+            && version.as_bytes()[0].is_ascii_digit()
+            && version
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+    };
+    let asset = |value: &str| {
+        (1..=160).contains(&value.len())
+            && !value.starts_with('.')
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    let trusted = match segments.as_slice() {
+        ["latest"] => true,
+        ["tag", version] => tag(version),
+        ["download", version, name] => tag(version) && asset(name),
+        _ => false,
+    };
+    if trusted {
+        Ok(())
+    } else {
+        Err(untrusted())
+    }
+}
+
 #[cfg(desktop)]
 pub(super) fn validate_shell_open_path(path: &str) -> Result<PathBuf, String> {
     let path = path.trim();
@@ -103,6 +155,50 @@ pub(super) fn validate_shell_open_path(path: &str) -> Result<PathBuf, String> {
     }
 
     Ok(path)
+}
+
+/// `~` and `~/…` name the person's home folder. Chat links use it; the page
+/// cannot expand it, so the shell does. `~someone` is not supported.
+#[cfg(desktop)]
+fn expand_home_prefix(path: &str) -> Option<PathBuf> {
+    let rest = if path == "~" {
+        Some("")
+    } else {
+        path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\"))
+    };
+    let Some(rest) = rest else {
+        return Some(PathBuf::from(path));
+    };
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let home = PathBuf::from(home);
+    Some(if rest.is_empty() { home } else { home.join(rest) })
+}
+
+/// A path for `shell_reveal_path`: absolute (after `~` expansion) and present
+/// on disk. Unlike `shell_open_path` it may name a file, because revealing
+/// selects the file in its folder and never opens it.
+#[cfg(desktop)]
+pub(super) fn validate_shell_reveal_path(path: &str) -> Result<PathBuf, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("shell_reveal_path requires a path".to_string());
+    }
+    let path = expand_home_prefix(path)
+        .ok_or_else(|| "shell_reveal_path could not resolve the home folder".to_string())?;
+    if !path.is_absolute() {
+        return Err("shell_reveal_path requires an absolute path".to_string());
+    }
+    std::fs::metadata(&path).map_err(|_| "shell_reveal_path path does not exist".to_string())?;
+    Ok(path)
+}
+
+/// Whether revealing `path` may open it as a folder. On macOS an app,
+/// plug-in or document package is a folder on disk, and `open` launches it.
+/// Only a plain folder (no extension, no bundle `Contents`) is opened;
+/// everything else is selected in its parent, so a link can't start a program.
+#[cfg(desktop)]
+pub(super) fn reveal_opens_as_folder(path: &std::path::Path) -> bool {
+    path.is_dir() && path.extension().is_none() && !path.join("Contents").is_dir()
 }
 
 #[cfg(desktop)]

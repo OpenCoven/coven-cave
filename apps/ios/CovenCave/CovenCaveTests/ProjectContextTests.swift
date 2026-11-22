@@ -120,7 +120,7 @@ final class ProjectContextTests: XCTestCase {
         XCTAssertEqual(ProjectContext.unassigned.displayName, "Unassigned")
     }
 
-    func testMembershipIndexBuildsFromDirectGroupAndSupremeAccess() {
+    func testMembershipIndexBuildsFromDirectAndGroupAccess() {
         let index = ProjectMembershipIndex.build(
             projects: [
                 project("cave", "Cave"),
@@ -148,15 +148,27 @@ final class ProjectContextTests: XCTestCase {
                     memberFamiliarIds: ["ember"],
                     projectGrants: [GroupProjectGrant(projectId: "cave", access: .read)]
                 ),
-            ],
-            supremeFamiliarId: "supreme"
+            ]
         )
 
-        XCTAssertEqual(index.familiarIDs(forProjectID: "cave"), Set(["nova", "supreme"]))
-        XCTAssertEqual(index.familiarIDs(forProjectID: "docs"), Set(["sage", "supreme"]))
+        XCTAssertEqual(index.familiarIDs(forProjectID: "cave"), Set(["nova"]))
+        XCTAssertEqual(index.familiarIDs(forProjectID: "docs"), Set(["sage"]))
         XCTAssertTrue(index.contains("nova", inProjectID: "cave"))
         XCTAssertFalse(index.contains("sage", inProjectID: "cave"))
-        XCTAssertEqual(index.projectIDs(forFamiliarID: "supreme"), ["cave", "docs"])
+    }
+
+    func testMembershipIndexGivesTheSupremeFamiliarOnlyItsRealGrants() {
+        // #6526: the desktop server uses only direct and group grants, so a
+        // supreme familiar is a member exactly where it holds one.
+        let index = ProjectMembershipIndex.build(
+            projects: [project("cave", "Cave"), project("docs", "Docs")],
+            familiars: [familiar("supreme", "Supreme")],
+            directGrants: [ProjectGrant(familiarId: "supreme", projectId: "cave", access: .read)],
+            groups: []
+        )
+
+        XCTAssertEqual(index.projectIDs(forFamiliarID: "supreme"), ["cave"])
+        XCTAssertFalse(index.contains("supreme", inProjectID: "docs"))
     }
 
     func testMembershipIndexDoesNotInferRegisteredAccessFromActivity() {
@@ -164,8 +176,7 @@ final class ProjectContextTests: XCTestCase {
             projects: [project("cave", "Cave")],
             familiars: [familiar("nova", "Nova")],
             directGrants: [],
-            groups: [],
-            supremeFamiliarId: nil
+            groups: []
         )
 
         XCTAssertTrue(index.familiarIDs(forProjectID: "cave").isEmpty)

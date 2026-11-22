@@ -1,3 +1,4 @@
+import { ModelInventoryCache, positiveLimit } from "./model-inventory-cache.ts";
 import { createHash } from "node:crypto";
 import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
 import { harnessSpawnEnv, warmHarnessSpawnPath } from "../harness-spawn-env.ts";
@@ -29,35 +30,8 @@ type HermesModelDependencies = {
   maxConcurrentDiscoveries?: number;
 };
 
-type CacheEntry = { expiresAt: number; models: RuntimeModelOption[] };
-const cache = new Map<string, CacheEntry>();
+const cache = new ModelInventoryCache();
 const inFlight = new Map<string, Promise<RuntimeModelOption[]>>();
-
-function positiveLimit(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
-    ? value
-    : fallback;
-}
-
-function pruneExpiredCache(now: number): void {
-  for (const [key, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(key);
-  }
-}
-
-function cacheModels(
-  key: string,
-  entry: CacheEntry,
-  maxEntries: number,
-): void {
-  cache.delete(key);
-  cache.set(key, entry);
-  while (cache.size > maxEntries) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    cache.delete(oldest);
-  }
-}
 
 function hermesScopeKey(
   familiarId: string | null | undefined,
@@ -220,11 +194,8 @@ export async function listHermesModelInventory(
 
   const key = hermesScopeKey(familiarId, config);
   const now = (dependencies.now ?? Date.now)();
-  pruneExpiredCache(now);
-  const cached = cache.get(key);
+  const cached = cache.get(key, now);
   if (cached) {
-    cache.delete(key);
-    cache.set(key, cached);
     return { models: [...cached.models], provenance: "cached" };
   }
   const pending = inFlight.get(key);
@@ -242,14 +213,14 @@ export async function listHermesModelInventory(
     .then((models) => {
       if (models.length > 0) {
         const cachedAt = (dependencies.now ?? Date.now)();
-        pruneExpiredCache(cachedAt);
-        cacheModels(
+        cache.set(
           key,
           {
             expiresAt: cachedAt + positiveLimit(dependencies.cacheMs, CACHE_MS),
             models,
           },
           positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
+          cachedAt,
         );
       }
       return models;

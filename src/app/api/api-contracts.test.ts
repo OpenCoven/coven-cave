@@ -83,6 +83,7 @@ const contracts: RouteContract[] = [
   { route: "/chat/generate/[origin]", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/scheduled", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/chat/signal-sweeps", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/stop", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
@@ -317,7 +318,7 @@ const contracts: RouteContract[] = [
   { route: "/project-tree", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
-  { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/projects/[id]", methods: ["PUT", "DELETE", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -1226,7 +1227,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /const runAttempt = [\s\S]*if \(runHandle\.stopRequested\) return Promise\.resolve\(\);/,
+    /const runAttempt = (?:async )?[\s\S]*?if \(runHandle\.stopRequested\) return(?: Promise\.resolve\(\))?;/,
     "/chat/send: shared direct dispatch must not launch after consuming an early Stop",
   );
   assert.match(

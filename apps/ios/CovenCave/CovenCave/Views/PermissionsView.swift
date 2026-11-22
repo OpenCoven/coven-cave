@@ -30,7 +30,6 @@ struct PermissionsView: View {
     @State private var audit: [PermissionAuditEntry] = []
     @State private var proposals: [GrantProposal] = []
     @State private var projects: [ProjectInfo] = []
-    @State private var supremeFamiliarId: String?
     @State private var mutationsAllowed = false
 
     @State private var selectedFamiliarId: String?
@@ -38,7 +37,6 @@ struct PermissionsView: View {
     @State private var busyKeys: Set<String> = []
 
     private var familiarId: String? { scopedFamiliarId ?? selectedFamiliarId }
-    private var isSupreme: Bool { familiarId != nil && familiarId == supremeFamiliarId }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,6 +57,7 @@ struct PermissionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
+        .caveNavigationExitBlocked(!busyKeys.isEmpty)
     }
 
     @ViewBuilder private var content: some View {
@@ -114,16 +113,13 @@ struct PermissionsView: View {
     }
 
     private func familiarAccessCard(_ familiar: Familiar) -> some View {
-        let supreme = familiar.id == supremeFamiliarId
-        return VStack(alignment: .leading, spacing: 0) {
+        // The supreme familiar shows its real grants like any other familiar:
+        // the desktop gives it no project access beyond them (#6473, #6526).
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 AvatarView(familiar: familiar, source: app.client?.familiarAvatarSource(for: familiar), size: 34)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(familiar.displayName).font(.headline)
-                    if supreme {
-                        Text("Supreme familiar · all access")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
                 }
                 Spacer()
             }
@@ -136,7 +132,7 @@ struct PermissionsView: View {
             } else {
                 ForEach(projects) { project in
                     Divider().padding(.leading, 14)
-                    projectRow(project: project, familiarId: familiar.id, supreme: supreme)
+                    projectRow(project: project, familiarId: familiar.id)
                 }
             }
         }
@@ -144,7 +140,7 @@ struct PermissionsView: View {
     }
 
     @ViewBuilder
-    private func projectRow(project: ProjectInfo, familiarId: String, supreme: Bool) -> some View {
+    private func projectRow(project: ProjectInfo, familiarId: String) -> some View {
         let effective = PermissionModels.resolveEffectiveAccess(
             directGrants: grants, groups: groups,
             familiarId: familiarId, projectId: project.id
@@ -156,9 +152,7 @@ struct PermissionsView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(project.name).font(.body).foregroundStyle(.primary)
-                    if supreme {
-                        Text("All access").font(.caption).foregroundStyle(.secondary)
-                    } else if let groupNames = groupHint(effective) {
+                    if let groupNames = groupHint(effective) {
                         Text(groupNames).font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -166,14 +160,14 @@ struct PermissionsView: View {
                 if busyKeys.contains(key) {
                     ProgressView().controlSize(.small)
                 } else {
-                    accessBadge(supreme ? .write : effective.level)
+                    accessBadge(effective.level)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 11)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(supreme || !mutationsAllowed || busyKeys.contains(key))
+        .disabled(!mutationsAllowed || busyKeys.contains(key))
         .accessibilityHint(mutationsAllowed ? "Cycles no access, read, and write" : "Phone permission changes are disabled")
     }
 
@@ -405,7 +399,6 @@ struct PermissionsView: View {
             grants = response.grants ?? []
             groups = response.accessGroups ?? []
             audit = response.audit ?? []
-            supremeFamiliarId = response.supremeFamiliarId
             mutationsAllowed = response.mobileMutationsAllowed == true
             proposals = fetchedProposals
             projects = fetchedProjects

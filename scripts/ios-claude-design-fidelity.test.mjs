@@ -48,7 +48,7 @@ assert.match(
   "empty chat describes the real ward boundary without promising an unavailable mode",
 );
 assert.match(chat, /permissionsFamiliar = familiar/, "the ward copy opens the real permission controls");
-assert.match(chat, /\.sheet\(item: \$permissionsFamiliar\)/, "ward permissions have a presentation path");
+assert.match(chat, /\.caveSheet\(item: \$permissionsFamiliar\)/, "ward permissions have a presentation path");
 assert.match(
   chat,
   /FamiliarPickerSheet\([\s\S]{0,180}familiarIds: thread\.familiarIds/,
@@ -140,9 +140,10 @@ assert.match(
   /List\(selection: \$selection\) \{\s*ForEach\(snapshot\.entries\)/s,
   "Chats renders its shared conversation projection",
 );
-assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
+assert.match(root, /CaveNavigationHost \{/, "the app root uses the shared navigation host");
+assert.match(drawer, /CaveNavigationDrawer\(/, "the shared host mounts the global drawer");
 assert.match(
-  root,
+  drawer,
   /DrawerDestinationStage\(\s*isOpen: app\.navigationDrawerOpen/,
   "opening the drawer turns the active destination into the rounded live-surface peek",
 );
@@ -325,8 +326,8 @@ assert.match(
 );
 assert.match(
   drawer,
-  /Color\.black\.opacity\(isOpen \? 0\.\d+ : 0\)/,
-  "the closed drawer does not leave its dimming scrim over the app",
+  /if app\.navigationDrawerOpen && !presentedChild \{\s*CaveNavigationDrawer\(/,
+  "the closed drawer is unmounted so its scrim and controls cannot cover the app",
 );
 assert.doesNotMatch(root, /ProjectSwitcherView\(\)|case \.familiars:/,
   "global workspace and Familiar hub overlays are retired");
@@ -837,7 +838,7 @@ assert.match(
   "the global drawer exposes app-wide search instead of a chat-only request",
 );
 assert.match(drawer, /openSearch\(\)/, "the drawer search control opens global search");
-assert.match(root, /openSearch: \{[\s\S]{0,140}app\.chatSearchRequested = true/,
+assert.match(drawer, /openSearch: \{\s*performNavigation \{\s*app\.selectedTab = \.chats\s*app\.chatSearchRequested = true/,
   "the drawer opens the chat list's search rather than a global operational search");
 assert.match(
   globalSearch,

@@ -3,6 +3,7 @@
 // Cave has no server-side LLM, so generation routes through the daemon agent).
 // The SSE frame parser is exported pure so it can be unit-tested.
 
+import { parseHarnessAuthFailure, type HarnessAuthFailure } from "./harness-failure.ts";
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
 import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
@@ -11,6 +12,8 @@ export type SketchStreamEvent = {
   kind?: string;
   text?: string;
   sessionId?: string;
+  code?: string;
+  harness?: string;
   isError?: boolean;
   message?: string;
   responseMetadata?: ChatResponseMetadata;
@@ -50,6 +53,7 @@ export type GenerateResult = {
   error: string | null;
   /** Structured cause so Canvas can repair format failures without retrying
    * transport/auth/runtime failures or parsing user-facing copy. */
+  authFailure?: HarnessAuthFailure;
   failure: "transport" | "format" | null;
 };
 
@@ -112,6 +116,7 @@ export async function generateArtifactCode(opts: {
   const attentionText = createAttentionSafeTextAccumulator();
   let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
+  let authFailure: HarnessAuthFailure | null = null;
 
   // A mid-stream network drop (or an abort) makes reader.read() REJECT — an
   // unguarded loop turned that into a rejected promise that wedged callers'
@@ -149,6 +154,9 @@ export async function generateArtifactCode(opts: {
             if (ev.isError) error = error ?? "the familiar reported an error";
             break;
           case "error":
+            if (ev.code === "harness_auth_required") {
+              authFailure = parseHarnessAuthFailure("authentication required", ev.harness);
+            }
             error = ev.message ?? "generation error";
             break;
         }
@@ -170,6 +178,7 @@ export async function generateArtifactCode(opts: {
     text: visible,
     sessionId,
     error: error ?? (failure === "format" ? "response format could not be previewed" : null),
+    ...(authFailure ? { authFailure } : {}),
     failure,
   };
 }

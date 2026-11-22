@@ -78,9 +78,7 @@ async function openHomeDraft(page: Page) {
   await page.goto("/?mode=home");
   const draft = page.getByRole("textbox", { name: "Chat message" });
   await expect(draft).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole("complementary", { name: "Working with familiars" }).getByRole("button", {
-    name: /^(Working with familiars|Review default context)$/,
-  })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("complementary", { name: "Getting started" })).toContainText(/Your workspace is ready\.|Review default context/, { timeout: 45_000 });
   return draft;
 }
 

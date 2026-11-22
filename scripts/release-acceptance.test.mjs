@@ -551,3 +551,19 @@ test("the report names the state of every operating system", () => {
     assert.ok(report.includes(os), `${os} appears in the report even when it passed, so coverage is visible`);
   }
 });
+
+test("the v0.5.23 train requires the shipped local Chat journey on every OS", () => {
+  for (const version of ["0.5.22", "0.5.23-rc.1", "0.5.23"]) {
+    const record = passingRecord({ candidate: { version, tag: `v${version}`, commit: COMMIT } });
+    const template = blankAcceptanceRecord(version);
+    assert.equal(validateAcceptanceRecord(record).ok, false);
+    for (const run of record.runs) {
+      run.steps = structuredClone(template.runs[0].steps);
+      for (const step of Object.values(run.steps)) step.result = "pass";
+      assert.ok(run.steps["runtime-setup"] && run.steps["runtime-auth"] && run.steps["archive-restore"]);
+    }
+    assert.equal(validateAcceptanceRecord(record).ok, true);
+    delete record.runs[1].steps["runtime-auth"];
+    assert.equal(validateAcceptanceRecord(record).ok, false);
+  }
+});

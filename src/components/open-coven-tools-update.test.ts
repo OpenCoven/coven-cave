@@ -34,7 +34,7 @@ assert.match(src, /tool\.minimumVersion/, "tool state includes the minimum compa
 assert.match(src, /tool\.installCommand/, "tool rows expose a copyable install/update command");
 assert.match(src, /Copy command/, "tool rows can copy the exact update command");
 assert.match(src, /import \{[\s\S]*toolStatusText,[\s\S]*\} from "@\/lib\/opencoven-tools-status-display"/, "tool status text is centralized in the shared verification-state helper");
-assert.match(src, /latestCheckText\(tool, stale\)/, "each tool renders an explicit npm freshness result");
+assert.doesNotMatch(src, /latestCheckText\(tool, stale\)/, "freshness appears once in the footer");
 assert.match(src, /toolFooterStatusText\(\{ tools, checking, error, stale \}\)/, "the footer distinguishes failed or stale latest-version data");
 assert.match(src, /const \[stale, setStale\] = useState\(false\)/, "failed refreshes mark retained results as stale");
 assert.match(src, /setStale\(true\)/, "a failed refresh cannot leave prior rows looking fresh");
@@ -91,7 +91,6 @@ assert.match(src, /local daemon remained stopped/, "an intentionally stopped dae
 assert.match(src, /Daemon: \{daemonLifecycleText\(daemon\)\}/, "About panel renders lifecycle health beside the update result");
 assert.match(src, /lastSuccessfulCheckedAt/, "tool checks retain a visible successful-check timestamp");
 assert.match(src, /Stale data from/, "failed rechecks explicitly mark retained tool rows as stale");
-assert.match(src, /Last known/, "each retained tool row identifies last-known data");
 assert.match(src, /TOOL_UPDATE_RECHECK_EVENT/, "a completed in-page update requests a banner revalidation");
 assert.match(src, /window\.dispatchEvent\(new Event\(TOOL_UPDATE_RECHECK_EVENT\)\)/, "successful in-page updates revalidate the banner");
 assert.match(src, /onTerminal:[\s\S]*?const refreshed = await load\(true\)/, "all completed recovery actions use the authoritative status recheck");

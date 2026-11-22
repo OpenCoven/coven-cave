@@ -2,17 +2,25 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  HITCH_BUDGET_MS,
   coverageLead,
+  hitchTable,
+  hitchesBySpan,
+  hitchesInWindow,
   markdownTable,
   pairSpans,
   parseCycleWindow,
+  parseFrames,
+  parseHitches,
   parseSpanEvents,
+  parseTableRows,
   percentile,
   spansInWindow,
   summarize,
+  summarizeHitches,
   traceStartSeconds,
 } from "./ios-performance-trace.mjs";
-import { attachPlan, isCoveredRound, withJsonOutput } from "./ios-performance-capture.mjs";
+import { attachPlan, isCoveredRound, recordArgs, recordingInstruments, withJsonOutput } from "./ios-performance-capture.mjs";
 
 /**
  * A synthetic `os-signpost-arg` export with the real shape: shared values
@@ -206,4 +214,166 @@ test("the attach plan runs one warm cycle against the installed, running app", (
   assert.equal(plan.__xctestrun_metadata__.FormatVersion, 1);
   assert.equal(generated.CovenCaveUITests.TestHostPath, "__TESTROOT__/Release-iphoneos/CovenCaveUITests-Runner.app", "the generated plan is not mutated");
   assert.throws(() => attachPlan({}), /CovenCaveUITests/);
+});
+
+/**
+ * A synthetic export of one Hitches table with the column order Xcode 27.2's
+ * `xctrace export` writes. Shared cells are defined once and reused by `ref`,
+ * a process cell nests its pid, and `null` writes an empty `<sentinel/>`.
+ */
+function hitchTableXml(schema, columns, rows) {
+  let nextId = 1;
+  const ids = new Map();
+  const cell = (tag, value, inner = "") => {
+    if (value === null) return "<sentinel/>";
+    const key = `${tag}:${value}`;
+    if (ids.has(key)) return `<${tag} ref="${ids.get(key)}"/>`;
+    const id = String(nextId++);
+    ids.set(key, id);
+    return `<${tag} id="${id}" fmt="${value}">${inner || value}</${tag}>`;
+  };
+  const head = columns.map(([mnemonic]) => `<col><mnemonic>${mnemonic}</mnemonic><name>${mnemonic}</name></col>`).join("");
+  const body = rows.map((row) => `<row>${columns.map(([mnemonic, tag]) => {
+    const value = row[mnemonic] ?? null;
+    if (tag === "process" && value !== null) {
+      const pid = /\((\d+)\)/.exec(value)[1];
+      return cell(tag, value, `<pid id="${nextId++}" fmt="${pid}">${pid}</pid>`);
+    }
+    return cell(tag, value);
+  }).join("")}</row>`).join("\n");
+  return `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[8]'><schema name="${schema}">${head}</schema>${body}</node></trace-query-result>`;
+}
+
+const HITCH_COLUMNS = [
+  ["start", "start-time"], ["duration", "duration"], ["process", "process"], ["is-system", "boolean"],
+  ["swap-id", "uint32"], ["label", "string"], ["display", "display-name"], ["narrative-description", "string"],
+];
+const FRAME_COLUMNS = [
+  ["start", "start-time"], ["duration", "duration"], ["display", "display-name"], ["swap-id", "uint32"],
+  ["surface-id", "uint32"], ["frame-color", "event-concept"], ["layout-qualifier", "layout-id"], ["label", "string"],
+];
+const hitchesXml = (rows) => hitchTableXml("hitches", HITCH_COLUMNS, rows);
+const framesXml = (rows) => hitchTableXml("hitches-frame-lifetimes", FRAME_COLUMNS, rows);
+const hitchRow = (startNs, durationNs, process, system = "0") => ({
+  start: startNs, duration: durationNs, process, "is-system": system, "swap-id": startNs, label: "0x1", display: "Display 1",
+  "narrative-description": "Potential Issue: Expensive commit",
+});
+
+test("table rows are keyed by column, resolve shared cells, and keep sentinel columns aligned", () => {
+  const rows = parseTableRows(hitchesXml([
+    hitchRow(1_000, 5_000_000, "CovenCave (412)"),
+    { ...hitchRow(2_000, 5_000_000, "CovenCave (412)"), "is-system": null },
+  ]));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[1].duration, { fmt: "5000000", text: "5000000" }, "a repeated duration resolves its ref");
+  assert.equal(rows[1].process.fmt, "CovenCave (412)");
+  assert.equal(rows[1]["is-system"], null);
+  assert.equal(rows[1]["swap-id"].text, "2000", "columns after a sentinel stay aligned");
+  assert.deepEqual(parseTableRows("<trace-query-result/>"), []);
+});
+
+test("hitches are timed from the trace start and attributed to the measured process", () => {
+  const xml = hitchesXml([
+    hitchRow(3_000_000_000, 120_000_000, "backboardd (60)", "1"),
+    hitchRow(1_000_000_000, 42_500_000, "CovenCave (412)"),
+  ]);
+  assert.deepEqual(parseHitches(xml, START, { pid: 412 }), [
+    { at: 1_001, durationMs: 42.5, pid: 412, own: true, system: false },
+    { at: 1_003, durationMs: 120, pid: 60, own: false, system: true },
+  ]);
+  assert.ok(parseHitches(xml, START).every((hitch) => hitch.own), "without a known PID no hitch is hidden");
+});
+
+test("rendered frames come from the frame-lifetimes table", () => {
+  const frames = parseFrames(framesXml([
+    { start: 2_000_000_000, duration: 16_000_000, display: "Display 1", "swap-id": 2, "surface-id": 14, "frame-color": "Green", "layout-qualifier": 0, label: "0x2" },
+    { start: 1_000_000_000, duration: 16_000_000, display: "Display 1", "swap-id": 1, "surface-id": 14, "frame-color": "Green", "layout-qualifier": 0, label: "0x1" },
+  ]), START);
+  assert.deepEqual(frames.map((f) => [f.at, Math.round((f.end - f.at) * 1000)]), [[1_001, 16], [1_002, 16]]);
+});
+
+test("each span takes the hitches that overlap it, and a span with no frame is unobserved", () => {
+  const spans = [
+    { span: "drawer.open", begin: 10, durationMs: 80 },
+    { span: "destination.stable-frame", begin: 11, durationMs: 70 },
+    { span: "search.query", begin: 12, durationMs: 60 },
+  ];
+  const hitchData = {
+    recorded: true,
+    hitches: [
+      { at: 9.95, durationMs: 60, own: true },
+      { at: 10.05, durationMs: 30, own: true },
+      { at: 10.5, durationMs: 200, own: true },
+      { at: 11.02, durationMs: 12, own: false },
+    ],
+    frames: [{ at: 10.02, end: 10.036 }, { at: 11.03, end: 11.046 }],
+  };
+  assert.deepEqual(hitchesBySpan(spans, hitchData), [
+    { span: "drawer.open", recorded: true, observed: true, hitches: [60, 30], other: 0 },
+    { span: "destination.stable-frame", recorded: true, observed: true, hitches: [], other: 1 },
+    { span: "search.query", recorded: true, observed: false, hitches: [], other: 0 },
+  ]);
+  assert.deepEqual(hitchesBySpan(spans.slice(0, 1), { recorded: false, hitches: [], frames: [] }), [
+    { span: "drawer.open", recorded: false, observed: false, hitches: [], other: 0 },
+  ]);
+  assert.deepEqual(hitchesInWindow({ start: 10, end: 12 }, hitchData), {
+    span: "(cycle window)", recorded: true, observed: true, hitches: [60, 30, 200], other: 1,
+  });
+});
+
+test("hitch summaries pool rounds and judge the longest hitch against the < 100 ms budget", () => {
+  assert.equal(HITCH_BUDGET_MS, 100);
+  const entry = (span, hitches, { observed = true, recorded = true, other = 0 } = {}) => ({ span, recorded, observed, hitches, other });
+  const rows = summarizeHitches([
+    [entry("drawer.open", [40]), entry("search.query", [100]), entry("chat.first-rich-render", [], { observed: false }), entry("(cycle window)", [40, 100])],
+    [entry("drawer.open", [], { other: 2 }), entry("search.query", []), entry("chat.first-rich-render", []), entry("destination.stable-frame", [], { observed: false }), entry("(cycle window)", [])],
+    [entry("drawer.open", [], { recorded: false, observed: false })],
+  ]);
+  assert.deepEqual(rows.map((r) => [r.span, r.spans, r.observed, r.notRecorded, r.hitchCount, r.spansWithHitch, r.longestMs, r.otherProcess, r.verdict]), [
+    ["chat.first-rich-render", 2, 1, 0, 0, 0, null, 0, "met where observed"],
+    ["destination.stable-frame", 1, 0, 0, 0, 0, null, 0, "unobserved"],
+    ["drawer.open", 3, 2, 1, 1, 1, 40, 2, "met where observed"],
+    ["search.query", 2, 2, 0, 1, 1, 100, 0, "violated"],
+    ["(cycle window)", 2, 2, 0, 2, 1, 100, 0, "violated"],
+  ]);
+  const table = hitchTable(rows, 3, "cold");
+  assert.match(table, /^\| span \(cold, 3 cycles\) \| spans \| observed \| hitches \| spans with a hitch \| longest hitch ms \| < 100 ms \|/);
+  assert.match(table, /\| `drawer\.open` \(1 not recorded; 2 other-process hitches, not counted\) \| 3 \| 2 \| 1 \| 1 \| 40\.0 \| met where observed \|/);
+  assert.match(table, /\| `search\.query` \| 2 \| 2 \| 1 \| 1 \| 100\.0 \| violated \|/);
+  assert.match(table, /\| \(cycle window\) \| 2 \| 2 \| 2 \| 1 \| 100\.0 \| violated \|/);
+});
+
+test("a capture recorded without Hitches says so instead of reporting zero hitches", () => {
+  const notRecorded = { recorded: false, hitches: [], frames: [] };
+  const spans = [{ span: "drawer.open", begin: 1, durationMs: 50 }];
+  const rows = summarizeHitches([
+    [...hitchesBySpan(spans, notRecorded), hitchesInWindow({ start: 0, end: 5 }, notRecorded)],
+  ]);
+  assert.deepEqual(rows.map((r) => [r.span, r.hitchCount, r.verdict]), [["drawer.open", 0, "not recorded"], ["(cycle window)", 0, "not recorded"]]);
+  assert.match(hitchTable(rows, 1), /\| `drawer\.open` \| 1 \| 0 \| 0 \| 0 \| — \| not recorded \|/);
+});
+
+test("an exported trace becomes per-span hitch verdicts end to end", () => {
+  // Trace starts at START; a drawer span at +1.0 s for 90 ms hitches for 130 ms,
+  // a search span at +2.0 s renders without hitching.
+  const hitches = parseHitches(hitchesXml([hitchRow(1_010_000_000, 130_000_000, "CovenCave (412)")]), START, { pid: 412 });
+  const frames = parseFrames(framesXml([
+    { start: 1_020_000_000, duration: 16_000_000, display: "Display 1", "swap-id": 1, "surface-id": 14, "frame-color": "Red", "layout-qualifier": 0, label: "0x1" },
+    { start: 2_020_000_000, duration: 16_000_000, display: "Display 1", "swap-id": 2, "surface-id": 14, "frame-color": "Green", "layout-qualifier": 0, label: "0x2" },
+  ]), START);
+  const spans = [{ span: "drawer.open", begin: 1_001, durationMs: 90 }, { span: "search.query", begin: 1_002, durationMs: 50 }];
+  const rows = summarizeHitches([hitchesBySpan(spans, { recorded: true, hitches, frames })]);
+  assert.deepEqual(rows.map((r) => [r.span, r.hitchCount, r.longestMs, r.verdict]), [
+    ["drawer.open", 1, 130, "violated"],
+    ["search.query", 0, null, "met"],
+  ]);
+});
+
+test("each round records Points of Interest, with Hitches unless turned off", () => {
+  assert.deepEqual(recordingInstruments(), ["Points of Interest", "Hitches"]);
+  assert.deepEqual(recordingInstruments({ hitches: false }), ["Points of Interest"]);
+  assert.deepEqual(recordArgs({ instruments: recordingInstruments(), udid: "U", pid: 7, output: "/o/t.trace" }), [
+    "xctrace", "record", "--instrument", "Points of Interest", "--instrument", "Hitches", "--device", "U",
+    "--attach", "7", "--time-limit", "5m", "--output", "/o/t.trace",
+  ]);
 });

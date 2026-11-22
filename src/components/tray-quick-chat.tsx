@@ -44,7 +44,7 @@ type TabDescriptor = {
   showAgentPicker: boolean;
 };
 
-export type TabReport = {
+type TabReport = {
   familiar: Familiar | null;
   sessionId: string | null;
   sending: boolean;
@@ -237,10 +237,8 @@ export function TrayQuickChat() {
 
 // One quick chat. Stays mounted while its tab is in the background — `hidden`
 // only hides the DOM, so an in-flight reply keeps streaming behind the
-// active tab. Exported so the notch presentation (notch-quick-chat.tsx) can
-// reuse the exact same pane — every traditional quick chat operation in a
-// different frame.
-export function QuickChatTabPane({
+// active tab.
+function QuickChatTabPane({
   tabId,
   active,
   initialFamiliarId,

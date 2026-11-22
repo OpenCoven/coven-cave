@@ -210,7 +210,7 @@ struct ChatModelBar: View {
         // show) so `.task` reliably runs the initial load.
         chip
             .task(id: requestLoadTarget) { await load() }
-            .sheet(isPresented: $showPicker) {
+            .caveSheet(isPresented: $showPicker) {
                 ModelPickerSheet(
                     options: presentedOptions,
                     current: presentedState?.effectiveModel ?? "",
@@ -219,6 +219,7 @@ struct ChatModelBar: View {
                     onSelect: { id in Task { await choose(id) } },
                     application: sessionId == nil ? .familiarDefault : .chat
                 )
+                .caveNavigationExitBlocked(busy)
             }
     }
 

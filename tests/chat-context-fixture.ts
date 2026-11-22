@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { openChatFilter } from "./fixtures/chat-filter";
 import { installCompletedFirstUse } from "./fixtures/first-use";
 import {
   createOnboardingBootstrapState,
@@ -125,11 +126,10 @@ export async function openThread(page: Page, letter: "A" | "B") {
 }
 
 export async function switchProject(page: Page, projectId: "alpha" | "beta") {
-  await page.getByRole("button", { name: /^Filter chats:/ }).click();
-  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
-  await switcher.getByRole("button", { name: /^Switch project:/ }).click();
+  const filter = await openChatFilter(page);
+  await filter.controls.getByRole("button", { name: /^Switch project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
-  await page.keyboard.press("Escape");
+  await filter.close();
 }
 
 export async function switchComposeProject(page: Page, projectId: "alpha" | "beta") {

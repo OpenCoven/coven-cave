@@ -1,8 +1,24 @@
 export const OPEN_IN_APP_BROWSER_EVENT = "cave:open-url-in-browser";
 export const PENDING_IN_APP_BROWSER_URL_KEY = "cave:pending-in-app-browser-url";
 
+let externalUrlsUseSystemBrowser = false;
+
+/**
+ * Declare that this window has no Browser surface of its own. The detached
+ * Chat window calls it once: Cave's in-app Browser lives in the main window,
+ * so "open in the Browser surface" there would navigate the Chat window
+ * itself to the main app. Links open in the system browser instead.
+ */
+export function routeExternalUrlsToSystemBrowser(): void {
+  externalUrlsUseSystemBrowser = true;
+}
+
 export function openInAppBrowserUrl(url: string): void {
   if (typeof window === "undefined") return;
+  if (externalUrlsUseSystemBrowser) {
+    void openSystemBrowserUrl(url, { fallback: () => {} });
+    return;
+  }
   window.sessionStorage.setItem(PENDING_IN_APP_BROWSER_URL_KEY, url);
   window.dispatchEvent(new CustomEvent(OPEN_IN_APP_BROWSER_EVENT, { detail: { url } }));
   if (window.location.pathname !== "/") {
@@ -28,8 +44,17 @@ export type SystemBrowserUrlReservation =
   | { kind: "browser"; popup: SystemBrowserPopup }
   | { kind: "unavailable" };
 
+/**
+ * The native opener for desktop. `shell_open` accepts any http(s) URL and is
+ * granted only to local and Chat-window content; the packaged main UI runs on
+ * the sidecar's loopback origin, so update links use the narrow
+ * `open_update_release_url`, which accepts only Cave release pages and assets.
+ */
+export type SystemBrowserCommand = "shell_open" | "open_update_release_url";
+
 type OpenSystemBrowserUrlDependencies = {
   tauri?: boolean;
+  command?: SystemBrowserCommand;
   invoke?: (command: string, args: { url: string }) => Promise<unknown>;
   openWindow?: () => SystemBrowserPopup | null;
   fallback?: (url: string) => void;
@@ -93,7 +118,7 @@ export async function openSystemBrowserUrl(
   if (reservation.kind === "desktop") {
     try {
       const invoke = dependencies.invoke ?? (await import("@tauri-apps/api/core")).invoke;
-      await invoke("shell_open", { url });
+      await invoke(dependencies.command ?? "shell_open", { url });
       return true;
     } catch {
       fallback(url);

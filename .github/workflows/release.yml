@@ -767,7 +767,7 @@ jobs:
       - source-version
       - release-web-validation
       - release-platform-validation
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 90
     # Platform selection belongs to the JOB, not to every step. It used to be
     # repeated verbatim on all 13 steps, so a step added without it would run
@@ -795,14 +795,18 @@ jobs:
           # it installs from the registry rather than trust a shared cache
           # entry that another run could have written (#6367).
 
-      - name: Select Xcode 26.3 and verify App Store tooling
+      - name: Select Xcode 27.1 and verify App Store tooling
         shell: bash
         run: |
           set -euo pipefail
-          XCODE_PATH="/Applications/Xcode_26.3.app"
-          [ -d "$XCODE_PATH" ] || { echo "::error::$XCODE_PATH is unavailable on the macos-15 runner"; exit 1; }
+          XCODE_PATH="/Applications/Xcode_27.1.app"
+          [ -d "$XCODE_PATH" ] || { echo "::error::$XCODE_PATH is unavailable on the xcode-27 runner"; exit 1; }
           sudo xcode-select --switch "$XCODE_PATH"
           xcodebuild -version
+          xcodebuild -version | grep -Fx 'Xcode 27.1'
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "Selected iPhoneOS SDK: $sdk_version"
+          test "$sdk_version" = "27.1"
           xcrun altool --help 2>&1 | grep -q -- '--build-status'
           xcrun altool --help 2>&1 | grep -q -- '--api-key-subject'
 
@@ -2166,6 +2170,8 @@ jobs:
       id-token: write
       attestations: write
     runs-on: ubuntu-24.04
+    # `updater-manifest` waits on this job for the rendered notes (#5981).
+    timeout-minutes: 20
     if: ${{ success() && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -2318,6 +2324,8 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    # `updater-manifest` waits on this job for the rendered notes (#5981).
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -2349,10 +2357,18 @@ jobs:
   # manifest reflects all platforms that produced a signed artifact.
   updater-manifest:
     name: Publish updater manifest (latest.json)
+    # #5981: the manifest copies the release body into `notes`. `checksums`
+    # (or `partial-release-notes` when it is skipped) replaces release-object's
+    # placeholder body, so wait for both or every client is shown the
+    # placeholder as its release notes. `!cancelled()` below still runs this
+    # job when either one fails or is skipped; both carry short timeouts
+    # because a withheld latest.json 404s the updater for every install.
     needs:
       - build
       - source-version
       - rollback-readiness
+      - checksums
+      - partial-release-notes
     permissions:
       contents: write
     runs-on: ubuntu-24.04

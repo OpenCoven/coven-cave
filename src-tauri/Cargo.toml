@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.5.21"
+version = "0.5.22"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
@@ -56,6 +56,9 @@ portable-pty = "0.8"
 # desktop-only (mobile updates via the App Store / TestFlight).
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Opt-in system-wide Quick Chat shortcut (#5980): registered only while the
+# person turns it on in Settings, so it never takes a key by default.
+tauri-plugin-global-shortcut = "2"
 # Direct desktop IPC to the locally running Discord client. This remains out
 # of mobile targets because Discord Rich Presence has no mobile client API.
 discord-rich-presence = "1.1.0"
@@ -124,6 +127,7 @@ keyring = { version = "3", default-features = false, features = ["apple-native"]
 # The trade is that the secret does not survive a logout; the cache treats the
 # resulting entries as undecryptable and refills (offline_cache.rs).
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
 keyring = { version = "3", default-features = false, features = ["linux-native"] }
 
 # Unix lifecycle tests hard-kill exact owned process groups. Keep libc

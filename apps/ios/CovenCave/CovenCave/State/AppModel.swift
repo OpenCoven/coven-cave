@@ -515,7 +515,11 @@ final class AppModel {
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
-    var threads: [ChatThread] = []
+    var threads: [ChatThread] = [] {
+        didSet { removeAccessRevokedThreads() }
+    }
+    @ObservationIgnored private var revokedConversationIDs: Set<String> = []
+    @ObservationIgnored private var revokedThreadIDs: Set<String> = []
     /// Default Chats destination: the newest active conversation. Pinning only
     /// affects list order and never makes an older thread the launch default.
     var mostRecentThread: ChatThread? {
@@ -2199,7 +2203,43 @@ final class AppModel {
 
     var client: CaveClient? {
         guard let connection else { return nil }
-        return CaveClient(connection: connection, session: clientSession)
+        let generation = connectionConfigurationGeneration
+        return CaveClient(connection: connection, session: clientSession,
+                          onConversationAccessDenied: { [weak self] sessionId in
+            guard let self else { return }
+            try await self.purgeDeniedConversation(sessionId, connection: connection, generation: generation)
+        })
+    }
+
+    private func purgeDeniedConversation(_ sessionId: String, connection: CaveConnection,
+                                         generation: UInt64) async throws {
+        // A delayed response from a replaced host cannot invalidate its successor.
+        // Cancellation alone does not undo an access denial already received.
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedConversationIDs.insert(sessionId)
+        removeAccessRevokedThreads()
+        let removed = try await threadStore.purgeConversation(sessionId: sessionId,
+                                                              snapshotIDs: revokedThreadIDs)
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedThreadIDs.formUnion(removed)
+        removeAccessRevokedThreads()
+    }
+
+    private func removeAccessRevokedThreads() {
+        let affected = threads.filter {
+            $0.isAccessRevoked || revokedThreadIDs.contains($0.id) || revokedConversationIDs.contains($0.id)
+                || $0.sessionIds.values.contains(where: { revokedConversationIDs.contains($0) })
+                || !$0.flowSessionIds.isDisjoint(with: revokedConversationIDs)
+        }
+        guard !affected.isEmpty else { return }
+        for thread in affected {
+            revokedThreadIDs.insert(thread.id)
+            threadDrafts.removeValue(forKey: thread.id)
+            thread.revokeAccess()
+        }
+        // Also runs on late hydration/rollback assignments, so a new instance
+        // created from an old snapshot cannot bypass the held-object fence.
+        threads.removeAll { $0.isAccessRevoked }
     }
 
     /// Drop cached model state for a familiar on the current host. Every model
@@ -3200,6 +3240,10 @@ final class AppModel {
                 generated: false
             ),
         ]
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-list-statuses") {
+            serverSessions[0].status = "running"
+            serverSessions[1].status = "failed"
+        }
         sessionsLoaded = true
 
         cardThreadLinks["cold-launch"] = "ui-preview-empty-chat"
@@ -4868,8 +4912,7 @@ final class AppModel {
                 projects: nextProjects,
                 familiars: nextFamiliars,
                 directGrants: grants.grants ?? [],
-                groups: grants.accessGroups ?? [],
-                supremeFamiliarId: grants.supremeFamiliarId
+                groups: grants.accessGroups ?? []
             )
             let selectionResolution = try await resolveProjectContextSelection(
                 using: client,
@@ -6655,6 +6698,10 @@ final class AppModel {
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
+        guard !revokedThreadIDs.contains(threadId) else {
+            threadDrafts.removeValue(forKey: threadId)
+            return
+        }
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if threadDrafts[threadId] != text { threadDrafts[threadId] = text }
         } else if threadDrafts[threadId] != nil {

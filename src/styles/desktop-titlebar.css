@@ -1,0 +1,286 @@
+/* Owner-provided desktop reference (#6496). Keep this with Shell rather than
+   adding a second window/navigation system to the global primitive bundle. */
+@media (min-width: 1024px) {
+  :root[data-tauri-titlebar] {
+    --shell-native-titlebar-height: calc(var(--space-10) + var(--space-2));
+    --shell-window-inset: var(--space-2);
+  }
+
+  :root[data-tauri-titlebar] .shell-frame {
+    background: var(--bg-raised);
+  }
+
+  :root[data-tauri-titlebar] .shell-window-titlebar,
+  :root[data-tauri-titlebar] .shell-top {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+  }
+
+  :root[data-tauri-titlebar] .shell-window-titlebar__rail {
+    background: transparent;
+    border-right: 0;
+  }
+
+  :root[data-tauri-titlebar] .shell-window-titlebar__title {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  :root[data-tauri-titlebar] .shell-top {
+    left: max(var(--titlebar-lights-inset), calc(var(--shell-nav-chrome-width) + var(--shell-window-inset)));
+    padding-inline: var(--space-2);
+    gap: var(--space-1);
+  }
+
+  /* The surface spends its inset out of the flex height. Panel padding no
+     longer reserves the same title bar a second time inside that surface. */
+  :root[data-tauri-titlebar] .shell-body {
+    height: auto;
+    margin: var(--shell-native-titlebar-height) var(--shell-window-inset) var(--shell-window-inset);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    background: var(--bg-base);
+    overflow: hidden;
+  }
+
+  :root[data-tauri-titlebar] .shell-nav {
+    padding-top: var(--space-2);
+  }
+
+  :root[data-tauri-titlebar] .shell-detail-panel {
+    padding: 0;
+  }
+
+  :root[data-tauri-titlebar] .shell-detail-panel > .shell-detail {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  :root[data-tauri-titlebar] :is(.shell-list-panel, .shell-right-chat-panel) {
+    padding-top: 0;
+  }
+
+  /* The controls remain buttons/pickers with their original names and state.
+     A selected surface supplies shape as well as color; no decorative tabs. */
+  :root[data-tauri-titlebar] .shell-top-toggle {
+    border-color: transparent;
+    color: var(--text-secondary);
+    background: transparent;
+  }
+
+  :root[data-tauri-titlebar] .shell-top-toggle--active {
+    color: var(--text-primary);
+    border-color: var(--border-hairline);
+    background: var(--bg-elevated);
+  }
+
+  :root[data-tauri-titlebar] .shell-top-toggle:not(:disabled):hover {
+    color: var(--text-primary);
+    border-color: var(--border-hairline);
+    background: var(--bg-hover);
+  }
+
+  :root[data-tauri-titlebar] .workspace-titlebar-context {
+    flex: 0 0 auto;
+    max-width: 50%;
+    margin-inline-end: var(--space-2);
+  }
+
+  :root[data-tauri-titlebar] .workspace-context-switcher--titlebar {
+    max-width: 100%;
+    padding-inline-start: var(--space-1);
+    border-inline-start: 0;
+  }
+
+  :root[data-tauri-titlebar] .workspace-context-switcher--titlebar :is(
+    .workspace-context-switcher__project,
+    .workspace-context-switcher__crew
+  ) {
+    flex: 0 1 auto;
+  }
+
+  :root[data-tauri-titlebar] .workspace-context-switcher--titlebar :is(
+    .cave-project-picker__trigger,
+    .familiar-switcher__trigger--labeled
+  ) {
+    width: max-content;
+    max-width: 100%;
+    flex-shrink: 1;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-control);
+    background: var(--bg-elevated);
+  }
+
+  /* Let search use the actual remaining row width instead of intersecting
+     long context labels with an independently centered absolute field. */
+  :root[data-tauri-titlebar] .shell-top .menu-bar {
+    gap: var(--space-2);
+    height: auto;
+    min-height: 0;
+  }
+
+  :root[data-tauri-titlebar] .shell-top .menu-bar__search,
+  :root[data-tauri-titlebar] .shell-top .menu-bar:has(.menu-bar__task-label--live) .menu-bar__search {
+    position: relative;
+    left: auto;
+    transform: none;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: calc(var(--space-10) * 12);
+    margin-inline: auto;
+    padding-block: var(--space-1);
+    padding-inline: var(--space-2);
+    background: var(--bg-base);
+    border-radius: var(--radius-control);
+  }
+
+  :root[data-tauri-titlebar] .shell-top .menu-bar__search kbd {
+    flex-shrink: 0;
+  }
+
+  :root[data-tauri-titlebar] .shell-top .menu-bar__search:focus-within {
+    border-color: var(--border-strong);
+  }
+
+  :root[data-tauri-titlebar] .shell-top .menu-bar__group--status {
+    padding-inline-start: var(--space-2);
+    border-inline-start: 1px solid var(--border-hairline);
+  }
+
+  /* Keep the existing Panel and its zero-width closed state. Its open
+     presentation is a fixed icon strip; the contextual list stays beside it. */
+  :root[data-tauri-titlebar] .shell-nav-panel {
+    box-shadow: none;
+  }
+
+  :root[data-tauri-titlebar] .shell-nav-panel > .shell-nav:not(.shell-nav--rail) {
+    margin: 0;
+    padding: var(--space-1);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--bg-panel);
+    backdrop-filter: none;
+  }
+
+  :root[data-tauri-titlebar] [data-panel]:has(> .shell-nav-panel) + .shell-separator {
+    display: none;
+  }
+
+  :root[data-tauri-titlebar] .shell-window-titlebar__title {
+    visibility: hidden;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal :is(.rail-header, .sidebar-nav-scroll) {
+    padding: 0;
+    width: 100%;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal .rail-header {
+    margin-bottom: var(--space-3);
+  }
+
+  /* Visually hide the existing text, retaining it in each accessible name.
+     The headings continue to name their sections for screen readers. */
+  :root[data-tauri-titlebar] .sidebar-minimal :is(
+    .sidebar-folder-label, .sidebar-foot-label, .rail-header__new-label,
+    .rail-header__new-kbd, .sidebar-section__head-row
+  ) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal :is(
+    .sidebar-folder-row, .sidebar-foot-btn, .rail-header__new
+  ) {
+    position: relative;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--space-10);
+    padding: 0;
+    gap: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-card);
+    background: transparent;
+    color: var(--text-secondary);
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal :is(
+    .sidebar-folder-row--active, .sidebar-foot-btn--active
+  ) {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border-color: var(--border-hairline);
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal .sidebar-folder-row--split {
+    background: var(--bg-subtle);
+    border-color: var(--border-hairline);
+    border-style: dashed;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal :is(
+    .sidebar-folder-row--active, .sidebar-folder-row--split
+  )::before {
+    content: none;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal .sidebar-folder-icon {
+    opacity: 1;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal :is(
+    .sidebar-folder-row, .sidebar-foot-btn, .rail-header__new
+  ):hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal :is(
+    .sidebar-folder-row, .sidebar-foot-btn, .rail-header__new
+  ):focus-visible {
+    outline: var(--ring-width) solid var(--ring-focus);
+    outline-offset: -2px;
+  }
+
+  :root[data-tauri-titlebar] .sidebar-section + .sidebar-section {
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal .sidebar-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0 var(--space-1);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+
+  :root[data-tauri-titlebar] .sidebar-minimal .sidebar-foot {
+    margin-inline: 0;
+    gap: var(--space-1);
+  }
+
+  :root[data-tauri-titlebar] .chat-inner-rail .cnav__title-row {
+    border-bottom: 0;
+  }
+
+  :root[data-tauri-titlebar] .chat-inner-rail .cnav__title {
+    font-size: var(--text-base);
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+}

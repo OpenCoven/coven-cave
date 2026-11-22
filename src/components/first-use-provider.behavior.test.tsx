@@ -2,6 +2,7 @@ import { createElement } from "react";
 // @ts-expect-error -- This repository uses react-test-renderer without its declarations.
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, test, vi } from "vitest";
+import { createQuickStartState } from "@/lib/first-use";
 import { LiveRegionProvider } from "./ui/live-region";
 import { FirstUseProvider, useFirstUse, type FirstUsePayload } from "./first-use-provider";
 
@@ -54,4 +55,34 @@ test("a superseded validation read cannot return cached readiness as fresh admis
   await act(async () => { focusRequest.resolve(Response.json({ ok: true, ...repair })); await focusRefresh; });
   expect(admissionEvidence).toBeNull();
   expect(context.payload?.resolution.kind).toBe("repair");
+});
+
+test("suppressing setup persists across visits and leaves execution gated", async () => {
+  const storage = new Map<string, string>();
+  vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  } }));
+  const methods: string[] = [];
+  vi.stubGlobal("fetch", async (_url: string, options?: RequestInit) => {
+    methods.push(options?.method ?? "GET");
+    return Response.json({ ok: true, ...payload(0), state: createQuickStartState() });
+  });
+  const mount = () => act(async () => {
+    renderer = create(createElement(LiveRegionProvider, null, createElement(FirstUseProvider, null, createElement(Probe))));
+  });
+  await mount();
+  expect(context.open).toBe(true);
+  await act(async () => context.suppressGuide());
+  expect(context.open).toBe(false);
+  await act(async () => renderer.unmount());
+  await mount();
+  expect(context.open).toBe(false);
+  expect(context.suppressed).toBe(true);
+  await act(async () => context.openGuide());
+  expect(context.open).toBe(true);
+  await act(async () => context.closeGuide());
+  await act(async () => { expect(context.ensureIntroduction()).toBe(false); });
+  expect(context.payload?.state.step).toBe(createQuickStartState().step);
+  expect(methods.every(method => method === "GET")).toBe(true);
 });

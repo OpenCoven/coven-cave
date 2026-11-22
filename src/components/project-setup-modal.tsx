@@ -80,7 +80,6 @@ export function ProjectSetupModal({
   const [familiarAccess, setFamiliarAccess] = useState<AccessChoice>("write");
   const [groupLevels, setGroupLevels] = useState<Record<string, AccessChoice>>({});
   const [groups, setGroups] = useState<SetupAccessGroup[]>([]);
-  const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
   const [createdProject, setCreatedProject] = useState<CaveProject | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,8 +95,8 @@ export function ProjectSetupModal({
   const [reposState, setReposState] = useState<"idle" | "loading" | "error" | "unconfigured">("idle");
   const repoPickerRef = useRef<HTMLButtonElement | null>(null);
 
-  // Re-seed per folder: prefill the name from the leaf, probe groups +
-  // supreme (one grants fetch) and the git origin (GitHub prefill). Both
+  // Re-seed per folder: prefill the name from the leaf, probe access groups
+  // (one grants fetch) and the git origin (GitHub prefill). Both
   // probes are best-effort — a failure leaves its section blank/hidden and
   // never blocks setup.
   useEffect(() => {
@@ -119,13 +118,9 @@ export function ProjectSetupModal({
         const res = await fetch("/api/project-grants", { cache: "no-store" });
         const data = (await res.json()) as {
           accessGroups?: SetupAccessGroup[];
-          supremeFamiliarId?: string;
         };
         if (cancelled) return;
         setGroups(Array.isArray(data?.accessGroups) ? data.accessGroups : []);
-        setSupremeFamiliarId(
-          typeof data?.supremeFamiliarId === "string" ? data.supremeFamiliarId : null,
-        );
       } catch {
         /* group section stays hidden; direct grant + creation still work */
       }
@@ -189,7 +184,6 @@ export function ProjectSetupModal({
   const repoError = validateRepoDraft(repoDraft);
   // Gates submit from the first render; the messages wait for a touch.
   const blocked = projectSetupBlocked(name, repoDraft);
-  const isSupremeFamiliar = Boolean(familiar.id) && familiar.id === supremeFamiliarId;
   const memberGroups = familiar.id
     ? groups.filter((group) => group.memberFamiliarIds.includes(familiar.id as string))
     : [];
@@ -229,7 +223,9 @@ export function ProjectSetupModal({
         setCreatedProject(project);
         resolvedProject = project;
       }
-      if (familiar.id && familiarAccess !== "none" && !isSupremeFamiliar) {
+      // The supreme familiar is granted like any other: the server gives it no
+      // access beyond its real grants (#6473).
+      if (familiar.id && familiarAccess !== "none") {
         const res = await fetch("/api/project-grants", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -504,11 +500,7 @@ export function ProjectSetupModal({
         <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
           {familiar.name}'s access
         </div>
-        {isSupremeFamiliar ? (
-          <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">
-            {familiar.name} has access to every project.
-          </p>
-        ) : familiar.id ? (
+        {familiar.id ? (
           <>
             <StandardSelect
               label={`${familiar.name}'s access`}

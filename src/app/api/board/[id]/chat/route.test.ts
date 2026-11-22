@@ -50,6 +50,26 @@ assert.ok(
   authorizationIndex < daemonLaunchIndex,
   "Board task chat must authorize before asking the daemon to launch",
 );
+assert.match(
+  source,
+  /import\s*\{\s*assertCurrentPinnedLaunchRoot\s*\}\s*from\s*"@\/lib\/server\/project-root-pin"/,
+  "Board task chat must reload and check the current project pin at launch boundaries",
+);
+assert.match(
+  source,
+  /if \(card\.sessionId\) \{\s*const rootChanged = await recheckProjectRoot\(\);/,
+  "Board task chat must recheck the project pin before reusing a persisted session",
+);
+assert.match(
+  source,
+  /const rootChanged = await recheckProjectRoot\(\);\s*if \(rootChanged\) return rootChanged;\s*try \{\s*const root = await resolveRepoRoot\(projectRoot\);\s*if \(root\.ok\) \{\s*const beforeProvision = await recheckProjectRoot\(\);/,
+  "Board task chat must recheck the registered root immediately before worktree provisioning",
+);
+assert.match(
+  source,
+  /const rootChanged = await recheckProjectRoot\(sessionRoot\);\s*if \(rootChanged\) return rootChanged;\s*const res = await callDaemon/,
+  "Board task chat must recheck the registered root immediately before daemon dispatch",
+);
 
 // The route uses extractDaemonError so the nested
 // { error: { code, message } } daemon body actually surfaces.

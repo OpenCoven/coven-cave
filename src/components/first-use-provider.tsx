@@ -1,5 +1,7 @@
 "use client";
 
+import { CHAT_REPLY_COMPLETED_EVENT } from "@/lib/setup-events";
+import { FIRST_REPLY_AT_KEY } from "@/lib/first-run-stamps";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { parseFirstUseState, type FirstUseAction, type FirstUseContextResolution, type FirstUseState } from "@/lib/first-use";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -24,6 +26,9 @@ type FirstUseContextValue = {
   open: boolean;
   openGuide: () => void;
   closeGuide: () => void;
+  suppressGuide: () => void;
+  suppressed: boolean;
+  conversationUsed: boolean;
   refresh: () => Promise<FirstUsePayload | null>;
   mutate: (action: FirstUseAction, expectedRevision?: number) => Promise<boolean>;
   ensureIntroduction: () => boolean;
@@ -36,12 +41,28 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [conversationUsed, setConversationUsed] = useState(false);
+  const [suppressed, setSuppressed] = useState(false);
+  const suppressionRef = useRef(false);
   const [open, setOpen] = useState(false);
   const payloadRef = useRef(payload);
   payloadRef.current = payload;
   const requestId = useRef(0);
   const firstLoad = useRef(true);
   const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    const key = "cave:first-use:conversation-used";
+    try {
+      setConversationUsed(Boolean(localStorage.getItem(key) || localStorage.getItem(FIRST_REPLY_AT_KEY)));
+    } catch { /* The live event still works without storage. */ }
+    const onReply = () => {
+      setConversationUsed(true);
+      try { localStorage.setItem(key, "1"); } catch { /* Keep the current visit. */ }
+    };
+    window.addEventListener(CHAT_REPLY_COMPLETED_EVENT, onReply);
+    return () => window.removeEventListener(CHAT_REPLY_COMPLETED_EVENT, onReply);
+  }, []);
 
   const refresh = useCallback(async () => {
     const generation = ++requestId.current;
@@ -57,7 +78,7 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
       setPayload(next);
       setError(null);
       setLoaded(true);
-      if (firstLoad.current && next.state.revision === 0) setOpen(true);
+      if (firstLoad.current && !suppressionRef.current && next.state.revision === 0) setOpen(true);
       firstLoad.current = false;
       return next;
     } catch (cause) {
@@ -69,7 +90,13 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    try {
+      suppressionRef.current = window.localStorage.getItem("cave:first-use:suppressed") === "1";
+      setSuppressed(suppressionRef.current);
+    } catch { /* Storage may be unavailable. */ }
+    void refresh();
+  }, [refresh]);
   useEffect(() => {
     const reload = () => { void refresh(); };
     window.addEventListener("cave:project-access-changed", reload);
@@ -112,15 +139,22 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
   }, [announce, refresh]);
 
   const openGuide = useCallback(() => { setOpen(true); void refresh(); }, [refresh]);
-  const closeGuide = useCallback(() => { setOpen(false); announce("Introduction kept. Continue it before starting a run."); }, [announce]);
+  const closeGuide = useCallback(() => { setOpen(false); announce("Setup progress kept. You can continue whenever you’re ready."); }, [announce]);
+  const suppressGuide = useCallback(() => {
+    suppressionRef.current = true;
+    setSuppressed(true);
+    try { window.localStorage.setItem("cave:first-use:suppressed", "1"); } catch { /* Keep this visit's preference. */ }
+    setOpen(false);
+    announce("Automatic setup prompts turned off.");
+  }, [announce]);
   const ensureIntroduction = useCallback(() => {
     if (payloadRef.current?.state.step === "complete") return true;
     setOpen(true);
-    announce("Complete the introduction before starting a run. Your draft is kept.", "assertive");
+    announce("Choose an assistant, project and access before starting a run. Your draft is kept.", "assertive");
     return false;
   }, [announce]);
 
-  return <FirstUseContext.Provider value={{ payload, loaded, error, busy, open, openGuide, closeGuide, refresh, mutate, ensureIntroduction }}>{children}</FirstUseContext.Provider>;
+  return <FirstUseContext.Provider value={{ payload, loaded, error, busy, open, openGuide, closeGuide, suppressGuide, suppressed, conversationUsed, refresh, mutate, ensureIntroduction }}>{children}</FirstUseContext.Provider>;
 }
 
 export function useFirstUse(): FirstUseContextValue {

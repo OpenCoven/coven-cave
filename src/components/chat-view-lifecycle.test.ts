@@ -750,7 +750,7 @@ assert.match(
 );
 assert.match(
   routerSource,
-  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+  /<ChatView[\s\S]*?composerDraftKey=\{viewComposerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}/,
   "ChatRouter keys the primary ChatView by draft namespace and compose lineage so namespace changes restore the matching draft",
 );
 assert.match(

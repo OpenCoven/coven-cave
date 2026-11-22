@@ -16,9 +16,6 @@ final class ChatScrollBounceUITests: XCTestCase {
     }
 
     override func tearDown() {
-        let app = XCUIApplication()
-        app.terminate()
-        _ = app.wait(for: .notRunning, timeout: 5)
         if let trace = try? String(contentsOfFile: tracePath, encoding: .utf8) {
             print("=== SCROLL TRACE \(name) ===\n\(trace)\n=== END SCROLL TRACE ===")
         } else {
@@ -42,6 +39,11 @@ final class ChatScrollBounceUITests: XCTestCase {
         app.launchEnvironment["CAVE_SCROLL_TRACE_PATH"] = tracePath
         metricsPath = NSTemporaryDirectory() + "cave-scroll-metrics-\(UUID().uuidString).json"
         app.launchEnvironment["CAVE_SCROLL_METRICS_PATH"] = metricsPath
+        addTeardownBlock { @MainActor in
+            if app.state == .runningForeground { app.sendToBackground() }
+            if app.state != .notRunning { app.terminate() }
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "the launched fixture must stop before collecting its trace")
+        }
         app.launch()
         return app
     }
@@ -145,6 +147,19 @@ final class ChatScrollBounceUITests: XCTestCase {
         assertReturnsAndStays(bottomMarker, transcript, attempts: 60, "Slow drag") {
             self.slowDragTowardLatest(transcript)
         }
+    }
+
+    @MainActor
+    func testHorizontalDragOnLatestRichReplyQuotesIt() {
+        let (app, transcript) = openRich("--ui-preview-rich-chat-scroll",
+                                         thread: "ui-preview-rich-chat-scroll", needle: bottomMarker)
+        let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.55))
+        let end = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.70, dy: 0.55))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        let cancelReply = app.buttons["Cancel reply"]
+        XCTAssertTrue(cancelReply.waitForExistence(timeout: 5))
+        cancelReply.tap()
+        XCTAssertFalse(cancelReply.exists)
     }
 
     @MainActor

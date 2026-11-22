@@ -117,17 +117,6 @@ export type KnownDenominator = {
   total: number;
 };
 
-export type NumericAggregate = KnownDenominator & {
-  sum?: number;
-  average?: number;
-  min?: number;
-  max?: number;
-};
-
-export type DimensionAggregate = KnownDenominator & {
-  values: Array<{ value: string; attempts: number }>;
-};
-
 export type FamiliarExecutionSlice = {
   key: string;
   label?: string;
@@ -194,8 +183,6 @@ export type FamiliarExecutionAnalyticsWindow = {
   days?: FamiliarExecutionDay[];
 };
 
-export type ExecutionAnalyticsWindow = FamiliarExecutionAnalyticsWindow;
-
 export type FamiliarExecutionAttemptProvenance = "live" | "backfilled";
 
 export type FamiliarExecutionAttemptSummary = {
@@ -246,10 +233,6 @@ export type FamiliarExecutionAnalyticsErrorResponse = {
   error: string;
 };
 
-export type FamiliarExecutionAnalyticsResponse =
-  | FamiliarExecutionAnalyticsSuccessResponse
-  | FamiliarExecutionAnalyticsErrorResponse;
-
 const SESSION_ORIGINS = new Set<SessionOrigin>([
   "chat",
   "mention",
@@ -271,9 +254,6 @@ const CONTROL_FAMILIES = new Set<ModelControlFamily>([
   "modalities",
   "tool-support",
 ]);
-const COVERAGE_FIELDS = new Set<ExecutionAttemptCoverageField>(
-  EXECUTION_ATTEMPT_COVERAGE_FIELDS,
-);
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -850,11 +830,4 @@ export function buildFamiliarExecutionAnalytics(args: {
     recentAttempts: attempts.slice(0, recentLimit).map(publicExecutionAttempt),
     backfill: args.backfill ?? { state: "not-started", imported: 0 },
   };
-}
-
-export function isExecutionAttemptCoverageField(
-  value: unknown,
-): value is ExecutionAttemptCoverageField {
-  return typeof value === "string" &&
-    COVERAGE_FIELDS.has(value as ExecutionAttemptCoverageField);
 }

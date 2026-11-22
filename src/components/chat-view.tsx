@@ -1,5 +1,6 @@
 "use client";
 
+import { createProjectsRetryCarry, type ProjectsRetryRoute } from "@/lib/chat-projects-retry";
 import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
 import { useFirstUse } from "@/components/first-use-provider";
 
@@ -68,10 +69,13 @@ import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
+  CHAT_FOCUS_PROJECT_EVENT,
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
   markCovenGroupPending,
   markCovenTabPending,
+  markProjectFocusPending,
+  markProjectsTabPending,
 } from "@/lib/chat-tab-events";
 import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
 import {
@@ -150,6 +154,7 @@ import {
   readNewSessionDefaults,
   writeNewSessionDefaults,
 } from "@/lib/chat-new-session-defaults";
+import { CHAT_REPLY_COMPLETED_EVENT } from "@/lib/setup-events";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import {
@@ -377,7 +382,7 @@ import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { chatComposerDraftKey, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
+import { chatComposerDraftKey, initialComposerDraftDecision, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
@@ -488,11 +493,17 @@ const APPROVAL_RELOAD_REQUIRED = "Reload this chat before sending answers so the
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
+  /** Opaque identity restored only for the original refused blank compose. */
+  retryComposeId?: string;
+  initialRetryRuntimeHost?: string | null;
+  projectsRetryPassive?: boolean;
   session?: SessionRow | null;
   projectRoot?: string;
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** A reviewed onboarding starter, preserved as editable text without dispatch. */
+  initialDraft?: string;
   /** Explicit task-card model forwarded through a native Board handoff. */
   initialModelOverride?: string;
   /** Task work can reserve its conversation id before mounting the bridge.
@@ -615,6 +626,21 @@ type FailedSend = {
   /** Snapshot from the attempt, never the controls currently visible later. */
   controls?: ChatSendControls;
 };
+const projectsRetryCarry = createProjectsRetryCarry<{
+  failed: FailedSend;
+  message: string;
+  root: string;
+  route: ProjectsRetryRoute;
+}>();
+
+export function readProjectsRetryRoute(): ProjectsRetryRoute | null {
+  return projectsRetryCarry.peek()?.route ?? null;
+}
+
+export function discardProjectsRetry(): void {
+  projectsRetryCarry.drop();
+}
+
 type ChatSendOptions = {
   promptOverride?: string;
   parentTurnId?: string | null;
@@ -1070,7 +1096,8 @@ function ChatErrorStrip({
             {code}
           </span>
         ) : null}
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Six buttons are wider than a phone: they wrap, so Dismiss stays reachable. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {hasDetail ? (
             <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={btn}>
               <Icon name={open ? "ph:caret-down-bold" : "ph:caret-right-bold"} width={11} aria-hidden />
@@ -1136,6 +1163,11 @@ function ChatErrorStrip({
           buttonClassName={btn}
           primaryClassName={primaryBtn}
         />
+      ) : null}
+      {code === "harness_empty_response" && onOpenSetup ? (
+        <div className="px-5 pb-2">
+          <button type="button" className={primaryBtn} onClick={onOpenSetup}>Open Setup</button>
+        </div>
       ) : null}
       {usageLimit && onRetryWithModel ? (
         <UsageLimitFixRow
@@ -1395,7 +1427,7 @@ function AuthFixRow({
               announce(`Opening ${runtime} sign-in terminal.`);
             }} className={buttonClassName}>
               <Icon name="ph:plug" width={11} aria-hidden />
-              Connect {runtime}
+              Sign in to {runtime}
             </button>
           ) : null}
           <button type="button" onClick={() => copy(failure.loginCommand!)} className={buttonClassName}>
@@ -2179,7 +2211,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 const ACCESS_FOCUS_RETURN_MS = 5000;
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { familiar, sessionId, retryComposeId, initialRetryRuntimeHost, projectsRetryPassive = false, session, projectRoot, initialPrompt, initialDraft, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const firstUse = useFirstUse();
@@ -2520,7 +2552,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
-  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
+  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => {
+    const reviewed = !sessionId ? initialControls?.permissionMode : undefined;
+    return reviewed === "read" || reviewed === "full" ? reviewed : readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode;
+  });
   // Per-chat Access chosen from an in-place action (#6445). The composer's
   // Access menu stays the shared default; these override it for one chat, so
   // leaving Explore here never widens access in every other chat.
@@ -2574,7 +2609,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
   // sticky remote host would silently run every new chat elsewhere).
-  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialControls?.runtimeHost ?? null);
+  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialRetryRuntimeHost !== undefined ? initialRetryRuntimeHost : initialControls?.runtimeHost ?? null);
   const sessionRuntimeHost = useMemo(() => {
     const parsed = parseConversationRuntime(session?.runtime);
     return parsed?.kind === "ssh" ? parsed.host : null;
@@ -2689,10 +2724,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
   const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
-  // The chat's project folder no longer exists on disk (moved/deleted): the
-  // send 400s with code project_root_unavailable and Retry can never succeed —
-  // the recovery is re-pointing the project, not retrying (cave-ivcc).
-  const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // The fix lives in Projects, and Retry can never succeed: the chat's project
+  // folder no longer exists on disk (400 project_root_unavailable, cave-ivcc),
+  // or a person must confirm the folder in project settings (409
+  // project_root_unconfirmed / project_root_moved, #6215).
+  const [projectsFixNeeded, setProjectsFixNeeded] = useState(false);
+  // A project whose Write grant overlaps Cave's private state: Projects is
+  // where that grant changes, so the error offers to open it there (#6451).
+  const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
+  // Projects unmounts Chat. Keep only this explicit round trip in memory;
+  // opening any other recipient discards it, including in a reused view.
+  const [localRetryComposeId] = useState(() => crypto.randomUUID());
+  const retryChatId = sessionId ?? retryComposeId ?? localRetryComposeId;
+  const projectsRetryOwnedRef = useRef(false);
+  useEffect(() => {
+    const target = { familiarId: familiar.id, chatId: retryChatId };
+    const carried = projectsRetryPassive ? projectsRetryCarry.read(target) : projectsRetryCarry.returnTo(target);
+    if (!carried && !projectsRetryOwnedRef.current) return;
+    projectsRetryOwnedRef.current = Boolean(carried);
+    setLastFailedSend(carried?.failed ?? null);
+    setError(carried?.message ?? null);
+    setDebugError(null);
+    setPrivateStateProjectRoot(carried?.root ?? null);
+    if (carried) announce("Your refused message is ready to retry.");
+  }, [familiar.id, retryChatId, projectsRetryPassive, announce]);
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -3490,8 +3545,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   });
   // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
   // never sends; an existing draft is kept and the text is appended below it.
+  // The browser's undo stack can't hold this edit (React sets the value, and
+  // WebKit would merge it with the typing before it), so the composer keeps
+  // one explicit undo step: the first Cmd/Ctrl+Z while the composer still
+  // holds exactly the pre-filled text restores the earlier draft (#6521).
+  const prefillUndoRef = useRef<{ before: string; after: string } | null>(null);
   const prefillComposerFromUiBlock = useCallback((text: string) => {
-    setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text));
+    const before = inputRef.current?.value ?? "";
+    const after = before.trim() ? `${before.replace(/\s+$/, "")}\n\n${text}` : text;
+    prefillUndoRef.current = { before, after };
+    setInput(after);
     requestAnimationFrame(() => {
       const field = inputRef.current;
       if (!field) return;
@@ -3610,6 +3673,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     sessionId: null,
   });
   const initialPromptSentRef = useRef(false);
+  const initialDraftConsumedRef = useRef(false);
+  const [starterDraftConflict, setStarterDraftConflict] = useState<{ key: string; text: string } | null>(null);
+  const currentStarterConflict = starterDraftConflict?.key === scopedDraftKey ? starterDraftConflict : null;
+  useEffect(() => {
+    if (!initialDraft || initialDraftConsumedRef.current) return;
+    const decision = initialComposerDraftDecision({ incoming: initialDraft, current: input, sessionId, expectedProject: projectRoot, project: activeProjectRoot, ready: projectLaunchReady });
+    if (decision === "wait") return;
+    initialDraftConsumedRef.current = true;
+    if (decision === "apply") setInput(initialDraft);
+    else if (decision === "review") setStarterDraftConflict({ key: scopedDraftKey, text: initialDraft });
+  }, [initialDraft, input, sessionId, projectRoot, activeProjectRoot, projectLaunchReady, scopedDraftKey, setInput]);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
@@ -3759,6 +3833,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLinkedContext(null);
     setFlowTranscriptFallback(null);
     setLastFailedSend(null);
+    projectsRetryCarry.drop();
     abortRef.current?.abort();
     abortRef.current = null;
     streamOwnerRef.current = false;
@@ -4291,7 +4366,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         .flatMap((turn) => turn.tools ?? [])
         .filter((tool) => tool.status === "ok" || tool.status === "error")
         .slice(-3)
-        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+        // Names and outcomes only: a loaded tool result stays in its card (#6486).
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status })),
       linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
@@ -5507,6 +5583,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     submission?: { canSend: () => boolean; onPersisted: () => void },
   ) => {
     if (!firstUse.ensureIntroduction()) return;
+    if (text.trim() || outgoingAttachments.length > 0) projectsRetryCarry.drop();
     // A runtime picker writes the familiar binding through /api/config. Wait
     // for that read-modify-write before resolving the send body; otherwise an
     // immediate send can launch the old harness even though the chip already
@@ -5718,7 +5795,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLastFailedSend(null);
     setAccessRefusal(null);
     setProjectAccessRoot(null);
-    setProjectRootMissing(false);
+    setProjectsFixNeeded(false);
+    setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
     setEarlierRunId(null);
@@ -6011,11 +6089,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // succeed — swap in actionable copy + an Open-projects fix (cave-ivcc).
         if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
           const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
-          setProjectRootMissing(true);
+          setProjectsFixNeeded(true);
           surfacedMessage =
             missingRoot
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
               : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
+        }
+        // The project's folder needs a person to confirm it (#6215): never
+        // confirmed since folder pinning, or it now resolves somewhere else.
+        // The server's copy names the project and the fix.
+        if (
+          res.status === 409 &&
+          (refusal?.code === "project_root_unconfirmed" || refusal?.code === "project_root_moved")
+        ) {
+          setProjectsFixNeeded(true);
+          surfacedMessage = refusal.code === "project_root_moved"
+            ? "This project’s folder now resolves somewhere else. Confirm its folder in project settings before starting chat."
+            : "Confirm this project’s folder in project settings before starting chat. Projects added before folder pinning need this once.";
         }
         // Missing, unregistered, and newly revoked project contexts all need a
         // fresh choice. Retry alone cannot repair them, so route every stable
@@ -6052,6 +6142,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           surfacedMessage = blockingRunId
             ? "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry."
             : "This chat is still running an earlier turn, so your message was not sent. Wait for it to finish, then retry.";
+        }
+        // The message names the folder and the grant behind it; Projects is
+        // where a project's grant changes.
+        const overlapRefusal = refusal as {
+          error?: unknown;
+          reason?: unknown;
+          overlap?: { source?: unknown; root?: unknown } | null;
+        } | null;
+        if (res.status === 409 && overlapRefusal?.reason === "cave_private_state_overlap") {
+          if (typeof overlapRefusal.error === "string" && overlapRefusal.error.trim()) surfacedMessage = overlapRefusal.error;
+          if (overlapRefusal.overlap?.source === "project" && typeof overlapRefusal.overlap.root === "string") {
+            setPrivateStateProjectRoot(overlapRefusal.overlap.root);
+          }
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -7411,6 +7514,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
+          window.dispatchEvent(new Event(CHAT_REPLY_COMPLETED_EVENT));
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId) {
@@ -7576,6 +7680,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // One undo after a coven:ui pre-fill restores the draft it replaced.
+    const prefillUndo = prefillUndoRef.current;
+    if (prefillUndo) {
+      if (e.currentTarget.value !== prefillUndo.after) {
+        prefillUndoRef.current = null;
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        prefillUndoRef.current = null;
+        setInput(prefillUndo.before);
+        const field = e.currentTarget;
+        requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+        announce("Draft restored.");
+        return;
+      }
+    }
     // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
@@ -8697,6 +8816,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title={`Send message (${keys.enter})`}
                         aria-label="Send message"
                       >
+                        {firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? <span className="first-chat-send-label">Send message</span> : null}
                         <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
                     ) : null}
@@ -8738,6 +8858,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...(offlineReadOnly ? {} : dropHandlers)}
+      data-first-use={firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? "true" : undefined}
       // On the root, not the dock: the dock rides up by it and the transcript
       // reserves the same height so its last turn is never under the keyboard.
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
@@ -8944,6 +9065,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
+      {currentStarterConflict ? <aside className="first-use-nudge" aria-label="Starter request needs review"><span>Your existing draft is kept. Use the onboarding starter instead?</span><Button variant="ghost" size="xs" onClick={() => { if (currentDraftKeyRef.current !== currentStarterConflict.key) return; setInput(currentStarterConflict.text); setStarterDraftConflict(null); }}>Use starter request</Button><Button variant="ghost" size="xs" onClick={() => setStarterDraftConflict(null)}>Keep my draft</Button></aside> : null}
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
@@ -9052,6 +9174,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               // quieter ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
+                firstUse={firstUse.payload?.state.version === 2}
+                onPrompt={(text) => { setInput(text); inputRef.current?.focus(); }}
                 sessions={sessions}
                 composer={composerNode}
                 onSaveDefaults={saveNewSessionDefaults}
@@ -9288,9 +9412,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
           onOpenProjects={
-            projectRootMissing
+            projectsFixNeeded
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
-              : undefined
+              : privateStateProjectRoot
+                ? () => {
+                    const root = privateStateProjectRoot;
+                    // Carry Retry’s original attachments and controls across Projects.
+                    // Preserve the existing text draft unless something newer
+                    // is typed there; attachments belong only to Retry.
+                    const failed = lastFailedSend;
+                    if (failed) {
+                      projectsRetryOwnedRef.current = true;
+                      projectsRetryCarry.save({ familiarId: familiar.id, chatId: retryChatId }, {
+                        failed, message: error, root,
+                        route: { sessionId, familiarId: familiar.id, projectRoot: activeProjectRoot, composerDraftKey, composeId: retryChatId, runtimeHost },
+                      });
+                    }
+                    if (failed && !failed.promptOverride && failed.text.trim() && !input.trim()) {
+                      setInput(failed.text);
+                      writeComposerDraft(scopedDraftKey, failed.text);
+                    }
+                    // Latches cover a Projects tab that hasn't mounted yet.
+                    // This chat's familiar goes along: a split or side chat
+                    // can belong to a different one from the sidebar's.
+                    markProjectsTabPending();
+                    markProjectFocusPending(root, familiar.id);
+                    // A side chat sits beside Home or Tasks, where nothing is
+                    // listening for the Projects tab. Go to Chat first.
+                    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+                    window.setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+                      window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root, familiarId: familiar.id } }));
+                    }, 0);
+                  }
+                : undefined
           }
           pickProjectOptions={
             projectRootRequired
@@ -9312,11 +9467,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : undefined
           }
           onDismiss={() => {
+            projectsRetryCarry.drop();
+            setLastFailedSend(null);
             setError(null);
             setDebugError(null);
             setAccessRefusal(null);
             setProjectAccessRoot(null);
-            setProjectRootMissing(false);
+            setProjectsFixNeeded(false);
+            setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
             setEarlierRunId(null);

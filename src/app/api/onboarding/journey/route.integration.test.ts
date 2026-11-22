@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createFirstUseState } from "@/lib/first-use";
 
 test("the real journey route persists practice, revalidates revoked access and refuses relayed changes", async () => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "cave-journey-route-")));
@@ -16,6 +17,8 @@ test("the real journey route persists practice, revalidates revoked access and r
   try {
     await writeFile(path.join(root, "familiars.toml"), '[[familiar]]\nid = "nova"\ndisplay_name = "Nova"\n');
     const { GET, POST } = await import("./route.ts");
+    await mkdir(path.join(root, "cave"), { recursive: true });
+    await writeFile(path.join(root, "cave", "first-use.json"), JSON.stringify(createFirstUseState()));
     const { createProject, loadProjects } = await import("@/lib/cave-projects");
     const { grantProjectToFamiliar, revokeProjectFromFamiliar, listProjectGrants } = await import("@/lib/project-permissions");
     const projectRoot = path.join(root, "project");

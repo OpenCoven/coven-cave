@@ -115,6 +115,11 @@ export function taskWorktreeProjectAccessId(
 
   const taskProject = projectById(args.taskProjectId, args.projects);
   if (!taskProject) return `unregistered:${args.requestedProjectRoot}`;
+  if (taskProject.rootRealpath && realpathNativeOrResolve(taskProject.root) !== taskProject.rootRealpath) {
+    // Preserve the server-owned identity for a dedicated moved-root refusal.
+    // The shared gate must still validate the pin before any launch.
+    return taskProject.id;
+  }
 
   // Board worktrees are allowed as a first-turn shortcut only when the
   // symlink-resolved runtime cwd remains inside the task's registered project.
@@ -164,14 +169,31 @@ function chatProjectAccessIdWith(
   const projectRoot = explicitRoot ?? resumedRoot;
   if (!projectRoot) return null;
 
+  const pinnedMatches = args.projects.filter((entry) => entry.rootRealpath === projectRoot);
+  const pinnedProject = new Set(pinnedMatches.map((entry) => entry.id)).size === 1
+    ? pinnedMatches[0] : null;
+
   // Spellings first; then the directory the turn will actually run in, in the
   // canonical namespace, so an alias-registered project keeps its identity
   // when a resumed turn arrives with the realpathed cwd it persisted (#6210).
   const project =
     projectForRoot(projectRoot, args.projects) ??
+    pinnedProject ??
     projectForRoot(args.resolvedCwd, args.projects) ??
     projectForCanonicalRoot(args.resolvedCwd, args.projects, canonicalRoot);
   if (project) return project.id;
+
+  // A moved pinned project's registered spelling still identifies the grant
+  // to check. This grants nothing: the shared launch boundary then refuses
+  // the changed root with project_root_moved instead of losing its identity.
+  const movedPinnedParent = args.projects.find((entry) => {
+    if (!entry.rootRealpath || realpathNativeOrResolve(entry.root) === entry.rootRealpath) return false;
+    return [entry.root, entry.rootRealpath].some((root) => {
+      const prefix = root.replace(/\/+$/, "") + path.sep + ".worktrees" + path.sep;
+      return projectRoot.startsWith(prefix) && projectRoot.length > prefix.length;
+    });
+  });
+  if (movedPinnedParent) return movedPinnedParent.id;
 
   const worktreeParent = worktreeParentProject(projectRoot, args.resolvedCwd, args.projects, canonicalRoot);
   if (worktreeParent) return worktreeParent.id;

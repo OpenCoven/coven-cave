@@ -174,7 +174,7 @@ test("provision reuses a secret the mobile:tailscale script already persisted", 
   const env = devEnv();
   const file = mobileAccessSecretFile(env);
   mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, "script-minted-secret\n", "utf8");
+  writeFileSync(file, "script-minted-secret\n", { encoding: "utf8", mode: 0o600 });
   assert.equal(await provisionMobileAccessSecret(env), "script-minted-secret");
 });
 

@@ -28,25 +28,10 @@
   gap: var(--space-2);
 }
 
-.device-access__form,
-.device-access__list {
+.device-access__form {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.device-access__list {
-  list-style: none;
-  padding: 0;
-  max-height: 24rem;
-  overflow: auto;
-}
-
-.device-access__list li {
-  padding: var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  overflow-wrap: anywhere;
 }
 
 .device-access input:not([type="checkbox"]),

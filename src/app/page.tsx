@@ -11,9 +11,11 @@ export default async function Home() {
   ]);
   const dismissed = cookieStore.get("cave_onboarding_dismissed")?.value === "1";
 
+  const suppressed = cookieStore.get("cave_setup_suppressed")?.value === "1";
+
   if (
     shouldAutoOpenOnboardingBootstrap(bootstrap) &&
-    (bootstrap.confirmed || !dismissed)
+    !suppressed && (bootstrap.confirmed || !dismissed)
   ) {
     return <OnboardingStartupGate initialState={bootstrap} />;
   }

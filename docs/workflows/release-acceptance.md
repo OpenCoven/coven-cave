@@ -60,6 +60,10 @@ machine with no developer tools and no source checkout.
 | `revoke-pairing` | Revoke the client and return to pairing |
 | `update-migration` | Update Chat and verify preference/keychain/cache migration |
 
+### Local Chat journey for the v0.5.23 release
+
+For the published v0.5.22 baseline and v0.5.23 candidates, run `pnpm release:acceptance steps 0.5.22` or pass the candidate version. Complete Chat’s local engine and familiar setup, verify sign-in with a test account, restart Chat to check local history, and archive and restore the test conversation. Record these observations on each OS alongside installation, lists, message delivery, reconnect, attachment, safe action and migration. [Maintainer decision on #4781](https://github.com/OpenCoven/coven-cave/issues/4781#issuecomment-7044329920)
+
 ### Deferred: global CLI steps
 
 These steps are **deferred, not required**. Val made that decision on
