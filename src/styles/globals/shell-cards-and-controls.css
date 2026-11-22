@@ -352,21 +352,6 @@
     min-height: var(--touch-target);
   }
 }
-.tsc-done {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--color-success);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-.tsc-done--chip {
-  min-height: var(--space-6);
-  padding: 0 var(--space-2);
-  border: 1px solid color-mix(in oklch, var(--color-success) 38%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklch, var(--color-success) 10%, transparent);
-}
 
 .tsc-dismissed {
   display: flex;
