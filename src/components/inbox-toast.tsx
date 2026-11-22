@@ -2,7 +2,7 @@
 
 import "@/styles/dash-act.css";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { InboxItem, InboxMedia, LinkRef } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { normalizeInboxTitle } from "@/lib/inbox-title";
@@ -225,7 +225,8 @@ export function toastFromItem(item: InboxItem): Toast {
  * no reachable controls and don't count.
  */
 function useToastHeaderClearance(stackRef: RefObject<HTMLDivElement | null>, active: boolean) {
-  useEffect(() => {
+  // Place a newly mounted toast before its first visible frame.
+  useLayoutEffect(() => {
     const stack = stackRef.current;
     if (!active || !stack) return;
     let frame = 0;

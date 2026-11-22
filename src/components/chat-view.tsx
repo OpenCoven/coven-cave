@@ -1119,6 +1119,11 @@ function ChatErrorStrip({
           </button>
         </div>
       </div>
+      {code === "harness_empty_response" && onOpenSetup ? (
+        <div className="px-5 pb-2">
+          <button type="button" className={primaryBtn} onClick={onOpenSetup}>Open Setup</button>
+        </div>
+      ) : null}
       {usageLimit && onRetryWithModel ? (
         <UsageLimitFixRow
           model={usageLimitModel ?? null}
@@ -1377,7 +1382,7 @@ function AuthFixRow({
               announce(`Opening ${runtime} sign-in terminal.`);
             }} className={buttonClassName}>
               <Icon name="ph:plug" width={11} aria-hidden />
-              Connect {runtime}
+              Sign in to {runtime}
             </button>
           ) : null}
           <button type="button" onClick={() => copy(failure.loginCommand!)} className={buttonClassName}>

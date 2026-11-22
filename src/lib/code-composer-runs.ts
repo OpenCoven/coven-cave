@@ -105,7 +105,5 @@ export function createComposerRunStore(limit = CODE_COMPOSER_RUN_LIMIT) {
   };
 }
 
-export type ComposerRunStore = ReturnType<typeof createComposerRunStore>;
-
 /** The page's store. Module scope so a run outlives the composer that began it. */
 export const composerRuns = createComposerRunStore();

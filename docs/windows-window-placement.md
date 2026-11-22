@@ -30,7 +30,26 @@ Quick Chat uses the actual tray rectangle where available, otherwise the cursor
 monitor and then the primary monitor. It fits its outer rectangle, including
 shadow extents, within that work area. Reopening repositions the existing window;
 a user resize is retained in logical units when moving between display scales.
-Native chrome selection and an optional global shortcut remain separate decisions.
+Windows keeps its native decorations, with the `.shell-top` band reading as part
+of the native title bar (Val, 19 and 20 November 2026). Fitting that band flush
+with the caption still needs a Windows display.
+
+## Quick Chat global shortcut
+
+Settings → General → Chat has an opt-in **Quick Chat shortcut**: ⌘⇧Space on macOS
+and Ctrl+Shift+Space on Windows and Linux open the same Quick Chat window as the
+tray's "Quick Chat…" item, from any app. It is off by default, because while it
+is on, no other app receives that key. The row appears only in the desktop app.
+
+- The key is fixed in `src-tauri/src/quick_chat_shortcut.rs`; the
+  `set_quick_chat_shortcut` command only turns it on or off, refuses every
+  webview but the main window, and is granted to the main loopback UI alone
+  (`loopback-quick-chat-shortcut.json`).
+- The toggle asks the shell first and saves only what it reports. A key another
+  app already holds shows an error and stays off.
+- At launch the shell reads `general.quickChatShortcut` from Cave's
+  `preferences.json` and registers the key when it is `true`; anything else
+  leaves it off. A launch-time conflict is logged, not shown.
 
 ## Acceptance still requiring Windows
 

@@ -64,12 +64,6 @@ export function setFamiliarOrder(ids: string[]): void {
   writeOrder(deduped);
 }
 
-/** Forget the user's order; familiars revert to daemon order. */
-export function clearFamiliarOrder(): void {
-  if (getOrder().length === 0) return;
-  writeOrder([]);
-}
-
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
     if (e.key === ORDER_KEY) {

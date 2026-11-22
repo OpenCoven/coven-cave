@@ -94,6 +94,11 @@ description = "Allows showing an existing local file or folder in the system fil
 commands.allow = ["shell_reveal_path"]
 
 [[permission]]
+identifier = "allow-set-quick-chat-shortcut"
+description = "Allows turning Cave's fixed Quick Chat global shortcut on or off; the key itself is never caller-supplied."
+commands.allow = ["set_quick_chat_shortcut"]
+
+[[permission]]
 identifier = "allow-open-x-oauth-url"
 description = "Allows opening only a validated X OAuth authorization URL."
 commands.allow = ["open_x_oauth_url"]

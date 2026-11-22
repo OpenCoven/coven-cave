@@ -108,7 +108,7 @@ The changelog is not part of this step: the stamp in step 4 drafts it and step
 ## Step 13: the handoff record
 
 `pnpm release:train record` prints a table with what it can observe (version,
-promoted commit, candidate tag and run, release URL, acceptance record count)
+promoted commit, candidate tag and run, release URL, acceptance verdict)
 and marks the rest `not recorded`. Fill those from the evidence, then post the
 table on the release issue. Do not write "done" for a row that was not
 observed.

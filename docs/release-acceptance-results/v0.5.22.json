@@ -1,0 +1,251 @@
+{
+  "candidate": {
+    "version": "0.5.22",
+    "tag": "v0.5.22",
+    "commit": "c0d7dd4ff126314c40e6bab04ee3fc7251dc5727"
+  },
+  "artifacts": [
+    {
+      "name": "CovenCave_0.5.22_amd64.AppImage",
+      "sha256": "615d8f1fc6ea6271a96576ada648776a3a133e4ffbadd5dad27a31402a1fb5ba"
+    },
+    {
+      "name": "CovenCave_0.5.22_x64_en-US.msi",
+      "sha256": "28461699281ef384901b85a7c2164b7086d0a470258ea38a786ea73ff8a94674"
+    },
+    {
+      "name": "CovenCave-v0.5.22-aarch64.dmg",
+      "sha256": "8d01951225c8cde0c38978e82ea2afcdc1ad145d91422cff53f30794a1d417b6"
+    },
+    {
+      "name": "Coven.Chat_0.1.2_aarch64.dmg",
+      "sha256": "c644e2b027d097cff1bb17266e4850c55300e339f0d754ec2b28775c5ec66a90"
+    },
+    {
+      "name": "OpenCoven.Chat_0.1.1_aarch64.dmg",
+      "sha256": "c4da5aa5e87ec150e35e53311613a59039b11d685ae1dd32389b02e8b5a74bff"
+    },
+    {
+      "name": "OpenCoven.Chat_0.1.1_amd64.deb",
+      "sha256": "f991879cbb59fbb417ba8cd431c729b64c1ce4e09bad26c843fa1fc6280da9cd"
+    },
+    {
+      "name": "Coven.Chat_0.1.2_amd64.deb",
+      "sha256": "69468a02784846a57682f28beb6c3bcf864efb8b1a76966f9283efb2f9d71f47"
+    },
+    {
+      "name": "OpenCoven.Chat_0.1.1_x64_en-US.msi",
+      "sha256": "bcb84196be53f609ff2edf6e5dfd16b26ec1203ece6d7f6775188696c9d20bb2"
+    },
+    {
+      "name": "Coven.Chat_0.1.2_x64_en-US.msi",
+      "sha256": "2e82c3be8e243a23fae72f05d4e9ee9fbf04143304d6cafbf3093a2d74e863c6"
+    }
+  ],
+  "runs": [
+    {
+      "os": "macos",
+      "osVersion": "macOS 27.2.1 (26B131), arm64",
+      "caveVersion": "0.5.22",
+      "chatVersion": "0.1.1 to 0.1.2",
+      "steps": {
+        "install-cave": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Copied Cave from the published arm64 v0.5.22 disk image into Applications, passed strict bundle signature verification, verified the bundle version, and observed its Set up Cave first-run window."
+        },
+        "install-chat": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Copied Chat from the published arm64 v0.1.1 disk image into Applications, passed strict bundle signature verification, and reached Set up Coven Chat."
+        },
+        "runtime-setup": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Installed Coven CLI v0.4.10 and the managed engine in Chat setup. Created the Relea test familiar and extracted the disposable repository into its workspace. Verified its Git directory and attachment fixture."
+        },
+        "runtime-auth": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Completed the fresh host-browser login for the guest, returned its callback to the guest engine, and observed Guest sign-in verified after the installed engine returned success from codex status."
+        },
+        "load-lists": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Continued from native setup into the Relea conversation. Verified its sidebar entry, the selected familiar workspace, and the Message Relea composer."
+        },
+        "create-send": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Sent the baseline prompt in the installed v0.1.1 client and observed a separate Relea assistant message containing CAVE-MAC-BASELINE-OK."
+        },
+        "disconnect-resume": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Verified that guest HTTPS could not connect, then sent the test prompt in Chat. Chat displayed the request failure and restored the draft. After the guest network rule was removed, resending delivered an assistant reply containing MACRETRYOK in the same conversation."
+        },
+        "restart-history": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Quit installed Chat through macOS and verified the app process exited. Relaunched from Applications and reopened Relea with its earlier attached-file reply and ORCHID result visible."
+        },
+        "attachment": {
+          "result": "fail",
+          "diagnosticId": "https://github.com/OpenCoven/chat/issues/700",
+          "notes": "Sent a 21-byte text file from Finder and the engine quoted its contents correctly. After migration to v0.1.2, clicked the sent card in the restored conversation. Only its filename tooltip appeared. The app displayed no preview or file contents."
+        },
+        "safe-action": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Dragged the 21-byte attachment.txt from Finder into the installed Chat composer and sent it. Relea quoted cave-4781-attachment and reported writing release-proof.txt. A separate guest process verified ORCHID in the disposable repository."
+        },
+        "archive-restore": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Archived Relea and observed the empty active list. Opened Show archived chats, verified the earlier assistant reply and disabled composer, restored the chat, and returned to the active list with the reply and enabled composer."
+        },
+        "update-migration": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Installed the published v0.1.2 macOS bundle after checking its digest and strict signature. All ten tracked fixture and chat files matched their pre-upgrade hashes. The engine remained signed in, the same familiar showed earlier history, the Large text preference remained selected, and the upgraded app returned MACMIGRATED in that conversation."
+        }
+      }
+    },
+    {
+      "os": "windows",
+      "osVersion": "Windows 11 ARM64 26H2 build 26300.9711",
+      "caveVersion": "0.5.22",
+      "chatVersion": "0.1.1",
+      "steps": {
+        "install-cave": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Verified the published x64 MSI and observed installer exit 0 on the clean guest."
+        },
+        "install-chat": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Installed the published v0.1.1 x64 MSI and opened the native setup UI."
+        },
+        "runtime-setup": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Installed the signed Microsoft Visual C++ x64 runtime required by the published CLI, verified managed engine 0.8.0, created Release tester through the Chat setup UI, and verified its workspace with a disposable repository."
+        },
+        "runtime-auth": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Started the guest test-account login and verified codex status exited 0 from the signed-in Windows user profile."
+        },
+        "load-lists": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Continued from setup into the installed Chat window. The familiar sidebar showed Release tester and its selected conversation exposed the Message Release tester composer."
+        },
+        "create-send": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Sent the baseline prompt in installed Chat v0.1.1 and observed a distinct assistant reply containing CAVE-WINDOWS-BASELINE-OK in Release tester."
+        },
+        "disconnect-resume": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Disconnected the clean VM network adapter and sent the reconnect prompt. Chat showed a failed request and offered Try again. Reconnected the adapter and used Try again. The familiar replied CAVE-WINDOWS-RECONNECTED in the original conversation with its earlier baseline reply visible."
+        },
+        "restart-history": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Closed the installed Chat process and verified its exit. Relaunched from the installed shortcut and observed the earlier assistant reply in the same familiar conversation."
+        },
+        "attachment": {
+          "result": "fail",
+          "diagnosticId": "https://github.com/OpenCoven/chat/issues/700",
+          "notes": "The familiar read the uploaded 21-byte attachment. After migration, scrolled its sent card into view and clicked the filename. The transcript stayed visible without a preview. The card and enclosing list item exposed no invoke control."
+        },
+        "safe-action": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Engine read the attached 21-byte file, quoted its single line, wrote ORCHID in the disposable repository, and the guest verified the file contents."
+        },
+        "archive-restore": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Archived Release tester and observed the empty active list. Enabled Show archived chats, reopened its history, used Restore chat, observed the empty archived list, switched back to active chats, and verified Release tester and the prior baseline message."
+        },
+        "update-migration": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "The published x64 v0.1.2 MSI matched its release SHA-256 and installed with exit 0. All eight tracked fixture files matched their pre-upgrade hashes. Relaunched through Start, verified Codex status exit 0 and the selected Large text preference, then received CAVE-WINDOWS-MIGRATED in the same familiar with its earlier replies present."
+        }
+      }
+    },
+    {
+      "os": "linux",
+      "osVersion": "Ubuntu 24.04.5 LTS x86_64",
+      "caveVersion": "0.5.22",
+      "chatVersion": "0.1.1 to 0.1.2",
+      "steps": {
+        "install-cave": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Launched the published amd64 AppImage and observed the Cave window and responding sidecar."
+        },
+        "install-chat": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Installed and launched the v0.1.1 Debian package on the clean guest."
+        },
+        "runtime-setup": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Configured the Release tester familiar and local engine."
+        },
+        "runtime-auth": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Verified the Codex sign-in and selected Codex as the engine provider."
+        },
+        "load-lists": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Release tester and its existing conversation appeared in the native sidebar."
+        },
+        "create-send": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "The installed client returned CAVE-LINUX-BASELINE-OK in the test conversation."
+        },
+        "disconnect-resume": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "An HTTPS outage produced a visible send failure. After connectivity returned, the retained draft delivered and the familiar replied RECONNECTED with earlier history present."
+        },
+        "restart-history": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Relaunched Chat and verified the familiar and prior assistant reply."
+        },
+        "attachment": {
+          "result": "fail",
+          "diagnosticId": "https://github.com/OpenCoven/coven-cave/issues/6514#issuecomment-7054280831",
+          "notes": "Uploaded attachment.txt and the engine read its contents. The sent 21-byte card in migrated history remained static when clicked."
+        },
+        "safe-action": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "The familiar edited release-proof.txt in the disposable test repository. The file contained ORCHID and the assistant read it back."
+        },
+        "archive-restore": {
+          "result": "pass",
+          "diagnosticId": "",
+          "notes": "Archived the active conversation, opened its preserved history through Show archived chats, restored it, and verified the messages and active composer."
+        },
+        "update-migration": {
+          "result": "fail",
+          "diagnosticId": "https://github.com/OpenCoven/coven-cave/issues/4781#issuecomment-7054217267",
+          "notes": "Standard apt upgrade exited 100 on conflicting package files. Explicitly replacing open-coven-chat in one apt transaction installed v0.1.2. The canonical index, lifecycle index, eight transcripts, Large text preference, and Codex sign-in survived. The upgraded client delivered MIGRATION-VERIFIED in the same conversation."
+        }
+      }
+    }
+  ]
+}

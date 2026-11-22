@@ -66,6 +66,8 @@ mod startup_failure_dialog;
 #[cfg(desktop)]
 mod pty;
 #[cfg(desktop)]
+mod quick_chat_shortcut;
+#[cfg(desktop)]
 mod reliability_metrics;
 #[cfg(desktop)]
 mod secret_path_acl;
@@ -119,6 +121,8 @@ use desktop_reachability::*;
 use main_window::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
+#[cfg(desktop)]
+use quick_chat_shortcut::*;
 #[cfg(desktop)]
 use reliability_metrics::*;
 #[cfg(all(test, desktop))]

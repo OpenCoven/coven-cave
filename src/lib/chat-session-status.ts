@@ -52,10 +52,6 @@ export function chatSessionStatusKey(status: string | null | undefined): ChatSes
     : "completed";
 }
 
-export function chatSessionStatus(row: SessionRow): ChatSessionStatusPresentation {
-  return CHAT_SESSION_STATUS[chatSessionStatusKey(row.status)];
-}
-
 /** Counts for every chip, including `all`. Counted BEFORE the status filter
  *  applies (but after search), so switching chips never changes the numbers
  *  under the other chips — the prototype's behaviour. */

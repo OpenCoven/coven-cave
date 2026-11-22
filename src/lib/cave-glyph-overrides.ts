@@ -12,7 +12,7 @@
  * familiars (follow-up PR), the store can opt into syncing.
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
 const OVERRIDES_KEY = "cave:glyph-overrides:v1";
 const RECENT_KEY = "cave:glyph-recent:v1";
@@ -180,26 +180,4 @@ const getRecentServer = () => EMPTY_RECENT as string[];
 /** React hook: recents list. Re-renders on any mutation. */
 export function useRecentGlyphs(): string[] {
   return useSyncExternalStore(subscribe, getRecent, getRecentServer);
-}
-
-/**
- * Tiny non-hook accessor for places (e.g. one-shot reads) that can't take a
- * hook. Always returns the latest snapshot; will not re-render anything.
- */
-export function readGlyphOverridesSnapshot(): OverrideMap {
-  return getOverrides();
-}
-
-/** Pre-warm the cache during initial app mount so SSR/CSR agree. */
-export function useHydrateGlyphStore(): void {
-  // The first read on the client primes both caches; this just guarantees the
-  // hydration boundary happens once and re-renders downstream consumers.
-  const [, force] = useState(0);
-  useEffect(() => {
-    if (cachedOverrides === null || cachedRecent === null) {
-      cachedOverrides = readOverridesFromStorage();
-      cachedRecent = readRecentFromStorage();
-      force((n) => n + 1);
-    }
-  }, []);
 }

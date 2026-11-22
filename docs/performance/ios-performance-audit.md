@@ -408,8 +408,9 @@ Each round (20 by default, `--rounds N`):
 1. It launches a fresh fixture process and confirms that PID is the running Cave
    process. A failed rich open can leave a process unable to mount its renderer
    for the rest of its life (#5613).
-2. It attaches the Points of Interest instrument, retrying and waking the device
-   tunnel through `devicectl` process listings.
+2. It attaches the Points of Interest and Hitches instruments, retrying and
+   waking the device tunnel through `devicectl` process listings.
+   `--no-hitches` records Points of Interest alone.
 3. It runs the driver's priming cycle plus one warm cycle.
 4. It stops and saves the recording.
 
@@ -442,6 +443,21 @@ covered when all four of the journey's `drawer.open` spans fall inside its
 window. In both modes the recorder starts the driver only after `xctrace`
 reports that it is recording, and is stopped as soon as the test case ends,
 before `xcodebuild` writes its result bundle.
+
+**Hitches (#5748).** Each round's trace also holds the Hitches instrument's
+`hitches` table (one row per hitch, with the process it belongs to) and its
+`hitches-frame-lifetimes` table (one row per rendered frame). The merge
+attributes a hitch to every counted span it overlaps, keeping only hitches of
+the round's fixture PID from `launch.json`; other processes' hitches are
+listed, not counted. A second table prints per span the spans measured, the
+spans with a rendered frame in the trace (`observed`), the hitch count, the
+spans with a hitch and the longest hitch. It closes with a `(cycle window)` row
+for each whole measured cycle. The verdict compares the longest hitch with the
+ratified < 100 ms budget. A span with no rendered frame is `unobserved`, not
+hitch-free, and a round recorded without Hitches reports `not recorded`.
+Hitch data never decides whether a round is covered. `summary.json` carries
+the same rows under `hitches`. Cold and warm rounds stay in separate output
+directories, so their hitch rows never mix.
 
 ### Device baseline, 2026-10-01 (#5292)
 
