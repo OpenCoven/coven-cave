@@ -91,7 +91,8 @@ try {
     await writeFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, JSON.stringify(file, null, 2));
     assert.equal((await stored(created.id)).rootRealpath, undefined);
     await grantProjectToFamiliar({ familiarId: "folder-pin-holder", projectId: created.id, source: "human", access: "write" });
-    await assert.rejects(() => launch(created.id), { code: "project_root_unconfirmed", status: 409 });
+    // #6560: the refusal names this project, so Chat can confirm it in place.
+    await assert.rejects(() => launch(created.id), { code: "project_root_unconfirmed", status: 409, projectId: created.id });
     assert.equal((await stored(created.id)).rootRealpath, undefined, "launch never confirms implicitly");
 
     const confirmed = await put(created.id, { confirmRoot: true });

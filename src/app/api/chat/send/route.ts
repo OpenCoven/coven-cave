@@ -213,6 +213,7 @@ import {
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  chatProjectLaunchRefusalBody,
   projectlessGenerationLaunch,
   projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
@@ -2727,11 +2728,7 @@ async function postAdmittedChat(
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
       return new Response(
-        JSON.stringify({
-          ok: false,
-          error: error.message,
-          code: error.code,
-        }),
+        JSON.stringify(chatProjectLaunchRefusalBody(error)),
         { status: error.status, headers: { "content-type": "application/json" } },
       );
     }
@@ -2768,7 +2765,7 @@ async function postAdmittedChat(
     assertProjectFoldersUnchanged(await loadProjects());
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
-      return Response.json({ ok: false, code: error.code, error: error.message }, { status: error.status });
+      return Response.json(chatProjectLaunchRefusalBody(error), { status: error.status });
     }
     throw error;
   }
@@ -3473,7 +3470,7 @@ async function postAdmittedChat(
       await assertLaunchFoldersUnchanged();
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) return Response.json(
-        { ok: false, code: error.code, error: error.message }, { status: error.status });
+        chatProjectLaunchRefusalBody(error), { status: error.status });
       throw error;
     }
     return openClawChatResponse({

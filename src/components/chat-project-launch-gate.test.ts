@@ -63,9 +63,34 @@ assert.ok(initialReadyIndex < initialLatchIndex, "waiting for a project must not
 
 assert.match(
   chat,
-  /res\.status === 409 &&\s*\(refusal\?\.code === "project_root_unconfirmed" \|\| refusal\?\.code === "project_root_moved"\)\s*\)\s*\{\s*setProjectsFixNeeded\(true\);\s*surfacedMessage = refusal\.code === "project_root_moved"/,
-  "an unconfirmed or moved project folder offers Projects with code-selected safe copy (#6215)",
+  /res\.status === 409 &&\s*\(refusal\?\.code === "project_root_unconfirmed" \|\| refusal\?\.code === "project_root_moved"\)\s*\)\s*\{\s*const folderProjectId = refusedUnconfirmedProjectId\(refusal\);\s*setUnconfirmedFolderProjectId\(folderProjectId\);\s*setProjectsFixNeeded\(!folderProjectId\);\s*surfacedMessage = refusal\.code === "project_root_moved"/,
+  "a moved folder, or an unconfirmed one the server did not name, offers Projects with code-selected safe copy (#6215)",
 );
+// #6560: an unconfirmed folder the server named is confirmed in place, through
+// useProjects().confirmRoot (the settings route and its Touch ID ceremony),
+// and only a successful confirmation retries the refused message.
+const confirmIndex = chat.indexOf("const confirmFolderAndRetry = async");
+assert.ok(confirmIndex > 0, "Chat should have an in-place Confirm folder handler");
+const confirmBody = chat.slice(confirmIndex, chat.indexOf("\n  };\n", confirmIndex));
+assert.match(confirmBody, /await confirmRoot\(projectId\)/, "Confirm folder should reuse the settings confirmation");
+assert.match(
+  confirmBody,
+  /if \(!result\.ok\) \{[\s\S]*setError\(result\.error\);[\s\S]*return;[\s\S]*\}[\s\S]*retryFailedSend\(\)/,
+  "a declined or unavailable confirmation shows the server's message and never retries",
+);
+assert.match(
+  chat,
+  /onConfirmFolder=\{unconfirmedFolderProjectId \? \(\) => void confirmFolderAndRetry\(\) : undefined\}/,
+  "the error strip offers Confirm folder only for a server-named unconfirmed project",
+);
+assert.match(
+  chat,
+  /\{onConfirmFolder \? \([\s\S]{0,400}onClick=\{onConfirmFolder\}[\s\S]{0,400}disabled=\{confirmingFolder\}[\s\S]{0,700}"Confirm folder"/,
+  "the strip renders a Confirm folder action that disables while the prompt is open",
+);
+for (const reset of ["setProjectsFixNeeded(false);\n    setUnconfirmedFolderProjectId(null);", "setProjectsFixNeeded(false);\n            setUnconfirmedFolderProjectId(null);"]) {
+  assert.ok(chat.includes(reset), `a new send and Dismiss should both clear the confirm target: ${JSON.stringify(reset)}`);
+}
 assert.doesNotMatch(
   chat,
   /\ballowNoProject\b/,

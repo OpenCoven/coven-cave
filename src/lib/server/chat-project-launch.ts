@@ -138,17 +138,42 @@ export type ChatProjectLaunchErrorCode =
 export class ChatProjectLaunchError extends Error {
   readonly code: ChatProjectLaunchErrorCode;
   readonly status: 400 | 403 | 409;
+  /** The registered project the server refused, when it resolved one. */
+  readonly projectId?: string;
 
   constructor(
     code: ChatProjectLaunchErrorCode,
     status: 400 | 403 | 409,
     message: string,
+    projectId?: string,
   ) {
     super(message);
     this.name = "ChatProjectLaunchError";
     this.code = code;
     this.status = status;
+    if (projectId) this.projectId = projectId;
   }
+}
+
+/**
+ * The JSON body a route returns for a launch refusal. Only an unconfirmed
+ * folder names its project: Chat and Board then offer Confirm folder for that
+ * exact project, through the same human ceremony settings uses (#6560).
+ */
+export function chatProjectLaunchRefusalBody(error: ChatProjectLaunchError): {
+  ok: false;
+  error: string;
+  code: ChatProjectLaunchErrorCode;
+  projectId?: string;
+} {
+  return {
+    ok: false,
+    error: error.message,
+    code: error.code,
+    ...(error.code === "project_root_unconfirmed" && error.projectId
+      ? { projectId: error.projectId }
+      : {}),
+  };
 }
 
 export type ChatProjectLaunchDeps = {
@@ -272,6 +297,7 @@ export async function authorizeChatProjectLaunch(
       "project_root_unconfirmed",
       409,
       `Confirm ${name}’s folder in project settings before starting chat. Projects added before folder pinning need this once.`,
+      projectId,
     );
   }
   // Compare the registered folder itself by equality. Containment is only

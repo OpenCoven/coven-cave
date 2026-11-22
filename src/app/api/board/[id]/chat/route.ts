@@ -12,6 +12,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  chatProjectLaunchRefusalBody,
   projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { assertCurrentPinnedLaunchRoot } from "@/lib/server/project-root-pin";
@@ -175,14 +176,7 @@ export async function POST(
     authorizedProjectId = authorized.projectId;
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: error.message,
-          code: error.code,
-        },
-        { status: error.status },
-      );
+      return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
     }
     throw error;
   }
@@ -195,10 +189,7 @@ export async function POST(
       return null;
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) {
-        return NextResponse.json(
-          { ok: false, error: error.message, code: error.code },
-          { status: error.status },
-        );
+        return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
       }
       throw error;
     }
