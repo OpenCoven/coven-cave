@@ -3,10 +3,13 @@
 // package script, and the runner can read Git but never tag or push.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
-import { PHASES, assertReadOnlyGit, deriveStatus, handoffRecord, tagCommands } from "./release-train.mjs";
+import { blankAcceptanceRecord } from "./release-acceptance.mjs";
+import { PHASES, assertReadOnlyGit, deriveStatus, handoffRecord, readAcceptance, tagCommands } from "./release-train.mjs";
 
 const packageScripts = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts;
 const runbook = readFileSync(new URL("../docs/workflows/release-train.md", import.meta.url), "utf8");
@@ -19,7 +22,7 @@ const released = {
   candidateTags: [],
   candidateRun: null,
   finalTag: null,
-  acceptanceRecords: 0,
+  acceptance: "not recorded",
 };
 
 test("a published release with no acceptance record points at acceptance", () => {
@@ -29,7 +32,40 @@ test("a published release with no acceptance record points at acceptance", () =>
 });
 
 test("a published and accepted release points at the next release's preflight", () => {
-  assert.equal(deriveStatus({ ...released, acceptanceRecords: 3 }).phase, "preflight");
+  assert.equal(deriveStatus({ ...released, acceptance: "complete" }).phase, "preflight");
+});
+
+test("a published baseline with a failed or unverified record stays at acceptance", () => {
+  for (const acceptance of ["failed", "invalid", "incomplete", "unverified"]) {
+    assert.equal(deriveStatus({ ...released, acceptance }).phase, "acceptance");
+  }
+});
+
+test("read the verdict only from the published tag's record and commit", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "train-acceptance-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const version = "0.5.22";
+  const commit = "a".repeat(40);
+  const record = blankAcceptanceRecord(version);
+  record.candidate.commit = commit;
+  record.artifacts = [{ name: "test.dmg", sha256: "b".repeat(64) }];
+  for (const run of record.runs) {
+    run.osVersion = "test";
+    run.caveVersion = version;
+    for (const step of Object.values(run.steps)) step.result = "pass";
+  }
+  writeFileSync(join(directory, "v0.5.22-rc.1.json"), JSON.stringify(record));
+  const verdict = () => readAcceptance(directory, version, commit);
+  assert.equal(verdict(), "not recorded");
+  const file = join(directory, "v0.5.22.json");
+  writeFileSync(file, "{");
+  assert.equal(verdict(), "invalid");
+  writeFileSync(file, JSON.stringify(record));
+  assert.equal(verdict(), "complete");
+  assert.equal(readAcceptance(directory, version, "c".repeat(40)), "unverified");
+  record.runs[0].steps.attachment = { result: "fail", diagnosticId: "test-1", notes: "Click did not open the attachment." };
+  writeFileSync(file, JSON.stringify(record));
+  assert.equal(verdict(), "failed");
 });
 
 test("a locally stamped version that main does not have yet points at verify", () => {
@@ -112,5 +148,5 @@ test("handoffRecord states what is known and marks the rest as not recorded", ()
   const record = handoffRecord({ ...released, releaseUrl: "https://example.test/v0.5.20", commit: "ffff000", releaseCommit: "abc1234" });
   assert.match(record, /Version \| 0\.5\.20/);
   assert.match(record, /Promoted commit \| abc1234/);
-  assert.match(record, /Acceptance records \| not recorded/);
+  assert.match(record, /Acceptance \| not recorded/);
 });

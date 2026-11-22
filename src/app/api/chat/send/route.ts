@@ -6,6 +6,7 @@ import { isMetaRunOrigin } from "@/lib/chat-origins";
 import { projectTextOffsets } from "@/lib/project-text-offsets";
 import { projectProgressDetails } from "@/lib/server/chat-display-projection";
 import { ReasoningBlockTracker } from "@/lib/server/chat-reasoning-projection";
+import { codexNeedsLogin } from "@/lib/server/codex-login-status";
 import { randomUUID } from "node:crypto";
 import type { ToolObservationContext } from "@/lib/server/chat-activity-projection";
 import { runtimeIdentityForLaunch, withReportedRuntimeModel } from "@/lib/chat-runtime-identity";
@@ -6604,6 +6605,20 @@ async function postAdmittedChat(
       const runtimeProcessReason = binding.harness === "codex" && !codexDirect && !sshRuntime
         ? classifyRuntimeProcessFailure([...stderrTail, ...relayedErrTail].join("\n"))
         : "unknown";
+      // Older adapters sometimes return only an opaque failure. Ask the local
+      // runtime itself after all more specific recovery paths had their turn.
+      if (!launchFailure && !sshRuntime && !runHandle.stopRequested && !assistantText.trim()
+          && runtimeProcessReason === "unknown" && binding.harness === "codex" && codexDirectLaunch && localRuntimePlan
+          && codexLaunchAvailability?.state === "ready"
+          && await codexNeedsLogin(codexDirectLaunch, localRuntimePlan.env)
+          && !runHandle.stopRequested) {
+        const message = "Sign in to Codex, then retry your message.";
+        launchFailure = { code: "harness_auth_required", message };
+        result.is_error = true;
+        pushProgress("harness-auth", "Codex sign-in required", "error", message);
+        push({ kind: "error", ...launchFailure, harness: binding.harness });
+      }
+
       if (!launchFailure && !runtimeUsageLimit && !assistantText.trim()
           && (covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown"))) {
         const failedRunner = binding.harness === "codex"
@@ -6708,6 +6723,7 @@ async function postAdmittedChat(
         assistantText = diagnostic;
         result.is_error = true;
         push({ kind: "assistant_chunk", text: diagnostic });
+        push({ kind: "error", code: "harness_empty_response", message: "The runtime returned no reply. Check its setup, then retry.", harness });
       }
 
       // Created-row leak sweep (bd cave-p08l): `coven run` registers the

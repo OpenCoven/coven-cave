@@ -104,7 +104,7 @@ test("changing the assistant during fresh setup keeps a single acting familiar",
   await renderGuide();
   await act(async () => renderer!.root.findByType(FirstUseAssistantPicker).props.onCreated({ id: "sage", display_name: "Sage", harness: "hermes" }));
   await act(async () => renderer!.root.findByType(FirstUseAssistantPicker).props.onSelect("nova"));
-  await act(async () => button("Choose a project").props.onClick());
+  expect(button("Back to assistants")).toBeDefined();
   const checked = renderer!.root.findAllByType("input").filter((entry: { props: { type: string; checked: boolean } }) => entry.props.type === "checkbox" && entry.props.checked);
   expect(checked).toHaveLength(1);
 });

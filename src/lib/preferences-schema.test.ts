@@ -147,6 +147,7 @@ for (const invalid of [
   { appearance: { fonts: { sans: "remote-font-url" } } },
   { appearance: { backdrop: { image: { mime: "image/svg+xml" } } } },
   { general: { newsHeadlines: false } },
+  { general: { quickChatShortcut: "true" } },
   { phone: { mobileMode: "yes" } },
 ]) {
   assert.throws(
@@ -709,4 +710,23 @@ assert.equal(defaults.appearance.backdrop.style, "image");
     validatePreferencesPatch({ voice: { defaultModel: "eleven_multilingual_v2" } }),
   );
   assert.equal(noOp.revision, modelOnly.revision, "a no-op voice patch does not bump revision");
+}
+
+{
+  // The Quick Chat global shortcut takes its key from every other app, so it
+  // stays off unless the person explicitly turns it on (#5980).
+  assert.equal(normalizeCavePreferences({}).general.quickChatShortcut, false, "off by default");
+  assert.equal(
+    normalizeCavePreferences({ general: { quickChatShortcut: "true" } }).general.quickChatShortcut,
+    false,
+    "only a literal true turns it on",
+  );
+  const on = applyPreferencesPatch(
+    normalizeCavePreferences({}),
+    validatePreferencesPatch({ general: { quickChatShortcut: true } }),
+  );
+  assert.equal(on.general.quickChatShortcut, true, "the Settings toggle can turn it on");
+  assert.equal(on.general.celebrations, true, "turning it on leaves other general preferences alone");
+  const off = applyPreferencesPatch(on, validatePreferencesPatch({ general: { quickChatShortcut: false } }));
+  assert.equal(off.general.quickChatShortcut, false, "and back off");
 }

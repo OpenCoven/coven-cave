@@ -1,3 +1,4 @@
+import type { HarnessAuthFailure } from "./harness-failure.ts";
 import type { ArtifactKind, CanvasArtifact } from "./canvas-artifacts.ts";
 
 export type CanvasGenerationPurpose = "create" | "refine";
@@ -56,6 +57,7 @@ export type CanvasGenerationSnapshot = {
   artifacts: readonly Readonly<CanvasArtifact>[] | null;
   savedId: string | null;
   error: string | null;
+  authFailure?: HarnessAuthFailure;
   saveFailure: CanvasGenerationSaveFailure | null;
 };
 
@@ -83,6 +85,14 @@ export type CanvasGenerationSaveExecutor = (
   expectedAbsent: boolean,
   signal: AbortSignal,
 ) => Promise<CanvasGenerationExecutorResult>;
+
+class CanvasSignInError extends Error {
+  readonly failure: HarnessAuthFailure;
+  constructor(failure: HarnessAuthFailure) {
+    super(`Sign in to ${failure.harnessLabel ?? "your runtime"} on this machine, then retry your preview.`);
+    this.failure = failure;
+  }
+}
 
 export class CanvasGenerationSaveError extends Error {
   readonly artifact: CanvasArtifact;
@@ -281,6 +291,7 @@ async function executeCanvasGeneration(
   }
 
   if (signal.aborted) throw new DOMException("Generation cancelled", "AbortError");
+  if (result.authFailure) throw new CanvasSignInError(result.authFailure);
   if (!result.code || !result.kind || result.failure) {
     const message = result.failure === "format"
       ? "We couldn’t turn that response into a preview."
@@ -410,6 +421,7 @@ export function startCanvasGeneration(
         artifact: saveError ? cloneArtifact(saveError.artifact) : snapshot.artifact,
         sessionId: saveError?.sessionId ?? snapshot.sessionId,
         error: error instanceof Error ? error.message : "Canvas generation failed.",
+        authFailure: error instanceof CanvasSignInError ? error.failure : undefined,
         saveFailure: saveError?.failure ?? null,
       });
     },

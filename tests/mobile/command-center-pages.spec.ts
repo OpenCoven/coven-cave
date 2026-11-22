@@ -54,6 +54,13 @@ async function expectNoHorizontalOverflow(page: Page, label: string) {
   expect(overflow, `${label} should not overflow horizontally`).toBeLessThanOrEqual(1);
 }
 
+async function startScopedSession(page: Page) {
+  const surface = page.locator(".chat-surface");
+  // The list can render before the saved project and familiar finish restoring.
+  await expect(surface.getByRole("button", { name: "Filter chats: Queue · Nova", exact: true })).toBeVisible();
+  await surface.getByRole("button", { name: "New session", exact: true }).click();
+}
+
 test.describe("mobile command center pages", () => {
   test.beforeEach(async ({ page }, testInfo) => {
     // This spec asserts phone geometry against the mobile bottom-tab chrome,
@@ -104,7 +111,7 @@ test.describe("mobile command center pages", () => {
 
     // cave-n3jg2: the two conditional "+ Session" CTAs (identity row, filter
     // row) collapsed into one "New session" button in the surface title row.
-    await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
+    await startScopedSession(page);
     await page.waitForSelector(".cave-chat-linear");
 
     // New chat keeps its composer in flow; short phones scroll it into view.
@@ -125,7 +132,7 @@ test.describe("mobile command center pages", () => {
   test("Auto selects autonomous mission mode and gives the chat a visible aura", async ({ page }) => {
     await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
     await page.waitForSelector(".chat-surface");
-    await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
+    await startScopedSession(page);
 
     const chat = page.locator(".cave-chat-linear");
     const composer = page.locator(".cave-composer-input");

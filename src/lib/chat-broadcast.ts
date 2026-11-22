@@ -37,11 +37,6 @@ export type BroadcastFailureCode =
   | "send_rejected"
   | "send_failed";
 
-export type BroadcastResponse = {
-  ok: boolean;
-  results: BroadcastResult[];
-};
-
 /**
  * Run `task` over `items` with at most `limit` in flight, preserving input
  * order in the returned array.

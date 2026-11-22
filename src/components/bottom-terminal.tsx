@@ -272,9 +272,12 @@ export function BottomTerminal({
   onHealthChange,
   onReady,
   disposeOnUnmount = false,
+  useServerPty = false,
   releaseKey,
 }: {
   threadId: string;
+  /** Run on the Cave server that owns the managed harness and its login. */
+  useServerPty?: boolean;
   /** This pane has keyboard focus (drives refit + refocus on activation). */
   active?: boolean;
   /** This pane is rendered on-screen. True for EVERY pane of a visible split
@@ -443,7 +446,8 @@ export function BottomTerminal({
   // Tauri IPC; browser dev/prod AND Tauri-mobile use the WebSocket PTY
   // bridge — the mobile webview is served by a remote Cave server, and the
   // bridge opens the shell on that machine.
-  const platform = useTauriPlatform();
+  const hostPlatform = useTauriPlatform();
+  const platform = useServerPty && hostPlatform === "desktop" ? "browser" : hostPlatform;
   // Screen-reader mirror state: see comment block near top of file.
   const [mirrorLines, setMirrorLines] = useState<string[]>([]);
   const pendingMirrorRef = useRef<string>("");

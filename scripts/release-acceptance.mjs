@@ -39,6 +39,22 @@ export const JOURNEY_STEPS = [
   { id: "update-migration", title: "Update Chat and verify preference/keychain/cache migration" },
 ];
 
+// Val approved the shipped local Chat journey for the v0.5.23 train (#4781).
+// Preserve the evidence contract for every other release.
+const localChatSteps = new Map([
+  ["discover-cave", { id: "runtime-setup", title: "Complete Chat setup and verify its local engine and familiar" }],
+  ["pair-approve", { id: "runtime-auth", title: "Connect the test account to the local harness and verify sign-in" }],
+  ["restart-history", { id: "restart-history", title: "Restart Chat and reopen the conversation from local history" }],
+  ["revoke-pairing", { id: "archive-restore", title: "Archive the test conversation, restore it, and verify its messages" }],
+]);
+
+function journeyFor(version) {
+  if (typeof version === "string" && /^0\.5\.(22|23)(?:-rc\.\d+)?$/.test(version)) {
+    return JOURNEY_STEPS.map((step) => localChatSteps.get(step.id) ?? step);
+  }
+  return JOURNEY_STEPS;
+}
+
 // Global `opencoven` CLI acceptance, installed from the published package
 // rather than a source checkout. Deferred, not required (Val, 2026-10-02,
 // #4781): the SDK keeps `@opencoven/dev-cli` private until its native trust
@@ -107,7 +123,7 @@ const SECRET_PATTERNS = [
 /** A blank record an operator fills in, with every required step present. */
 export function blankAcceptanceRecord(version = "0.0.0") {
   const steps = {};
-  for (const id of REQUIRED_STEP_IDS) {
+  for (const { id } of journeyFor(version)) {
     steps[id] = { result: "pending", diagnosticId: "", notes: "" };
   }
   return {
@@ -143,7 +159,7 @@ export function validateAcceptanceRecord(record) {
 
   validateCandidate(record.candidate, add);
   validateArtifacts(record.artifacts, add);
-  const runs = validateRuns(record.runs, add);
+  const runs = validateRuns(record.runs, add, journeyFor(record.candidate?.version).map((step) => step.id));
 
   for (const finding of findSecrets(record)) {
     add(`possible ${finding.id} committed at ${finding.path}`);
@@ -211,7 +227,7 @@ function validateArtifacts(artifacts, add) {
   });
 }
 
-function validateRuns(runs, add) {
+function validateRuns(runs, add, requiredIds) {
   if (!Array.isArray(runs) || runs.length === 0) {
     add("runs must be a non-empty array, one entry per operating system");
     return [];
@@ -247,7 +263,7 @@ function validateRuns(runs, add) {
       }
     }
 
-    summaries.push(validateSteps(run, index, os, add));
+    summaries.push(validateSteps(run, index, os, add, requiredIds));
   });
 
   for (const os of ACCEPTANCE_OSES) {
@@ -257,17 +273,17 @@ function validateRuns(runs, add) {
   return summaries;
 }
 
-function validateSteps(run, index, os, add) {
+function validateSteps(run, index, os, add, requiredIds) {
   const steps = isPlainObject(run.steps) ? run.steps : null;
   if (!steps) {
     add(`runs[${index}].steps must be an object keyed by step id`);
-    return { os, status: "incomplete", failedSteps: [], pendingSteps: [...REQUIRED_STEP_IDS] };
+    return { os, status: "incomplete", failedSteps: [], pendingSteps: [...requiredIds] };
   }
 
   for (const id of Object.keys(steps)) {
     if (DEFERRED_STEP_IDS.includes(id)) {
       add(`runs[${index}].steps.${id} is ${DEFERRED_STEP_REASON}; remove it from the record`);
-    } else if (!REQUIRED_STEP_IDS.includes(id)) {
+    } else if (!requiredIds.includes(id)) {
       add(`runs[${index}].steps has unknown step '${id}'`);
     }
   }
@@ -275,7 +291,7 @@ function validateSteps(run, index, os, add) {
   const failedSteps = [];
   const pendingSteps = [];
 
-  for (const id of REQUIRED_STEP_IDS) {
+  for (const id of requiredIds) {
     const step = steps[id];
     if (!isPlainObject(step)) {
       add(`runs[${index}].steps.${id} is missing`);
@@ -414,7 +430,7 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
   }
 
   if (command === "steps") {
-    for (const step of ALL_STEPS) log(`${step.id}\t${step.title}`);
+    for (const step of journeyFor(argument)) log(`${step.id}\t${step.title}`);
     // A comment line, so the deferred steps stay visible to an operator without
     // reading as rows of the journey to anything that splits this on tabs.
     log(`# not recorded, ${DEFERRED_STEP_REASON}: ${DEFERRED_STEP_IDS.join(", ")}`);

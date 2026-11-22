@@ -380,7 +380,7 @@ impl Drop for DesktopReachabilityRuntime {
 }
 
 #[cfg(desktop)]
-fn cave_home_path() -> PathBuf {
+pub(super) fn cave_home_path() -> PathBuf {
     if let Ok(explicit) = std::env::var("COVEN_CAVE_HOME") {
         if !explicit.trim().is_empty() {
             return PathBuf::from(explicit);

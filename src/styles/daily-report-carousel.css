@@ -6,7 +6,6 @@
 
 .drd-car {
   --drd-tone: var(--accent-presence);
-  --drd-hairline: color-mix(in oklch, var(--border) 100%, transparent);
   --drd-cell: var(--bg-panel);
   min-width: 0;
 }

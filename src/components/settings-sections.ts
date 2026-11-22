@@ -57,7 +57,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "profile", group: "Personality", keywords: "personality mbti type axes tone familiar" },
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
-  { section: "general", group: "Chat", keywords: "chat stop phrases cancel halt abort interrupt running task" },
+  { section: "general", group: "Chat", keywords: "chat stop phrases cancel halt abort interrupt running task quick chat global shortcut hotkey keyboard" },
   { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
   { section: "general", group: "Reviews", keywords: "reviews pull requests own my self-review github launcher" },
   { section: "general", group: "Setup", keywords: "setup first run onboarding local components node npm coven cli defaults local service resume retry" },

@@ -125,6 +125,12 @@ export type CavePreferences = {
      * stays clean and fast for users who ignore the whole system.
      */
     celebrations: boolean;
+    /**
+     * Desktop only: ⌘⇧Space (Ctrl+Shift+Space on Windows and Linux) opens
+     * Quick Chat from any app. Off by default, because a global shortcut
+     * takes that key away from every other app while it is on (#5980).
+     */
+    quickChatShortcut: boolean;
   };
   phone: {
     mobileMode: boolean;
@@ -289,7 +295,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         image: { present: false, mime: null, updatedAt: "" },
       },
     },
-    general: { stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
+    general: { stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true, quickChatShortcut: false },
     phone: { mobileMode: true },
     github: { orgScope: [], reviewOwnPrs: true },
     voice: { defaultProvider: "", defaultModel: "", defaultVoice: "" },
@@ -575,6 +581,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
     general: {
       stopPhrase: normalizeStopPhrase(general.stopPhrase),
       celebrations: general.celebrations !== false,
+      quickChatShortcut: general.quickChatShortcut === true,
     },
     phone: { mobileMode: phone.mobileMode !== false },
     github: {
@@ -832,10 +839,13 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
 
   if (Object.hasOwn(input, "general")) {
     const general = strictRecord(input.general, "general");
-    assertAllowedKeys(general, ["stopPhrase", "celebrations"], "general");
+    assertAllowedKeys(general, ["stopPhrase", "celebrations", "quickChatShortcut"], "general");
     const generalPatch: NonNullable<CavePreferencesPatch["general"]> = {};
     if (Object.hasOwn(general, "celebrations")) {
       generalPatch.celebrations = strictBoolean(general.celebrations, "general.celebrations");
+    }
+    if (Object.hasOwn(general, "quickChatShortcut")) {
+      generalPatch.quickChatShortcut = strictBoolean(general.quickChatShortcut, "general.quickChatShortcut");
     }
     if (Object.hasOwn(general, "stopPhrase")) {
       if (typeof general.stopPhrase !== "string") fail("general.stopPhrase", "must be a string");

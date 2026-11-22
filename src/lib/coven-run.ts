@@ -70,11 +70,6 @@ export const COVEN_RUN_STATUS: Record<CovenAgentRunStatus, CovenStatusMeta> = {
   skipped: { label: "Skipped", icon: "ph:skip-forward-fill", tone: "muted", live: false },
 };
 
-/** Statuses that mean the familiar is working right now. */
-export function isCovenAgentLive(status: CovenAgentRunStatus): boolean {
-  return COVEN_RUN_STATUS[status].live;
-}
-
 /** Widen a persisted reply into the run vocabulary above. */
 export function covenAgentRunStatus(reply: GroupReply): CovenAgentRunStatus {
   if (reply.status === "queued") return "queued";

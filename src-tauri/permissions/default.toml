@@ -24,6 +24,7 @@ permissions = [
   "allow-open-update-release-url",
   "allow-set-traffic-lights-visible",
   "allow-open-chat-window",
+  "allow-set-quick-chat-shortcut",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
