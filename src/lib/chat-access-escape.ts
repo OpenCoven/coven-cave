@@ -171,7 +171,7 @@ export function readChatAccessOverride(
   return readOverrides(storage).find(([id]) => id === sessionId)?.[1] ?? null;
 }
 
-/** Record (or with `null`, clear) one chat's access. Keeps the newest {@link OVERRIDES_LIMIT} chats. */
+/** Record or clear one chat's access. Preserve Explore choices; bound only Build overrides. */
 export function writeChatAccessOverride(
   storage: Pick<Storage, "getItem" | "setItem"> | null,
   sessionId: string | null | undefined,
@@ -180,8 +180,10 @@ export function writeChatAccessOverride(
   if (!storage || !sessionId) return;
   const rest = readOverrides(storage).filter(([id]) => id !== sessionId);
   const next = mode ? [...rest, [sessionId, mode] as [string, CommandPermissionMode]] : rest;
+  const exploreOverrides = next.filter(([, storedMode]) => storedMode === "read");
+  const buildOverrides = next.filter(([, storedMode]) => storedMode === "full").slice(-OVERRIDES_LIMIT);
   try {
-    storage.setItem(OVERRIDES_KEY, JSON.stringify(next.slice(-OVERRIDES_LIMIT)));
+    storage.setItem(OVERRIDES_KEY, JSON.stringify([...exploreOverrides, ...buildOverrides]));
   } catch {
     /* best effort: the in-memory choice still applies to this view */
   }
