@@ -70,7 +70,7 @@ export function ComposerOptionRadioGroup({
       if (!visibleOptions[nextIdx]?.disabled) break;
     }
     const next = visibleOptions[nextIdx];
-    if (!next || next.disabled) return;
+    if (!next || next.disabled || next.value === value) return;
     onChange(next.value);
     groupRef.current
       ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
