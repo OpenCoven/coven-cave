@@ -13,6 +13,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
+  emptyStats,
 } from "@/components/familiars-view-stats";
 import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -29,7 +30,6 @@ import {
 } from "@/lib/familiar-growth-signals";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import {
-  emptyStats,
   FamiliarsEmptyState,
   FamiliarRosterCard,
   FamiliarMemoryOverlay,
