@@ -29,7 +29,7 @@ const destinationPolicy = readFileSync(
 // The Home/Code split itself — the sidebar reaches the registry only through
 // this module, so a committed artifact here breaks the rail just as badly.
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-// The footer (Dashboard + Settings + version) lives in a shared component so it
+// The footer (Dashboard + Settings) lives in a shared component so it
 // stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
 const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
@@ -508,20 +508,6 @@ assert.match(
   "title combines label + description (+ shortcut when present) + drag-to-split hint + open-in-split hint",
 );
 
-// The app version renders as the bottommost sidebar element — one
-// minimal-height muted line under the footer icon row, hidden in the rail.
-assert.match(
-  footer,
-  /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
-  "the shared footer reads the version from the shared app-version module",
-);
-// It became a link to Settings → About (see sidebar-footer.test.ts); still one
-// minimal-height muted line, still the bottommost element.
-assert.match(
-  footer,
-  /className="sidebar-version"[\s\S]{0,280}?v\{APP_VERSION\}[\s\S]{0,40}?<\/Link>/,
-  "the version line is the bottommost element of the shared footer",
-);
 // The shared footer is the bottommost element of the nav in BOTH states. The
 // phase-D rail-only account avatar that used to close the column is gone: its
 // onClick was onOpenSettings — the same action as the Settings button right
@@ -532,20 +518,6 @@ assert.match(
   /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
   "the shared footer is the bottommost element of the sidebar nav",
 );
-assert.match(
-  styles,
-  /\.sidebar-version \{[^}]*line-height: 1;[^}]*color: var\(--text-muted\)/,
-  "The version line should be minimal-height muted text",
-);
-// The version line stays in the 56px rail ("v0.3.3" fits): it is the nav's
-// bottom-most band, so hiding it there while showing it in the panel left the
-// footer buttons at two different heights across hover-peek (#4351).
-assert.doesNotMatch(
-  styles,
-  /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
-  "The rail keeps the version line so the footer band matches the panel's",
-);
-
 // Explore retains quiet row treatment, while its section header now owns the
 // separation from the daily Work destinations.
 assert.match(

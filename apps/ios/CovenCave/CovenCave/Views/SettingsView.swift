@@ -462,6 +462,7 @@ private struct ConnectionSettingsView: View {
         }
         .themedListBackground()
         .readableListWidth(680)
+        .caveNavigationExitBlocked(appLock.isAuthenticating)
         .navigationTitle("Connection")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { editingHost = app.connection?.host ?? "" }

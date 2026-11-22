@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-quick-chat-shortcut",
+  "description": "lets the trusted main loopback webview turn Cave's fixed Quick Chat global shortcut on or off from Settings; the key is never caller-supplied",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "webviews": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-set-quick-chat-shortcut"
+  ]
+}

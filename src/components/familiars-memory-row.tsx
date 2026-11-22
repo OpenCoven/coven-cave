@@ -1,13 +1,7 @@
 "use client";
 import { Icon } from "@/lib/icon";
 import type { FileMemoryRow } from "@/lib/memory-rows";
-
-function formatBytes(n: number | undefined): string {
-  if (!n || n < 0 || !Number.isFinite(n)) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatBytes } from "@/components/familiars-memory-utils";
 
 function compactRowPath(path: string): string {
   const home = path.replace(/^\/Users\/[^/]+/, "~");

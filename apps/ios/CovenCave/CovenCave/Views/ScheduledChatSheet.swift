@@ -60,6 +60,7 @@ struct ScheduledChatSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(saving) } }
             .interactiveDismissDisabled(saving)
+            .caveNavigationExitBlocked(saving)
             .task {
                 await load()
                 while !Task.isCancelled {

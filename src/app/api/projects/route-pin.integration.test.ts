@@ -94,8 +94,23 @@ try {
     await assert.rejects(() => launch(created.id), { code: "project_root_unconfirmed", status: 409 });
     assert.equal((await stored(created.id)).rootRealpath, undefined, "launch never confirms implicitly");
 
+    // #6562: a task refused for this folder waits on it, and only a person's
+    // confirmation (not a declined prompt) clears that wait.
+    const board = await import("@/lib/cave-board");
+    const { projectFolderBlockerRef } = await import("@/lib/task-launch-blockers");
+    const task = await board.createCard({ title: "Task in the legacy project" });
+    await board.recordLaunchBlocker(task.id, { ref: projectFolderBlockerRef(created.id), kind: "human", label: "Confirm Legacy’s project folder so this task can start" });
+    const folderBlocker = async () => (await board.loadBoard()).cards.find((card) => card.id === task.id)
+      .dependencies.find((dependency) => dependency.ref === projectFolderBlockerRef(created.id));
+    globalThis.__folderNativeApprove = false;
+    assert.equal((await put(created.id, { confirmRoot: true })).status, 403);
+    globalThis.__folderNativeApprove = undefined;
+    assert.equal((await folderBlocker()).state, "unresolved", "a declined prompt resolves nothing");
+
     const confirmed = await put(created.id, { confirmRoot: true });
     assert.equal(confirmed.status, 200, JSON.stringify(await confirmed.clone().json()));
+    assert.equal((await folderBlocker()).state, "resolved", "confirming the folder resolves the task's wait on it");
+    assert.match((await folderBlocker()).evidence, /^Legacy’s folder was confirmed at /);
     assert.equal((await confirmed.json()).project.rootRealpath, fs.realpathSync.native(legacyRoot));
     assert.equal((await launch(created.id)).root, fs.realpathSync.native(legacyRoot), "one confirmation admits the granted project");
     await assert.rejects(() => launch(created.id, "no-grant"), { code: "project_access_denied", status: 403 });

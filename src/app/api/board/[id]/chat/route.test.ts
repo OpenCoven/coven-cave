@@ -181,4 +181,38 @@ assert.match(
   "a malformed persisted Hermes profile binding blocks task launch instead of degrading to sticky Hermes",
 );
 
+// #6562: an unconfirmed-folder refusal is recorded on the task (once, keyed by
+// project) on both the admission and the pre-launch recheck paths, and never
+// changes the response.
+assert.match(
+  source,
+  /const recordFolderBlocker = async \(error: ChatProjectLaunchError\) => \{\s*if \(error\.code !== "project_root_unconfirmed" \|\| !card\.projectId\) return;[\s\S]*?recordLaunchBlocker\(card\.id, \{\s*ref: projectFolderBlockerRef\(card\.projectId\),\s*kind: "human",/,
+  "only an unconfirmed folder on the task's own project is recorded, as a human-cleared blocker",
+);
+const recordCalls = source.match(/if \(error instanceof ChatProjectLaunchError\) \{\s*await recordFolderBlocker\(error\);/g) ?? [];
+assert.equal(recordCalls.length, 2, "admission and the pre-launch recheck both record the refusal");
+
+// #6562: a started task chat dispatches a ready queued task, from both the
+// native reservation and the daemon session, and never one waiting on a
+// blocker or an approval-bound next step.
+const markStart = source.slice(source.indexOf("const markTaskStarted = async"), source.indexOf("const reserveNativeChatTask"));
+assert.match(markStart, /current\.lifecycle !== "queued" \|\|\s*current\.nextStep\?\.requiresApproval \|\|\s*deriveReadiness\(current, latest\.cards\) !== "ready"/, "only a ready queued task without a pending approval is dispatched");
+assert.match(markStart, /transitionCard\(current\.id, \{\s*to: "dispatched",/, "dispatch goes through the lifecycle state machine");
+assert.match(markStart, /\} catch \{\s*return started;/, "a lifecycle refusal never undoes a started chat");
+assert.equal((source.match(/const started = await markTaskStarted\(updated, sessionId\);/g) ?? []).length, 2, "both launch paths mark the task started");
+
+// #6562: daemon offline is the only daemon failure that falls back, and only
+// on this computer for a trusted runtime. A timeout may have created the
+// session, so it is never resent.
+assert.match(
+  source,
+  /res\.status === 0 &&\s*res\.error === "daemon offline" &&\s*!sshBound &&\s*!hubAuthority &&\s*isTrustedChatHarness\(binding\.harness\)\s*\) \{\s*return reserveNativeChatTask\(\);/,
+  "a provably unsent daemon request falls back to native Chat on this computer",
+);
+assert.doesNotMatch(source, /"daemon timeout"/, "a daemon timeout never triggers a fallback");
+assert.ok(
+  source.indexOf('res.error === "daemon offline"') < source.indexOf("{ status: 502 }"),
+  "the fallback is tried before the 502",
+);
+
 console.log("board chat route.test.ts: ok");

@@ -22,8 +22,9 @@ import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useIsMobile } from "@/lib/use-viewport";
-import { useIsTauriDesktop } from "@/lib/tauri-platform";
+import { isMacDesktopShell, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { quickChatShortcutLabel, setQuickChatShortcutEnabled, useQuickChatShortcutEnabled } from "@/lib/quick-chat-shortcut-pref";
 import { STOP_PHRASE_MAX_LENGTH, appendStopPhrase, parseStopPhrases, removeStopPhraseAt, useStopPhrase, writeStopPhrase } from "@/lib/stop-phrase";
 import { SECTIONS, SETTINGS_INDEX, settingsSectionLabel, type Section, type SettingsIndexEntry } from "./settings-sections";
 import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
@@ -380,6 +381,7 @@ function GeneralSection() {
       </SettingsGroup>
       <SettingsGroup label="Chat" variant="ruled" panel={false}>
         <StopPhraseField />
+        <QuickChatShortcutToggle />
       </SettingsGroup>
       <SettingsGroup label="Progression" variant="ruled" panel={false}>
         <div className="settings-progression-card">
@@ -450,6 +452,60 @@ function CelebrationsToggle() {
       >
         <span className="settings-switch__knob" aria-hidden />
       </button>
+    </SettingsRow>
+  );
+}
+
+// The opt-in Quick Chat global shortcut (#5980). Desktop only, and off by
+// default: while it is on, the key stops reaching every other app. The shell
+// registers it first; only what it actually did is saved, so a key another
+// app already holds never shows as on.
+function QuickChatShortcutToggle() {
+  const desktop = useIsTauriDesktop();
+  const enabled = useQuickChatShortcutEnabled();
+  const { announce } = useAnnouncer();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  if (!desktop) return null;
+  const key = quickChatShortcutLabel(isMacDesktopShell());
+
+  const toggle = async () => {
+    const next = !enabled;
+    setPending(true);
+    setError("");
+    try {
+      const registered = await setQuickChatShortcutEnabled(next);
+      announce(registered ? `${key} now opens Quick Chat.` : "Quick Chat shortcut is off.");
+      void showSettingsSavedAfterPreferencesFlush();
+    } catch {
+      const message = next
+        ? `Couldn't turn on ${key}. Another app may already use it.`
+        : `Couldn't turn off ${key}.`;
+      setError(message);
+      announce(message, "assertive");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <SettingsRow
+      label="Quick Chat shortcut"
+      description={`${key} opens Quick Chat from any app. While it's on, other apps can't use ${key}.`}
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label="Quick Chat shortcut"
+        aria-busy={pending || undefined}
+        disabled={pending}
+        onClick={() => void toggle()}
+        className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
+      >
+        <span className="settings-switch__knob" aria-hidden />
+      </button>
+      {error ? <p role="alert" className="settings-workspace-error">{error}</p> : null}
     </SettingsRow>
   );
 }

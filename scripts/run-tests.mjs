@@ -113,6 +113,7 @@ export const SUITES = {
     "scripts/test-alias-loader.test.mjs",
     "scripts/research-package-config.test.mjs",
     "scripts/submissions-build-config.test.mjs",
+    "scripts/reflection-replay.test.mjs",
     "scripts/check-version-continuity.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/install-playwright-ci.test.mjs",
@@ -584,6 +585,7 @@ export const SUITES = {
     "src/lib/theme-sync-keys.test.ts",
     "src/lib/theme-runtime.test.ts",
     "src/lib/preferences-schema.test.ts",
+    "src/lib/quick-chat-shortcut-pref.test.ts",
     "src/lib/sidecar-smoke-preferences.test.ts",
     "src/lib/app-preferences.test.ts",
     "src/lib/app-preferences-runtime.test.ts",
@@ -1312,6 +1314,7 @@ export const SUITES = {
     "src/lib/onboarding-gate.test.ts",
     "src/lib/onboarding-prerequisites.test.ts",
     "src/lib/server/managed-node-toolchain.test.ts",
+    "src/lib/server/codex-login-status.test.ts",
     "src/lib/server/owned-directory-write.test.ts",
     "src/lib/server/onboarding-diagnostics.test.ts",
     "src/lib/server/onboarding-core-tools.test.ts",
@@ -2010,6 +2013,7 @@ export const SUITES = {
     "src/lib/voice/openai-realtime.test.ts",
     "src/lib/voice/openai-voices.test.ts",
     "src/lib/voice/start-voice-chat.test.ts",
+    "src/lib/task-launch-blockers.test.ts",
     "src/lib/voice/dictation-controller.test.ts",
     "src/lib/voice/use-dictation.test.ts",
     "src/app/api/voice/session/route.test.ts",
@@ -2329,6 +2333,7 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  "scripts/reflection-replay.test.mjs",
   "scripts/client-v1-conformance.test.mjs",
   // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
   "scripts/cave-performance-report.test.mjs",

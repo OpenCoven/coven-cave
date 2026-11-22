@@ -537,7 +537,7 @@ try {
     // Only the fixed diagnostic-presence message may be streamed or saved,
     // never the relayed payload or any renderable-tail copy.
     const { body, events } = await postResultFailure("result-error-exit-0", "relayed failure, exit 0");
-    assert.equal(events.find((event) => event.kind === "error")?.code, undefined, "exit 0 is not a process failure");
+    assert.equal(events.find((event) => event.kind === "error")?.code, "harness_empty_response", "an empty reply offers setup recovery without misclassifying the process exit");
     assert.doesNotMatch(body, /\/private\/fixture|ghp_|failed reading/i, "the relayed reason is never rendered or persisted");
     const answer = events.filter((event) => event.kind === "assistant_chunk").map((event) => event.text).join("");
     assert.match(answer, /Runtime diagnostic output was withheld to protect local data/, "chat reports diagnostic presence without repeating its contents");

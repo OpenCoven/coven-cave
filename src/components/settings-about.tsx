@@ -9,7 +9,6 @@ import {
 } from "@/components/open-coven-tools-update";
 import {
   UpdateSettingsRow,
-  type UpdateSettingsActionHandle,
 } from "@/components/update-available";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -196,10 +195,8 @@ function ElsewhereCard({
 
 export function AboutSection() {
   const { announce } = useAnnouncer();
-  const updateActionRef = useRef<UpdateSettingsActionHandle>(null);
   const daemonRequestRef = useRef<AbortController | null>(null);
   const diagnosticsResetRef = useRef<number | null>(null);
-  const [updateCheckAvailable, setUpdateCheckAvailable] = useState(false);
   const [daemonState, setDaemonState] = useState<AboutDaemonState>({
     kind: "checking",
   });
@@ -332,23 +329,6 @@ export function AboutSection() {
   };
 
   const daemon = daemonPresentation(daemonState);
-  const readyTools = toolSnapshot.tools.filter(
-    (tool) =>
-      tool.installed &&
-      tool.compatible &&
-      tool.packageVerified &&
-      tool.executableVerified,
-  ).length;
-  const toolsChip =
-    toolSnapshot.checking && toolSnapshot.tools.length === 0
-      ? "checking tools"
-      : toolSnapshot.error && toolSnapshot.tools.length === 0
-        ? "tools unavailable"
-        : `${readyTools}/${toolSnapshot.tools.length} tools ready`;
-  const toolsTone =
-    toolSnapshot.error || readyTools < toolSnapshot.tools.length
-      ? "warning"
-      : "success";
   const diagnosticsLabel =
     diagnosticsStatus === "copied"
       ? "Copied"
@@ -375,7 +355,6 @@ export function AboutSection() {
           <span className="sr-only">Poke the sigil</span>
         </Button>
         <div className="settings-about-hero__identity">
-          <p className="settings-about-hero__kicker">Settings · About</p>
           <h1 id="settings-about-title">About</h1>
           <div className="settings-about-hero__chips">
             <span className="settings-about-chip">
@@ -387,12 +366,6 @@ export function AboutSection() {
             >
               <i aria-hidden="true" />
               {daemon.label}
-            </span>
-            <span
-              className={`settings-about-chip settings-about-chip--${toolsTone}`}
-            >
-              <i aria-hidden="true" />
-              {toolsChip}
             </span>
           </div>
         </div>
@@ -411,19 +384,6 @@ export function AboutSection() {
             onClick={() => void handleCopyDiagnostics()}
           >
             {diagnosticsLabel}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            leadingIcon="ph:arrow-clockwise-bold"
-            disabled={!updateCheckAvailable}
-            onClick={() => {
-              if (updateActionRef.current?.check()) {
-                announce("Checking for Cave updates.");
-              }
-            }}
-          >
-            Check for updates
           </Button>
         </div>
       </header>
@@ -444,10 +404,7 @@ export function AboutSection() {
               <span className="settings-about-row__label">Build revision</span>
               <code className="settings-about-row__code">{APP_BUILD_REVISION}</code>
             </div>
-            <UpdateSettingsRow
-              actionRef={updateActionRef}
-              onCheckAvailabilityChange={setUpdateCheckAvailable}
-            />
+            <UpdateSettingsRow />
             <AboutDaemonStatusRow
               state={daemonState}
               onRefresh={refreshDaemon}
@@ -480,17 +437,7 @@ export function AboutSection() {
           data-settings-group
           className="settings-about-control settings-about-control--wide"
         >
-          <SectionRule
-            aside={
-              toolSnapshot.checking
-                ? "Checking"
-                : toolSnapshot.error
-                  ? "Check incomplete"
-                  : `${readyTools} ready`
-            }
-          >
-            OpenCoven tools
-          </SectionRule>
+          <SectionRule>OpenCoven tools</SectionRule>
           <div className="settings-about-sheet settings-about-tools">
             <OpenCovenToolsUpdate
               showDiagnosticsAction={false}

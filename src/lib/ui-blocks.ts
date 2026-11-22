@@ -498,8 +498,6 @@ export const UI_TONES = ["neutral", "muted", "accent", "success", "warning", "da
 export const UI_GAPS = ["none", "xs", "sm", "md", "lg"] as const;
 export const UI_FORMATS = ["number", "usd", "eur", "gbp", "percent", "compact"] as const;
 
-export type UiFormat = (typeof UI_FORMATS)[number];
-
 type PropType =
   | "text"
   | "number"

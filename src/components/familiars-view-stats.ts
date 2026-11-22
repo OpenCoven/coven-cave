@@ -44,6 +44,24 @@ const FIVE_MINUTES_MS = 5 * 60_000;
 /** Days shown by the roster card activity strip. */
 export const ACTIVITY_DAYS = 14;
 
+/** Roster card stats for a familiar with no loaded sessions or memory. */
+export function emptyStats(
+  memoryAvailability: MemoryAvailability = "unavailable",
+): FamiliarCardStats {
+  return {
+    memoryCount: 0,
+    memoryAvailability,
+    latestMemory: null,
+    lastSessionAt: null,
+    sessionsTotal: 0,
+    sessionsLast7d: 0,
+    sessionsLast90d: 0,
+    hasActiveSession: false,
+    streakDays: 0,
+    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
+  };
+}
+
 function sessionStartAt(session: SessionRow): string | null {
   return session.created_at ?? session.updated_at ?? null;
 }

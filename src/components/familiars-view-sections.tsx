@@ -22,7 +22,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   ACTIVITY_DAYS,
-  type MemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { deriveRenown } from "@/lib/familiar-renown";
@@ -34,23 +33,6 @@ import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trac
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { useDetailOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-
-export function emptyStats(
-  memoryAvailability: MemoryAvailability = "unavailable",
-): FamiliarCardStats {
-  return {
-    memoryCount: 0,
-    memoryAvailability,
-    latestMemory: null,
-    lastSessionAt: null,
-    sessionsTotal: 0,
-    sessionsLast7d: 0,
-    sessionsLast90d: 0,
-    hasActiveSession: false,
-    streakDays: 0,
-    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
-  };
-}
 
 export function FamiliarsEmptyState({
   onCreate,

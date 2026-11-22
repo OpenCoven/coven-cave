@@ -7,7 +7,7 @@ const minimal = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const chatNav = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
-// The side-panel footer (Dashboard + Settings + version) is shared by whichever
+// The side-panel footer (Dashboard + Settings) is shared by whichever
 // primary sidebar host is active: SidebarMinimal normally, or WorkspaceSidebar
 // while Chat replaces it.
 
@@ -24,34 +24,7 @@ assert.match(
   /aria-label="Dashboard"[\s\S]*?aria-label="Settings"/,
   "Dashboard precedes Settings in the footer",
 );
-assert.match(footer, /className="sidebar-version"[\s\S]*?v\{APP_VERSION\}/, "footer shows the app version line");
-// The version line is the shortest path to what it's about: Settings → About
-// carries the version, updates and project links, and the settings shell
-// honours the `#about` section hash. It uses the same client-side link idiom as
-// Dashboard, not an onOpenSettings caller — and still keeps middle-click /
-// open-in-new-window working because Next Link renders an anchor.
-assert.match(footer, /<Link[\s\S]*?href="\/settings#about"/, "the version line deep-links to Settings → About through Next");
-assert.match(
-  footer,
-  /className="sidebar-version"[\s\S]{0,240}?aria-label=\{`CovenCave v\$\{APP_VERSION\} — open About in Settings`\}/,
-  "the version link says where it goes, since 'v0.2.0' alone is not an action",
-);
-const aboutSection = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
-assert.match(aboutSection, /id: "about"/, "the About section id the version line targets exists");
-
-// Quiet at rest, and only admits to being a link on hover/focus — the footer's
-// calm is the point.
-const shellChrome = readFileSync(new URL("../styles/sidebar-minimal/shell-chrome.css", import.meta.url), "utf8");
-assert.match(
-  shellChrome,
-  /\.sidebar-version:hover,\s*\n\.sidebar-version:focus-visible \{\s*\n\s*color: var\(--text-primary\);/,
-  "the version link brightens on hover and keyboard focus",
-);
-assert.match(
-  shellChrome,
-  /\.sidebar-version \{[\s\S]*?text-decoration: none;/,
-  "no underline — it stays the calmest line in the footer",
-);
+assert.doesNotMatch(footer, /APP_VERSION|sidebar-version/, "the desktop sidebar omits the version line");
 
 // Each alternate nav host renders it, so the active footer cannot drift…
 assert.match(minimal, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "SidebarMinimal imports the shared footer");

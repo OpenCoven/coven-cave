@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import {
-  latestCheckText,
   toolFooterStatusText,
   toolStatusText,
   type LatestCheckDisplay,
@@ -671,14 +670,6 @@ export function OpenCovenToolsUpdate({
                   {toolCompatibilityText(tool)}
                 </p>
               ) : null}
-              <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                {latestCheckText(tool, stale)}
-              </p>
-              {stale && lastSuccessfulCheckedAt ? (
-                <p className="mt-1 text-[length:var(--text-xs)] text-[var(--color-warning)]">
-                  Last known · {relativeTime(lastSuccessfulCheckedAt)}
-                </p>
-              ) : null}
               {result ? (
                 <p
                   aria-live="polite"
@@ -764,15 +755,13 @@ export function OpenCovenToolsUpdate({
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">{footerStatusText}</p>
-          <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-            Diagnostics include tool/check summaries; paths, raw output, URL queries, and secrets are omitted or redacted.
-          </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {showDiagnosticsAction ? (
             <Button
               variant="secondary"
               size="xs"
+              title="Copies tool summaries; paths, raw output, URL queries, and secrets are omitted or redacted."
               onClick={() => void copyDiagnostics()}
               className={`${ghostBtn} cave-fill-btn`}
               data-state={diagnosticsStatus}

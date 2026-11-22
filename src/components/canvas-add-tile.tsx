@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { Icon, type IconName } from "@/lib/icon";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import type { Familiar } from "@/lib/types";
@@ -38,6 +39,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { CanvasGitHubImportModal } from "@/components/canvas-github-import-modal";
 import type { CanvasArtifactSource } from "@/lib/canvas-artifacts";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
+
+const HarnessAuthTerminal = dynamic(() => import("./harness-auth-terminal").then((module) => module.HarnessAuthTerminal), { ssr: false });
 
 const CREATE_SUGGESTIONS = [
   "A pricing page with three plans",
@@ -96,6 +99,7 @@ export function CanvasAddTile({
   const [state, dispatch] = useReducer(addTileReducer, INITIAL_ADD_TILE_STATE);
   // Not reducer state: it survives across generations on purpose, because
   // someone building a game makes several in a row.
+  const [signInOpen, setSignInOpen] = useState(false);
   const [playable, setPlayable] = useState(false);
   const [chosenFamiliar, setChosenFamiliar] = useState<string | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
@@ -590,6 +594,12 @@ export function CanvasAddTile({
                 ? "Preview creation stopped."
                 : generation.error ?? "We couldn’t create that preview. Try again."}
             </div>
+            {generation.authFailure?.loginCommand ? (
+              <>
+                <button type="button" className="chat-canvas-add__go focus-ring" onClick={() => setSignInOpen(true)}>Sign in to {generation.authFailure.harnessLabel}</button>
+                {signInOpen ? <HarnessAuthTerminal failure={generation.authFailure} onClose={() => setSignInOpen(false)} /> : null}
+              </>
+            ) : null}
             {generation.originalIntent ? (
               <p className="chat-canvas-add__subheading">Request: {generation.originalIntent}</p>
             ) : null}

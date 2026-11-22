@@ -4,11 +4,6 @@ export const CANVAS_INSPECTOR_LOADED_MESSAGE_TYPE = "canvas-inspector-loaded" as
 export const CANVAS_COMPONENT_SELECTED_MESSAGE_TYPE = "canvas-component-selected" as const;
 export const CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE = "cave-canvas-style-override" as const;
 
-export type CanvasInspectorMessage = {
-  type: typeof CANVAS_INSPECTOR_MESSAGE_TYPE;
-  enabled: boolean;
-};
-
 export type CanvasInspectorTarget = {
   selector: string;
   label: string;
@@ -19,12 +14,6 @@ export type CanvasComponentSelectedMessage = {
   type: typeof CANVAS_COMPONENT_SELECTED_MESSAGE_TYPE;
   target: CanvasInspectorTarget;
 };
-
-export function isCanvasInspectorMessage(value: unknown): value is CanvasInspectorMessage {
-  if (!value || typeof value !== "object") return false;
-  const message = value as Partial<CanvasInspectorMessage>;
-  return message.type === CANVAS_INSPECTOR_MESSAGE_TYPE && typeof message.enabled === "boolean";
-}
 
 export type CanvasStyleOverrideMessage = {
   type: typeof CANVAS_STYLE_OVERRIDE_MESSAGE_TYPE;

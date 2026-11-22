@@ -1,6 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { advanceFirstUse, createFirstUseState, createQuickStartState, type FirstUseState } from "../src/lib/first-use";
+import { NO_CHAT_ATTENTION } from "../src/lib/chat-attention";
+import type { SessionRow } from "../src/lib/types";
 import { openChatFilter } from "./fixtures/chat-filter";
 import { chatComposerDraftKey } from "../src/lib/use-composer-draft";
 
@@ -75,7 +77,7 @@ test("short onboarding resumes and opens an editable real-chat draft without aut
   await expect(guide).toBeVisible();
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("assistant-desktop.png") });
   await guide.getByRole("button", { name: /^Nova/ }).click();
-  await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
+  await expect(guide.locator('li[aria-current="step"]')).toContainText("Choose a project");
   await guide.getByRole("button", { name: "Close", exact: true }).click();
   expect(f.getState().step).toBe("project");
   await page.reload();
@@ -205,7 +207,20 @@ for (const destination of ["project", "session"] as const) {
     const state = advanceFirstUse(selected, { kind: "finish-setup", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read" });
     await fixture(page, state);
     const other = { ...PROJECT, id: "other-project", name: "Other project", root: "/synthetic/other" };
-    const session = { id: "starter-bound", title: "Existing other chat", familiarId: "nova", project_root: other.root, harness: "codex", status: "completed", hasLocalConversation: true, created_at: "2026-11-11T00:00:00.000Z", updated_at: "2026-11-11T00:00:00.000Z" };
+    const session = {
+      id: "starter-bound",
+      title: "Existing other chat",
+      familiarId: "nova",
+      project_root: other.root,
+      harness: "codex",
+      status: "completed",
+      exit_code: 0,
+      archived_at: null,
+      attention: NO_CHAT_ATTENTION,
+      hasLocalConversation: true,
+      created_at: "2026-11-11T00:00:00.000Z",
+      updated_at: "2026-11-11T00:00:00.000Z",
+    } satisfies SessionRow;
     await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [PROJECT, other] } }));
     await page.route("**/api/project-grants**", (route) => route.fulfill({ json: { ok: true, grants: [PROJECT, other].map((project) => ({ familiarId: "nova", projectId: project.id, access: "read" })), accessGroups: [], supremeFamiliarId: null } }));
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [session] } }));
@@ -305,7 +320,9 @@ test("the guide contains keyboard focus and fits narrow light and alternate-them
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/?mode=home");
   const trigger = page.getByRole("button", { name: "Continue setup", exact: true });
+  await expect(trigger).toBeEnabled();
   await trigger.focus();
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await expect(guide).toBeVisible();
@@ -359,9 +376,9 @@ test("a removed familiar stays visible for explicit scope repair before choosing
   const removed = guide.getByRole("checkbox", { name: /Unavailable familiar nova/ });
   await expect(removed).toBeChecked(); expect(f.getState().defaults?.familiarIds).toEqual(["nova"]);
   await guide.getByRole("button", { name: "Back to assistants", exact: true }).click();
-  await guide.getByRole("button", { name: /Meet the others/ }).click();
+  await guide.getByRole("button", { name: /Choose or create a familiar/ }).click();
   await guide.getByRole("button", { name: /^Sage/ }).click();
-  await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
+  await expect(guide.locator('li[aria-current="step"]')).toContainText("Choose a project");
   await guide.getByText("Familiar scope and defaults", { exact: true }).click();
   await removed.click();
   await expect(removed).toHaveCount(0); f.restore();
@@ -397,9 +414,9 @@ test("changing from a Write actor to a Read actor requires a new access choice",
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await guide.getByRole("radio", { name: /^Full Read, create/ }).check();
   await guide.getByRole("button", { name: "Back to assistants", exact: true }).click();
-  await guide.getByRole("button", { name: /Meet the others/ }).click();
+  await guide.getByRole("button", { name: /Choose or create a familiar/ }).click();
   await guide.getByRole("button", { name: /^Sage/ }).click();
-  await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
+  await expect(guide.locator('li[aria-current="step"]')).toContainText("Choose a project");
   await expect(guide.getByRole("radio", { name: /^Full Read, create/ })).not.toBeChecked();
   await expect(guide.getByRole("button", { name: "Continue with Read", exact: true })).toBeDisabled();
   await guide.getByRole("radio", { name: /^Read Explore files/ }).check();

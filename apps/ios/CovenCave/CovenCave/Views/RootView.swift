@@ -148,34 +148,8 @@ struct MainShellView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsMounted = false
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                shellContent
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .modifier(
-                        DrawerDestinationStage(
-                            isOpen: app.navigationDrawerOpen,
-                            availableWidth: geometry.size.width
-                        )
-                    )
-
-                CaveNavigationDrawer(
-                    isOpen: Binding(
-                        get: { app.navigationDrawerOpen },
-                        set: { app.navigationDrawerOpen = $0 }
-                    ),
-                    openThread: { _ = app.requestOpen($0) },
-                    newChat: {
-                        app.selectedTab = .chats
-                        app.newChatRequested = true
-                    },
-                    openSearch: {
-                        app.selectedTab = .chats
-                        app.chatSearchRequested = true
-                    }
-                )
-                .zIndex(100)
-            }
+        CaveNavigationHost {
+            shellContent
         }
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
         .background {
@@ -262,7 +236,7 @@ struct MainShellView: View {
     }
 }
 
-private struct DrawerDestinationStage: ViewModifier {
+struct DrawerDestinationStage: ViewModifier {
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

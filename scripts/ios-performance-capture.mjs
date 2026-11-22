@@ -9,6 +9,10 @@
 // cycle. Rounds whose recording hangs, whose driver fails, or whose data starts
 // after the warm window are retried, then the rounds are merged.
 //
+// Each recording also carries the Hitches instrument (#5748), so every
+// measured span reports the main-thread hitches that overlap it against the
+// ratified < 100 ms budget. `--no-hitches` records Points of Interest alone.
+//
 // Build first (docs/performance/ios-performance-audit.md, "Release capture
 // driver"), install both apps from Build/Products/Release-iphoneos, and keep
 // the phone unlocked in portrait with Auto-Lock off.
@@ -26,12 +30,18 @@ import { fileURLToPath } from "node:url";
 
 import {
   coverageLead,
+  hitchTable,
+  hitchesBySpan,
+  hitchesInWindow,
   markdownTable,
   pairSpans,
   parseCycleWindow,
+  parseFrames,
+  parseHitches,
   parseSpanEvents,
   spansInWindow,
   summarize,
+  summarizeHitches,
   traceStartSeconds,
 } from "./ios-performance-trace.mjs";
 
@@ -47,8 +57,21 @@ const ATTACH_ATTEMPTS = 8;
 const SAVE_TIMEOUT_MS = 120_000;
 const DRIVER_TIMEOUT_MS = 10 * 60_000;
 
+/** The instruments one round records. Points of Interest always comes first. */
+export function recordingInstruments({ hitches = true } = {}) {
+  return hitches ? ["Points of Interest", "Hitches"] : ["Points of Interest"];
+}
+
+/** `xctrace record` arguments for one attached round. */
+export function recordArgs({ instruments, udid, pid, output }) {
+  return [
+    "xctrace", "record", ...instruments.flatMap((name) => ["--instrument", name]), "--device", udid,
+    "--attach", String(pid), "--time-limit", "5m", "--output", output,
+  ];
+}
+
 function parseArgs(argv) {
-  const options = { rounds: 20, analyzeOnly: false, resume: false, cold: false };
+  const options = { rounds: 20, analyzeOnly: false, resume: false, cold: false, hitches: true };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -63,6 +86,7 @@ function parseArgs(argv) {
     else if (arg === "--analyze-only") options.analyzeOnly = true;
     else if (arg === "--resume") options.resume = true;
     else if (arg === "--cold") options.cold = true;
+    else if (arg === "--no-hitches") options.hitches = false;
     else throw new Error(`unknown option ${arg}`);
   }
   if (!options.out) throw new Error("--out is required");
@@ -194,16 +218,16 @@ async function waitFor(predicate, timeoutMs, stepMs = 2_000) {
  * often reports "Cannot find process" or "Waiting for device to boot"; listing
  * device processes first wakes the tunnel, and a later attempt succeeds.
  */
-async function attachRecorder({ device, udid, pid, dir }) {
+async function attachRecorder({ device, udid, pid, dir, instruments }) {
   const log = path.join(dir, "xctrace.log");
+  writeFileSync(path.join(dir, "recording.json"), `${JSON.stringify({ instruments }, null, 2)}\n`);
   for (let attempt = 1; attempt <= ATTACH_ATTEMPTS; attempt += 1) {
     devicectlJson(["device", "info", "processes", "--device", device]);
     rmSync(path.join(dir, "t.trace"), { recursive: true, force: true });
     writeFileSync(log, "");
-    const recorder = spawn("xcrun", [
-      "xctrace", "record", "--instrument", "Points of Interest", "--device", udid,
-      "--attach", String(pid), "--time-limit", "5m", "--output", path.join(dir, "t.trace"),
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    const recorder = spawn("xcrun", recordArgs({ instruments, udid, pid, output: path.join(dir, "t.trace") }), {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const append = (chunk) => writeFileSync(log, logText(log) + chunk);
     recorder.stdout.on("data", append);
     recorder.stderr.on("data", append);
@@ -248,7 +272,31 @@ export function isCoveredRound({ phase, lead, spans }) {
   return false;
 }
 
-/** The round's warm window, its span events, and whether the data covers it. */
+const tableXpath = (schema) => `/trace-toc/run[@number="1"]/data/table[@schema="${schema}"]`;
+
+/** The fixture PID a round launched, from its `launch.json`, or null. */
+function launchedPid(dir) {
+  try {
+    const pid = JSON.parse(readFileSync(path.join(dir, "launch.json"), "utf8"))?.result?.process?.processIdentifier;
+    return Number.isInteger(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The round's hitches and rendered frames, or `{ recorded: false }` when the
+ * trace has no Hitches tables (a Points of Interest only recording).
+ */
+function readHitches(trace, toc, start, pid) {
+  if (!/<table\b[^>]*schema="hitches"/.test(toc)) return { recorded: false, hitches: [], frames: [] };
+  const frames = /<table\b[^>]*schema="hitches-frame-lifetimes"/.test(toc)
+    ? parseFrames(exportTable(trace, tableXpath("hitches-frame-lifetimes")), start)
+    : [];
+  return { recorded: true, hitches: parseHitches(exportTable(trace, tableXpath("hitches")), start, { pid }), frames };
+}
+
+/** The round's warm window, its span events, its hitches, and whether the data covers it. */
 function readRound(dir) {
   const trace = path.join(dir, "t.trace");
   const result = path.join(dir, "r.xcresult");
@@ -268,11 +316,9 @@ function readRound(dir) {
     })
     .find((candidate) => candidate?.phase === measuredPhase);
   if (!window) return null;
-  const start = traceStartSeconds(exportTable(trace));
-  const events = parseSpanEvents(
-    exportTable(trace, '/trace-toc/run[@number="1"]/data/table[@schema="os-signpost-arg"]'),
-    start,
-  );
+  const toc = exportTable(trace);
+  const start = traceStartSeconds(toc);
+  const events = parseSpanEvents(exportTable(trace, tableXpath("os-signpost-arg")), start);
   const lead = coverageLead(events, window);
   const inside = spansInWindow(pairSpans(events), window);
   // A positive lead only proves data began before the window; the round must
@@ -281,7 +327,11 @@ function readRound(dir) {
   // its window. There, coverage means the cycle's first interaction was kept:
   // all four drawer opens of the journey are inside the window.
   const covered = isCoveredRound({ phase: measuredPhase, lead, spans: inside.spans });
-  return { window, events, lead, inside, covered };
+  // Hitch data never decides coverage: a span the Hitches instrument did not
+  // observe is reported as unobserved rather than costing the round.
+  const hitchData = readHitches(trace, toc, start, launchedPid(dir));
+  const hitches = [...hitchesBySpan(inside.spans, hitchData), hitchesInWindow(window, hitchData)];
+  return { window, events, lead, inside, covered, hitches };
 }
 
 /** Run the UI driver; stop the recording when its test case ends. */
@@ -308,7 +358,7 @@ async function runDriverAndStop({ attach, device, dir, recorder }) {
   return { driver: { status }, saved };
 }
 
-async function captureRound({ device, udid, attach, dir }) {
+async function captureRound({ device, udid, attach, dir, instruments }) {
   for (let attempt = 1; attempt <= TRIES_PER_ROUND; attempt += 1) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
@@ -318,7 +368,7 @@ async function captureRound({ device, udid, attach, dir }) {
     const pid = launchFixture(device, dir);
     await sleep(10_000);
     await confirmFixturePid(device, pid);
-    const recorder = await attachRecorder({ device, udid, pid, dir });
+    const recorder = await attachRecorder({ device, udid, pid, dir, instruments });
     // The device keeps only the recording's last ~48 s of signposts, so stop
     // the recorder as soon as the test case finishes rather than after
     // xcodebuild has written its result bundle; that tail costs coverage at
@@ -350,6 +400,7 @@ function roundDirectories(out) {
 
 function analyze(out) {
   const usable = [];
+  const hitchRounds = [];
   const skipped = [];
   for (const name of roundDirectories(out)) {
     const round = readRound(path.join(out, name));
@@ -358,11 +409,15 @@ function analyze(out) {
       continue;
     }
     usable.push(round.inside);
+    hitchRounds.push(round.hitches);
   }
   const rows = summarize(usable);
-  const report = { phase: measuredPhase, cycles: usable.length, skipped, rows };
+  const hitches = summarizeHitches(hitchRounds);
+  const report = { phase: measuredPhase, cycles: usable.length, skipped, rows, hitches };
   writeFileSync(path.join(out, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(markdownTable(rows, usable.length, measuredPhase === "warm" ? "warm" : "cold"));
+  const label = measuredPhase === "warm" ? "warm" : "cold";
+  console.log(markdownTable(rows, usable.length, label));
+  console.log(`\n${hitchTable(hitches, usable.length, label)}`);
   if (skipped.length) console.log(`\nSkipped (missing or incomplete): ${skipped.join(", ")}`);
   return report;
 }
@@ -375,13 +430,14 @@ async function main() {
     requireUnlocked(options.device);
     const udid = hardwareUdid(options.device);
     const attach = writeAttachXctestrun(options.products, options.cold ? COLD_TEST_ID : TEST_ID);
+    const instruments = recordingInstruments({ hitches: options.hitches });
     for (let index = 1; index <= options.rounds; index += 1) {
       const dir = path.join(options.out, `r${index}`);
       if (options.resume) {
         if (readRound(dir)?.covered) continue;
       }
       const started = Date.now();
-      const { attempt } = await captureRound({ device: options.device, udid, attach, dir });
+      const { attempt } = await captureRound({ device: options.device, udid, attach, dir, instruments });
       console.log(`round ${index}/${options.rounds} captured on try ${attempt} (${Math.round((Date.now() - started) / 1000)} s)`);
     }
   }

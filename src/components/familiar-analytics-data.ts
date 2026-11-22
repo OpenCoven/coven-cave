@@ -1,9 +1,8 @@
 import {
-  ACTIVITY_DAYS,
   buildFamiliarCardStats,
+  emptyStats,
   type MemoryAvailability,
   type FamiliarFileMemoryStat,
-  type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
 import { allTimeSessionCount, recentSessionCount } from "@/lib/familiar-counts";
@@ -144,23 +143,6 @@ const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   familiars: [],
   runs: [],
 };
-
-function emptyStats(
-  memoryAvailability: MemoryAvailability = "unavailable",
-): FamiliarCardStats {
-  return {
-    memoryCount: 0,
-    memoryAvailability,
-    latestMemory: null,
-    lastSessionAt: null,
-    sessionsTotal: 0,
-    sessionsLast7d: 0,
-    sessionsLast90d: 0,
-    hasActiveSession: false,
-    streakDays: 0,
-    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
-  };
-}
 
 type ApiEnvelope = { ok: boolean; error?: string };
 

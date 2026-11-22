@@ -130,19 +130,19 @@ test("a terminal says which thread it shows while mounted, and only then", async
 
 const authFailure = { harness: "codex", harnessLabel: "Codex", loginCommand: "codex login" };
 
-async function mountAuthTerminal() {
+async function mountReadyTerminal(element, startCommand) {
   vi.useFakeTimers();
   await act(async () => {
-    renderer = create(<HarnessAuthTerminal failure={authFailure} onClose={() => {}} />, { createNodeMock: () => ({}) });
+    renderer = create(element, { createNodeMock: () => ({}) });
   });
-  await vi.waitFor(() => expect(fixture.invoke.mock.calls.some(([cmd]) => cmd === (fixture.platform === "desktop" ? "pty_start" : "connect"))).toBe(true));
+  await vi.waitFor(() => expect(fixture.invoke.mock.calls.some(([cmd]) => cmd === startCommand)).toBe(true));
   await act(async () => { resolveStart(); await fixture.start; });
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 }
 
-test("sign-in sends its login command once to every replacement shell after Retry", async () => {
+test("a native ephemeral terminal runs its ready callback once per replacement shell after Retry", async () => {
   fixture.platform = "desktop";
-  await mountAuthTerminal();
+  await mountReadyTerminal(<BottomTerminal threadId="cave.auth.fixture" disposeOnUnmount onReady={(writer) => writer.write("codex login\r")} />, "pty_start");
   const startedIds = () => fixture.invoke.mock.calls.filter(([cmd]) => cmd === "pty_start").map(([, args]) => args.options.thread_id);
   const loginWrites = () => fixture.invoke.mock.calls.filter(([cmd]) => cmd === "pty_write").map(([, args]) => ({
     id: args.threadId,
@@ -163,10 +163,10 @@ test("sign-in sends its login command once to every replacement shell after Retr
   }
 });
 
-for (const platform of ["browser", "ios"]) {
+for (const platform of ["desktop", "browser", "ios"]) {
   test(`${platform}: reconnecting sign-in does not repeat the login command`, async () => {
     fixture.platform = platform;
-    await mountAuthTerminal();
+    await mountReadyTerminal(<HarnessAuthTerminal failure={authFailure} onClose={() => {}} />, "connect");
     const bridge = fixture.bridges[0];
     expect(bridge.write).toHaveBeenCalledTimes(1);
     expect(new TextDecoder().decode(bridge.write.mock.calls[0][0])).toBe("codex login\r");
@@ -189,7 +189,7 @@ for (const platform of ["desktop", "browser", "ios"]) {
     await act(async () => {
       renderer = create(<HarnessAuthTerminal failure={authFailure} onClose={() => {}} />, { createNodeMock: () => ({}) });
     });
-    await vi.waitFor(() => expect(fixture.invoke.mock.calls.some(([cmd]) => cmd === (platform === "desktop" ? "pty_start" : "connect"))).toBe(true));
+    await vi.waitFor(() => expect(fixture.invoke.mock.calls.some(([cmd]) => cmd === "connect")).toBe(true));
     await act(async () => renderer.unmount());
     renderer = undefined;
     await act(async () => { resolveStart(); await fixture.start; });

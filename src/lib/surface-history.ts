@@ -195,17 +195,6 @@ export function surfaceHistoryGateOpen(id: string): boolean {
 }
 
 /**
- * The level whose move Back would undo next, or null.
- *
- * An overlay uses this to tell "the user dismissed me with Escape or the close
- * button" from "the user navigated past me": in the first case its own entry is
- * still on top and must be consumed, or Back would reopen what they just shut.
- */
-export function surfaceHistoryTopLevel(): string | null {
-  return cursor > 0 ? journal[cursor - 1].levelId : null;
-}
-
-/**
  * Undo the top entry and forget it, if it belongs to `levelId`.
  *
  * This is a dismissal, not a traversal: the entry is removed rather than left
