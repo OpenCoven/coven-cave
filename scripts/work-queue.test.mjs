@@ -189,7 +189,7 @@ test("proposeEntry carries the lane and next step out of the goals block", () =>
   assert.deepEqual(entry.labels.remove, ["workflow:dependency", "workflow:handoff"]);
   assert.equal(entry.parent, 6453);
   assert.equal(entry.archiveGoals, true);
-  assert.deepEqual(entry.observed, { body: bodyDigest(live.body), labels: ["P1", "workflow:dependency", "workflow:handoff"], comments: 28 });
+  assert.deepEqual(entry.observed, { body: bodyDigest(live.body), labels: ["P1", "workflow:dependency", "workflow:handoff"], comments: 28, archived: false });
 });
 
 test("proposeEntry marks an issue unresolved when no lane or state can be named", () => {
@@ -350,4 +350,33 @@ test("main refuses a stray argument instead of writing the wrong output", async 
       message: `${command} takes no argument: manifest-table.md`,
     });
   }
+});
+
+test("planActions resumes from a manifest regenerated after the archive comment was posted", () => {
+  // Regenerating mid-apply: the observed comment count already includes the archive.
+  const before = issue({ body: `${GOALS}${ORIGINAL}`, labels: ["workflow:handoff"], parent: null });
+  const desiredBody = planActions(manifestEntry(before), before, {}).actions[2].body;
+  const halfway = { ...before, body: desiredBody, labels: ["lane:native", "state:in-review"], comments: 29, archived: true, parent: 6453 };
+  const regenerated = manifestEntry(halfway, { close: { reason: "completed", comment: "Delivered." } });
+  const plan = planActions(regenerated, halfway, { includeClosures: true });
+  assert.equal(plan.skip, null);
+  assert.deepEqual(plan.actions.map((a) => a.kind), ["blocked-by", "close"]);
+  // A comment someone adds afterwards is still a change.
+  assert.match(planActions(regenerated, { ...halfway, comments: 30 }, {}).skip, /changed since/);
+});
+
+test("main propose looks up the archive only for issues whose goals block is gone", async () => {
+  const pending = issue({ number: 6064, body: `${GOALS}${ORIGINAL}`, labels: [] });
+  const rewritten = issue({ number: 6201, comments: 9 });
+  const looked = [];
+  const github = {
+    fetchOpenIssues: () => [pending, rewritten],
+    fetchIssue: async (number) => (looked.push(number), { ...rewritten, archived: true }),
+  };
+  const out = [];
+  await main(["propose"], { log: (line) => out.push(line), github });
+  const manifest = JSON.parse(out.join("\n"));
+  assert.deepEqual(looked, [6201]);
+  assert.equal(manifest.issues.find((e) => e.number === 6201).observed.archived, true);
+  assert.equal(manifest.issues.find((e) => e.number === 6064).observed.archived, false);
 });

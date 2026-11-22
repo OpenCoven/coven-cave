@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
@@ -66,6 +66,9 @@ const E2E_AGENTIC_RECOMMENDATIONS =
   process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS ?? "false";
 
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
+// #6521: composer pre-fill rows must pass in WebKit too (the macOS app runs
+// in WKWebView, whose undo grouping differs from Chromium's).
+const COMPOSER_PREFILL_TESTS = /pre-fill into|undo no longer restores the earlier draft/;
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
@@ -77,9 +80,10 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // branch chip's Environment popover opens at every width, and the phone
 // cases (rest-state chips, 44px rows, viewport containment) only run there.
 // history-state-restore joins too (#6442): browser Back must restore the page
-// on phones as well as desktop.
+// on phones as well as desktop. private-state-access joins too (#6451): the
+// grant flags and Chat's Open projects action must work at phone width.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey|private-state-access|signal-sweep-recovery)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
@@ -94,6 +98,9 @@ writeFileSync(
       id: "e2e-project",
       name: "E2E Project",
       root: process.cwd(),
+      // This disposable baseline models an explicitly registered folder;
+      // legacy confirmation is exercised by its own regression fixtures.
+      rootRealpath: realpathSync.native(process.cwd()),
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }],
@@ -120,6 +127,16 @@ writeFileSync(
 // configured baseline; dedicated onboarding tests still mock no/stale-project
 // responses explicitly.
 writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e2e-project" }));
+// Ordinary browser specs exercise an already-introduced installation. The
+// dedicated journey spec overrides this API with fresh/interrupted state.
+// Seed real durable progress rather than adding a production test bypass.
+mkdirSync(E2E_CAVE_HOME, { recursive: true });
+writeFileSync(join(E2E_CAVE_HOME, "first-use.json"), JSON.stringify({
+  version: 1, revision: 8, step: "complete", outcome: "plan",
+  defaults: { projectId: "e2e-project", familiarIds: ["nova"], actingFamiliarId: "nova" },
+  practice: { approvalHeld: true, stopped: true, retried: true, verified: true },
+  completedAt: "2026-01-01T00:00:00.000Z",
+}));
 
 export default defineConfig({
   testDir: "./tests",
@@ -238,6 +255,13 @@ export default defineConfig({
       name: "voice-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /voice-call\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
+      name: "composer-prefill-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /chat-ui-block\.spec\.ts/,
+      grep: COMPOSER_PREFILL_TESTS,
       use: { ...devices["Desktop Safari"] },
     },
     {

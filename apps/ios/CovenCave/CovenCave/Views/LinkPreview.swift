@@ -41,6 +41,7 @@ struct LinkPreviewCard: View {
     @Environment(\.chrome) private var chrome
     @State private var metadata: LPLinkMetadata?
     @State private var image: UIImage?
+    @State private var isNearViewport = false
 
     var body: some View {
         Group {
@@ -53,10 +54,24 @@ struct LinkPreviewCard: View {
                 Color.clear.frame(width: 1, height: 1)
             }
         }
-        .task(id: url) {
-            guard metadata == nil, let m = await LinkMetadataCache.shared.fetch(url) else { return }
-            metadata = m
-            image = await Self.loadImage(m)
+        .onGeometryChange(for: Bool.self) { geometry in
+            ChatResourceViewport.isNearby(size: geometry.size,
+                viewport: geometry.bounds(of: .scrollView))
+        } action: { isNearViewport = $0 }
+        .task(id: isNearViewport ? url : nil) {
+            guard isNearViewport else {
+                // Keep the metadata/card dimensions, release the decoded image.
+                image = nil
+                return
+            }
+            if metadata == nil {
+                guard let fetched = await LinkMetadataCache.shared.fetch(url), !Task.isCancelled else { return }
+                metadata = fetched
+            }
+            guard let metadata, !Task.isCancelled else { return }
+            let loaded = await Self.loadImage(metadata)
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 

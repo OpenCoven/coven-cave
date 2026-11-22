@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { runtimeModelInventoryScope } from "../src/lib/runtime-models";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // The ultimate Enhance (cave-b6c2): the composer's Enhance action (now an
 // item in the "+" menu, chat revamp 1d) streams a real rewrite from the
@@ -105,12 +106,18 @@ async function seed(page: Page) {
     route.fulfill({ json: { ok: true, sessions: [] } }),
   );
   await page.route("**/api/board**", (route) => route.fulfill({ json: { ok: true, cards: [] } }));
+  await installCompletedFirstUse(page, {
+    project: { id: "e2e-project", name: "E2E Project", root: PROJECT_ROOT },
+    familiarIds: ["nova"], actingFamiliarId: "nova", harness: "claude", seedWorkspaceScope: true,
+  });
 }
 
 async function openHome(page: Page) {
   await page.goto("/?mode=home");
   const draft = page.getByRole("textbox", { name: "Chat message" });
   await expect(draft).toBeVisible({ timeout: 45_000 });
+  // Start after the intended context is restored; changing it cancels Enhance.
+  await expect(page.getByRole("button", { name: "Switch project: E2E Project", exact: true })).toBeVisible();
   return draft;
 }
 

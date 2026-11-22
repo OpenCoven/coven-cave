@@ -66,6 +66,8 @@ mod startup_failure_dialog;
 #[cfg(desktop)]
 mod pty;
 #[cfg(desktop)]
+mod quick_chat_shortcut;
+#[cfg(desktop)]
 mod reliability_metrics;
 #[cfg(desktop)]
 mod secret_path_acl;
@@ -120,16 +122,20 @@ use main_window::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
 #[cfg(desktop)]
+use quick_chat_shortcut::*;
+#[cfg(desktop)]
 use reliability_metrics::*;
 #[cfg(all(test, desktop))]
-use shell_open_commands::launch_x_oauth_url_with_window;
+use shell_open_commands::{launch_update_release_url_with, launch_x_oauth_url_with_window};
 #[cfg(desktop)]
 use shell_open_commands::{
-    open_tailscale_app, open_x_oauth_url, shell_open, shell_open_path, shell_pick_directory,
+    open_tailscale_app, open_update_release_url, open_x_oauth_url, shell_open, shell_open_path,
+    shell_pick_directory, shell_reveal_path,
 };
 #[cfg(desktop)]
 use shell_open_helpers::{
     normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,
+    reveal_opens_as_folder, validate_shell_reveal_path, validate_update_release_url,
     validate_x_oauth_url, windows_system32_binary,
 };
 #[cfg(desktop)]

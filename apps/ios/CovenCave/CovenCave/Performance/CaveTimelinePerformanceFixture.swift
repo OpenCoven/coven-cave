@@ -13,6 +13,9 @@ enum CaveTimelinePerformanceFixture {
 
     static var isEnabled: Bool {
         let arguments = ProcessInfo.processInfo.arguments
+        #if DEBUG
+        if arguments.contains("--ui-preview-large-rich-chat-scroll") { return true }
+        #endif
         return CavePerformanceFixture.shouldEnable(arguments: arguments)
             && arguments.contains("--timeline-performance-fixture")
     }
@@ -53,7 +56,8 @@ enum CaveTimelinePerformanceFixture {
 
     private static var captures: [[String: Any]] = []
 
-    static func capture(threadID: String, expandedCount: Int, recorder: CavePerformanceRecorder) {
+    static func capture(threadID: String, expandedCount: Int, recorder: CavePerformanceRecorder,
+                        messageCount: Int = 1, activityCount: Int? = nil) {
         guard isEnabled else { return }
         func countWebViews(_ view: UIView) -> Int {
             if view is WKWebView { return 1 }
@@ -63,7 +67,8 @@ enum CaveTimelinePerformanceFixture {
         let counters = ["markdown.webview.created", "markdown.webview.invalidated", "markdown.webview.first-render", "markdown.webview.failed"]
         captures.append([
             "index": captures.count, "unixSeconds": Date().timeIntervalSince1970,
-            "threadID": threadID, "activityCount": count, "shape": shape.rawValue, "expandedCount": expandedCount,
+            "threadID": threadID, "activityCount": activityCount ?? count, "shape": shape.rawValue, "expandedCount": expandedCount,
+            "messageCount": messageCount,
             "attachedWebViews": windows.reduce(0) { $0 + countWebViews($1) },
             "appPhysicalFootprintBytes": CavePerformanceFixture.physicalFootprint() as Any? ?? NSNull(),
             "counters": Dictionary(uniqueKeysWithValues: counters.map { ($0, recorder.counter($0)) }),
@@ -78,7 +83,14 @@ enum CaveTimelinePerformanceFixture {
                 "scope": "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network/history reload.",
                 "captures": captures,
             ], options: [.prettyPrinted, .sortedKeys])
-            try data.write(to: directory.appendingPathComponent("timeline-metrics.json"), options: .atomic)
+            var destination = directory.appendingPathComponent("timeline-metrics.json")
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-preview-large-rich-chat-scroll"),
+               let path = ProcessInfo.processInfo.environment["CAVE_SCROLL_METRICS_PATH"] {
+                destination = URL(fileURLWithPath: path)
+            }
+            #endif
+            try data.write(to: destination, options: .atomic)
         } catch {
             assertionFailure("Unable to save synthetic timeline metrics")
         }

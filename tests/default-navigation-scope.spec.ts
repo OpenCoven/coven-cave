@@ -35,6 +35,10 @@ test("a saved Marketplace link still opens the installed-items surface", async (
   await prepare(page);
   await page.goto("/?mode=marketplace");
   await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
+  // `?mode=` is a one-shot entry parameter (#3563): after landing, the address
+  // is the canonical `/` while the surface stays on screen (#6516).
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible();
 });
 
 test("Settings reaches installed capabilities by keyboard", async ({ page }) => {
@@ -44,9 +48,16 @@ test("Settings reaches installed capabilities by keyboard", async ({ page }) => 
   await entry.scrollIntoViewIfNeeded({ timeout: 30_000 });
   await entry.focus();
   await expect(entry).toBeFocused();
+  // The entry navigates to `/?mode=marketplace`, which is cleared to `/` once the
+  // surface opens (#6516). Record the navigation instead of racing the address.
+  const navigations: string[] = [];
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) navigations.push(new URL(frame.url()).search);
+  });
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\?mode=marketplace/);
   await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => navigations).toContain("?mode=marketplace");
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test("the Settings entry fits a narrow window", async ({ page }) => {

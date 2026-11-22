@@ -70,9 +70,12 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /let turnStart = TranscriptRow\.currentTurnStart\(in: rows\)[\s\S]{0,700}?LazyVStack\(spacing: 10\) \{\s*\n\s*ForEach\(rows\[\.\.<turnStart\]\)[\s\S]{0,400}?ForEach\(rows\[turnStart\.\.<max\(turnStart, rows\.count - 1\)\]\)[\s\S]{0,300}?if let row = rows\.last \{[\s\S]{0,300}?\.onGeometryChange\(for: ChatScrollGeometry\?\.self\)[\s\S]{0,120}?geometry\.bounds\(of: \.scrollView\)/,
-  "bottom arrival must use the actual latest row, not the lazy stack's estimated content height; the current turn stays out of the lazy stack (#5933)",
+  /ForEach\(rows\) \{ row in[\s\S]{0,500}?\.onGeometryChange\(for: ChatScrollGeometry\?\.self\)[\s\S]{0,200}?row\.id == rows\.last\?\.id[\s\S]{0,180}?geometry\.bounds\(of: \.scrollView\)/,
+  "one stable row collection must retain history geometry across sends and observe the actual latest row (#6090)",
 );
+assert.doesNotMatch(chatView.slice(chatView.indexOf("private var messageScroll"), chatView.indexOf("private func transcriptRow")),
+  /LazyVStack|rows\[\.\.<|rows\[turnStart/,
+  "the transcript must not re-estimate history height or move a row between layout branches");
 assert.match(
   chatView,
   /viewportRecovery\.noteLatestRow\(id: row\.id, height: geometry\.contentHeight\)/,

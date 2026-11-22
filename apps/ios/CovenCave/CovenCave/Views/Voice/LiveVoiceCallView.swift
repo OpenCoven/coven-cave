@@ -37,6 +37,8 @@ struct LiveVoiceCallView: View {
             if phase == .ended, !model.authorityRevoked { dismiss() }
         }
         .onDisappear { model.end() }
+        // Leaving through navigation must never silently terminate a live call.
+        .caveNavigationExitBlocked(!model.state.phase.isTerminal)
     }
 
     // MARK: - Header

@@ -49,10 +49,6 @@
   overflow: hidden;
 }
 
-.leftSidebarHidden {
-  display: none;
-}
-
 .sidebarIconRow {
   display: flex;
   align-items: center;

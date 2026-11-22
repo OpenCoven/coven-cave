@@ -50,6 +50,8 @@ async function openThread(page: Page) {
   await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: origin, path: "/" }]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:active-familiar", "nova");
+    // This list fixture explicitly browses all projects using the shared scope.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     localStorage.setItem("cave:onboarding:dismissed", "1");
   });

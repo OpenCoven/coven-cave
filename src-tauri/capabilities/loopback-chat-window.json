@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-chat-window",
+  "description": "lets the trusted loopback detached Chat window emit its open-in-main-window hand-off event and open http(s) links from a chat in the system browser (it has no Browser surface of its own); the Rust shell owns the window itself and pushes pop-out targets in without granting this webview any event-listen permission",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "webviews": [
+    "chat-window"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "core:event:allow-emit",
+    "allow-shell-open",
+    "allow-shell-reveal-path"
+  ]
+}

@@ -80,10 +80,6 @@ export class BoundedProcessOutput {
   }
 }
 
-export function sanitizeProcessOutput(chunk: string | Buffer): string {
-  return redactSecretText(stripAnsi(chunk.toString()));
-}
-
 export function safeProcessErrorMessage(
   error: unknown,
   label: string,

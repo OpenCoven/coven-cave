@@ -31,6 +31,7 @@ function session(id: string, title: string) {
     runtime: "local:/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
     exit_code: null,
     archived_at: null,
+    attention: { state: "none", since: null, reason: null },
     created_at: ISO,
     updated_at: ISO,
   };
@@ -44,6 +45,8 @@ const SESSIONS = [
 async function setup(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // Both split candidates must stay visible across projects.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Keep the nav expanded so the chat surface keeps its full width.

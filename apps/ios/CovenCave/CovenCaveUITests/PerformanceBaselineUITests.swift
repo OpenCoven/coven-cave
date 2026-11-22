@@ -390,7 +390,7 @@ final class PerformanceBaselineUITests: XCTestCase {
     @MainActor
     private func waitForDestination(in app: XCUIApplication) {
         let navigation = app.navigationBars.containing(.button, identifier: "Open navigation").firstMatch
-        let listOptions = app.buttons["Chat list options"]
+        let headerTitle = app.staticTexts["Chats"].firstMatch
         let window = app.windows.firstMatch.frame
         XCTAssertFalse(window.isEmpty)
         let presented = NSPredicate { _, _ in
@@ -399,12 +399,13 @@ final class PerformanceBaselineUITests: XCTestCase {
                 if !frame.isEmpty && abs(frame.minX - window.minX) < 1
                     && abs(frame.maxX - window.maxX) < 1 { return true }
             }
-            // ChatsHomeView hides its native bar and has a custom header
-            // with a 14-point trailing inset around this 44-point control.
-            if listOptions.exists {
-                let frame = listOptions.frame
+            // The Chats title sits immediately after its leading navigation
+            // control. Wait for the custom header to reach its final position.
+            if headerTitle.exists {
+                let frame = headerTitle.frame
+                let menu = app.buttons["Open navigation"].firstMatch.frame
                 return !frame.isEmpty && window.contains(frame)
-                    && abs(frame.maxX - (window.maxX - 14)) < 1
+                    && abs(menu.minX - (window.minX + 14)) < 1
             }
             return false
         }

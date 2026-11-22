@@ -72,8 +72,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!state\.confirmed\) persistDismissal\(\)/,
-  "declining setup persists the first-run dismissal",
+  /const suppressAutomaticSetup = useCallback\(\(\) => \{[\s\S]*?localStorage\.setItem\("cave:setup:suppressed", "1"\);[\s\S]*?dismiss\(\);/,
+  "the explicit suppression control persists the preference before leaving",
 );
 assert.match(
   source,
@@ -155,10 +155,8 @@ assert.match(
   /Git is optional/,
   "Git remains visibly optional",
 );
-assert.match(source, /<OnboardingRuntimeStep open=\{open\} onReadyChange=\{setRuntimeReady\} \/>/,
-  "the mounted setup dialog offers a runtime after local setup completes");
-assert.match(source, /!state\.complete \|\| !runtimeReady/,
-  "first run cannot auto-finish before a chat runtime is ready");
+assert.doesNotMatch(source, /<OnboardingRuntimeStep/,
+  "local bootstrap hands off to the single assistant chooser instead of duplicating it");
 assert.match(runtimeStep, /confirmInstall: true/,
   "a runtime install uses the existing confirmed allowlisted API");
 assert.match(runtimeStep, /"\/api\/harnesses"/,
@@ -209,7 +207,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const dismiss = useCallback\(\(\) => \{\s*if \(state\.status === "running"\) \{\s*runInBackground\(\);\s*return;\s*\}\s*if \(!state\.confirmed\) persistDismissal\(\);/,
+  /const dismiss = useCallback\(\(\) => \{\s*if \(state\.status === "running"\) \{\s*runInBackground\(\);\s*return;\s*\}\s*onDismiss\(\);/,
   "the close control and Escape background a running setup instead of abandoning it",
 );
 assert.match(source, /onClick=\{runInBackground\}>\s*Run in background/, "the footer button uses the same path");

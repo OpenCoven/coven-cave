@@ -45,13 +45,7 @@ assert.match(
 );
 
 // ── Multiple quick chats ─────────────────────────────────────────────────────
-// The add button (and ⌘/Ctrl+N) opens a new chat that inherits the ACTIVE
-// tab's familiar — a new chat starts on who you're already talking to.
-assert.match(
-  component,
-  /const inherited = reportsRef\.current\[activeIdRef\.current\]\?\.familiar\?\.id \?\? null/,
-  "a new tab inherits the active tab's selected familiar",
-);
+// New tabs restore the configured default rather than a recent actor.
 assert.match(
   component,
   /useState<TabDescriptor\[]>\(\[\{ id: 1, initialFamiliarId: null, showAgentPicker: false \}\]\)/,
@@ -59,7 +53,7 @@ assert.match(
 );
 assert.match(
   component,
-  /setTabs\(\(prev\) => \[\.\.\.prev, \{ id, initialFamiliarId: inherited, showAgentPicker: true \}\]\)/,
+  /setTabs\(\(prev\) => \[\.\.\.prev, \{ id, initialFamiliarId: null, showAgentPicker: true \}\]\)/,
   "clicking + opens a new chat with the agent picker visible",
 );
 assert.match(component, /aria-label="New chat"/, "the header exposes an add-chat button");

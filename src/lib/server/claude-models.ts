@@ -1,3 +1,4 @@
+import { ModelInventoryCache, positiveLimit } from "./model-inventory-cache.ts";
 import { spawn } from "node:child_process";
 import {
   CLAUDE_OPUS_5_CAVE_ID,
@@ -41,35 +42,8 @@ type ClaudeModelDependencies = {
   maxConcurrentDiscoveries?: number;
 };
 
-type CacheEntry = { expiresAt: number; models: RuntimeModelOption[] };
-const cache = new Map<string, CacheEntry>();
+const cache = new ModelInventoryCache();
 const inFlight = new Map<string, Promise<{ models: RuntimeModelOption[] }>>();
-
-function positiveLimit(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
-    ? value
-    : fallback;
-}
-
-function pruneExpiredCache(now: number): void {
-  for (const [key, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(key);
-  }
-}
-
-function cacheModels(
-  key: string,
-  entry: CacheEntry,
-  maxEntries: number,
-): void {
-  cache.delete(key);
-  cache.set(key, entry);
-  while (cache.size > maxEntries) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    cache.delete(oldest);
-  }
-}
 
 function seedModels(): RuntimeModelOption[] {
   return [...(catalogForRuntime("claude")?.models ?? [])];
@@ -178,14 +152,14 @@ async function discoverClaudeModels(
   if (parseClaudeCodeVersion(versionOutput)) {
     const now = dependencies.now ?? Date.now;
     const currentTime = now();
-    pruneExpiredCache(currentTime);
-    cacheModels(
+    cache.set(
       cacheKey(familiarId, providerEnv),
       {
         expiresAt: currentTime + (dependencies.cacheMs ?? CACHE_MS),
         models,
       },
       positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
+      currentTime,
     );
   }
   // `claude --version` only proves that the CLI is installed. The remaining
@@ -236,12 +210,9 @@ export async function claudeOpus5Routability(
     return "unknown";
   }
   const now = dependencies.now ?? Date.now;
-  pruneExpiredCache(now());
   const key = cacheKey(familiarId, providerEnv);
-  const cached = cache.get(key);
+  const cached = cache.get(key, now());
   if (cached) {
-    cache.delete(key);
-    cache.set(key, cached);
     return cached.models.some((model) => model.id === CLAUDE_OPUS_5_CAVE_ID)
       ? "available"
       : "unavailable";
@@ -263,14 +234,14 @@ export async function claudeOpus5Routability(
   const probe = { versionOutput, env: providerEnv };
   const models = withClaudeOpus55(withClaudeOpus5(seedModels(), probe), probe);
   const currentTime = now();
-  pruneExpiredCache(currentTime);
-  cacheModels(
+  cache.set(
     key,
     {
       expiresAt: currentTime + (dependencies.cacheMs ?? CACHE_MS),
       models,
     },
     positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
+    currentTime,
   );
   return models.some((model) => model.id === CLAUDE_OPUS_5_CAVE_ID)
     ? "available"
@@ -301,11 +272,8 @@ export async function listClaudeModelInventory(
   }
   const key = cacheKey(familiarId, providerEnv);
   const now = dependencies.now ?? Date.now;
-  pruneExpiredCache(now());
-  const cached = cache.get(key);
+  const cached = cache.get(key, now());
   if (cached) {
-    cache.delete(key);
-    cache.set(key, cached);
     return { models: [...cached.models], provenance: "fallback" };
   }
   const pending = inFlight.get(key);

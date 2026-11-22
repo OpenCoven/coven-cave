@@ -31,18 +31,18 @@ test("Settings delegates the About surface to a focused component", () => {
 test("About ports the Claude Design hero and live control-sheet hierarchy", () => {
   assert.match(component, /className="settings-about"/);
   assert.match(component, /className="settings-about-hero"/);
-  assert.match(component, />Settings · About</);
+  assert.doesNotMatch(component, />Settings · About</);
   assert.match(component, /<h1[^>]*>About<\/h1>/);
   assert.match(component, /className="settings-about-hero__chips"/);
   assert.match(component, /Copy diagnostics/);
-  assert.match(component, /updateActionRef/);
+  assert.doesNotMatch(component, /updateActionRef/);
   assert.match(component, /className="settings-about-control-grid"/);
   assert.match(component, />CovenCave</);
   assert.match(
     component,
     /<SectionRule[\s\S]*?>\s*OpenCoven tools\s*<\/SectionRule>/,
   );
-  assert.match(component, /<UpdateSettingsRow[\s\S]*actionRef=\{updateActionRef\}/);
+  assert.match(component, /<UpdateSettingsRow \/>/);
   assert.match(
     component,
     /<OpenCovenToolsUpdate[\s\S]*showDiagnosticsAction=\{false\}[\s\S]*onSnapshotChange=\{handleToolSnapshot\}/,

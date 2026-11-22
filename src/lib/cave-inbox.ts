@@ -392,7 +392,7 @@ export async function deleteFamiliarReminder(
   });
 }
 
-export type BulkAction = "read" | "unread" | "dismiss" | "done" | "delete";
+export type BulkAction = "read" | "unread" | "dismiss" | "restore" | "done" | "delete";
 
 export type BulkResult = {
   updated: InboxItem[];
@@ -448,6 +448,11 @@ export async function applyBulkAction(
         } else if (action === "unread") {
           if (!item.readAt) return item;
           next = { ...item, readAt: null, updatedAt: nowIso };
+        } else if (action === "restore") {
+          // Undo of a dismiss: back onto the fired stack. Only a dismissed
+          // item moves; a done, pending or already-fired one is left alone.
+          if (item.status !== "dismissed") return item;
+          next = { ...item, status: "fired", updatedAt: nowIso };
         } else {
           // dismiss | done — terminal states imply the item was seen.
           const status: ItemStatus = action === "dismiss" ? "dismissed" : "done";

@@ -19,6 +19,8 @@ test("Flow runs stay separate until an explicit discussion is created", async ({
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "nova");
+    // This list fixture explicitly browses all projects using the shared scope.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
   });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: {
     ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator",

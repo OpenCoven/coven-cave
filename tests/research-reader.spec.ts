@@ -114,6 +114,9 @@ async function openReader(
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
+    // Keep the reader's explicit Rida scope when host defaults hydrate.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["rida"] }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: FAMILIAR_ID, display_name: "Rida", role: "Researcher", status: "active", icon: "ph:sparkle-fill" }] } }),

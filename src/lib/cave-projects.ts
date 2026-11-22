@@ -15,7 +15,7 @@ import { realpathNativeOrResolve } from "./server/canonical-path.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
-import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
+import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -92,10 +92,25 @@ function withWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-function withProjectsStore<T>(operation: () => Promise<T>): Promise<T> {
-  if (process.env.CAVE_PROJECTS_PATH_OVERRIDE) return operation();
-  return withCaveHomeReconciledStore("cave-projects.json", operation);
+function withProjectsStore<T>(operation: () => Promise<T>, alsoStores: readonly string[] = []): Promise<T> {
+  const own = process.env.CAVE_PROJECTS_PATH_OVERRIDE ? [] : ["cave-projects.json"];
+  if (alsoStores.length === 0) {
+    return own.length === 0 ? operation() : withCaveHomeReconciledStore("cave-projects.json", operation);
+  }
+  // The store lock isn't reentrant, so a check that reads another store
+  // shares this one acquisition instead of taking its own inside.
+  return withCaveHomeReconciledStores([...own, ...alsoStores], operation);
 }
+
+/**
+ * A check that runs inside the registry mutex before a project's folder
+ * changes, and throws to refuse the move. `stores` are the other Cave stores
+ * it reads; they are reconciled under the registry's own lock.
+ */
+export type ProjectRootChangeGuard = {
+  stores: () => readonly string[];
+  check: (project: CaveProject, nextRoot: string) => Promise<void>;
+};
 
 async function loadProjectsUnlocked(): Promise<CaveProject[]> {
   const raw = await readFileOrNull(projectsFilePath());
@@ -175,6 +190,21 @@ async function saveProjects(projects: CaveProject[]): Promise<void> {
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
 }
 
+/**
+ * The folder pin (#6215): a root's realpath in on-disk letter case, the
+ * namespace Chat's launch gate compares in (#6216). Only registration, a root
+ * change and confirm-folder set it, and each is a person naming the folder.
+ * A root that is not a local absolute path gets no pin, so it never launches.
+ */
+function folderPin(root: string): string | undefined {
+  if (!path.isAbsolute(root)) return undefined;
+  try {
+    return realpathSync.native(/* turbopackIgnore: true */ root);
+  } catch {
+    return undefined;
+  }
+}
+
 export function createProject(input: {
   name: string;
   root: string;
@@ -182,9 +212,12 @@ export function createProject(input: {
   /** Canonical GitHub repository link — callers validate/normalize first. */
   repoUrl?: string;
 }): Promise<CaveProject> {
+  // Capture the named directory before awaiting registry I/O. A link changed
+  // while registration waits must fail launch, not silently become its pin.
+  const root = normalizeRootExpandingHome(input.root);
+  const pin = folderPin(root);
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
-    const root = normalizeRootExpandingHome(input.root);
     // One project per root. Creating at an already-registered root would persist
     // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
     // server (projectById / trustedProjectCwd) can still resolve to — a
@@ -202,6 +235,7 @@ export function createProject(input: {
       updatedAt: now,
     };
     if (input.repoUrl) project.repoUrl = input.repoUrl;
+    if (pin) project.rootRealpath = pin;
     await saveProjects([...projects, project]);
     return project;
   }));
@@ -211,9 +245,13 @@ export function patchProject(
   id: string,
   // color: string sets an explicit tint; null clears it (back to the auto
   // root-hash tint); undefined leaves it untouched. repoUrl follows the same
-  // string-sets / null-clears / undefined-keeps contract.
+  // string-sets / null-clears / undefined-keeps contract. An applied root
+  // change moves the folder pin (#6215) with it.
   patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null },
+  rootChangeGuard?: ProjectRootChangeGuard,
+  confirmedChange?: { previousRoot: string; realpath: string },
 ): Promise<CaveProject | null> {
+  const guarded = rootChangeGuard && patch.root !== undefined ? rootChangeGuard : undefined;
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
     const idx = projects.findIndex((project) => project.id === id);
@@ -224,13 +262,18 @@ export function patchProject(
     // a rename-onto-another-root can't fork the on-disk store into two entries
     // for one path. Name/color still apply.
     let nextRoot = current.root;
+    let rootChanged = false;
     if (patch.root !== undefined) {
       const candidate = normalizeRootExpandingHome(patch.root);
       const collides = projects.some(
         (entry) => entry.id !== id && normalizeRootExpandingHome(entry.root) === candidate,
       );
-      if (!collides) nextRoot = candidate;
+      if (!collides) {
+        nextRoot = candidate;
+        rootChanged = true;
+      }
     }
+    if (guarded && nextRoot !== current.root) await guarded.check(current, nextRoot);
     const updated: CaveProject = {
       ...current,
       name: patch.name !== undefined ? patch.name.trim() : current.name,
@@ -245,10 +288,54 @@ export function patchProject(
       if (patch.repoUrl === null) delete updated.repoUrl;
       else updated.repoUrl = patch.repoUrl;
     }
+    if (rootChanged) {
+      const pin = folderPin(nextRoot);
+      if (confirmedChange && (current.root !== confirmedChange.previousRoot || pin !== confirmedChange.realpath)) {
+        return null;
+      }
+      if (pin) updated.rootRealpath = pin;
+      else delete updated.rootRealpath;
+    }
     const next = [...projects];
     next[idx] = updated;
     await saveProjects(next);
     return updated;
+  }), guarded?.stores() ?? []);
+}
+
+/**
+ * Pin a project to the folder its root resolves to now: the explicit
+ * confirm-folder action in project settings (#6215). The root is validated
+ * and pinned under the registry lock, so the pin always describes the root the
+ * record holds, even if another edit moves that root concurrently. The root
+ * itself is never rewritten; it keys client stores. Resolves null for an
+ * unknown id and keeps the previous pin when validation fails.
+ */
+export function confirmProjectRoot(
+  id: string,
+  validateRoot: (root: string) => { ok: true; root: string } | { ok: false; error: string },
+  expected?: { root: string; realpath: string },
+): Promise<{ ok: true; project: CaveProject } | { ok: false; error: string } | null> {
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
+    const idx = projects.findIndex((project) => project.id === id);
+    if (idx < 0) return null;
+    const validated = validateRoot(projects[idx].root);
+    if (!validated.ok) return { ok: false, error: validated.error };
+    const pin = folderPin(validated.root);
+    if (!pin) return { ok: false, error: "root must be an absolute path" };
+    if (expected && (projects[idx].root !== expected.root || pin !== expected.realpath)) {
+      return { ok: false, error: "The folder changed during confirmation. Review the folder and confirm it again." };
+    }
+    const updated: CaveProject = {
+      ...projects[idx],
+      rootRealpath: pin,
+      updatedAt: new Date().toISOString(),
+    };
+    const next = [...projects];
+    next[idx] = updated;
+    await saveProjects(next);
+    return { ok: true, project: updated };
   }));
 }
 
@@ -311,6 +398,11 @@ export type CanonicalProjectRoot = (project: CaveProject) => {
 export function canonicalProjectRootCache(): CanonicalProjectRoot {
   const cache = new Map<string, { existing: string | null; resolved: string | null }>();
   return (project) => {
+    // A saved pin is directory identity, not another path to resolve. Keeping
+    // it recognizes persisted resumes even after the registered alias moves.
+    if (project.rootRealpath && path.isAbsolute(project.rootRealpath)) {
+      return { existing: project.rootRealpath, resolved: project.rootRealpath };
+    }
     let entry = cache.get(project.root);
     if (!entry) {
       const expanded = expandHomeShortcut(project.root);

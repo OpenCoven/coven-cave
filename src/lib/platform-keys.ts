@@ -64,11 +64,6 @@ export function useKeySymbols(): KeySymbols {
   return symbols;
 }
 
-/** Pure helper for places that already know they're client-side (event handlers, etc.). */
-export function keySymbolsNow(): KeySymbols {
-  return detectIsMac() ? MAC_SYMBOLS : PC_SYMBOLS;
-}
-
 /**
  * Replace Mac-canonical key glyphs (⌘ ⌥ ⌃ ⇧ ↵) in a static string with the
  * platform-appropriate label. The static catalogs (slash command hints,

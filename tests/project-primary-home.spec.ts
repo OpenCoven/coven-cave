@@ -1,4 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
+
+test.use({ serviceWorkers: "block" });
 
 const CODY = {
   id: "cody",
@@ -37,18 +40,20 @@ async function seed(page: Page) {
   const familiarProjectRequests: Array<string | null> = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [], "project-a": [], "project-b": [] }));
   });
   await page.route("**/api/familiars**", (route) => {
-    const projectId = new URL(route.request().url()).searchParams.get("projectId");
-    familiarProjectRequests.push(projectId);
-    const familiars = projectId === null
-      ? [CODY, NOVA]
-      : projectId === "project-a"
+    const projectIds = new URL(route.request().url()).searchParams.getAll("projectId");
+    familiarProjectRequests.push(...(projectIds.length ? projectIds : [null]));
+    const crewFor = (projectId: string) => (projectId === "project-a"
         ? [CODY]
         : projectId === "project-b"
           ? [CODY, NOVA]
-          : [];
-    return route.fulfill({ json: { ok: true, familiars } });
+          : []).map((familiar) => ({ ...familiar, projectAccess: "write" }));
+    return route.fulfill({ json: projectIds.length > 1
+      ? { ok: true, familiarsByProject: Object.fromEntries(projectIds.map((id) => [id, crewFor(id)])) }
+      : { ok: true, familiars: projectIds.length ? crewFor(projectIds[0]) : [CODY, NOVA] } });
   });
   await page.route("**/api/projects**", (route) =>
     route.fulfill({ json: { ok: true, projects: PROJECTS } }),
@@ -75,6 +80,7 @@ async function seed(page: Page) {
       },
     }),
   );
+  await installCompletedFirstUse(page, { project: PROJECTS[0], familiarIds: ["cody"], actingFamiliarId: "cody", permissionMode: "full" });
   return familiarProjectRequests;
 }
 

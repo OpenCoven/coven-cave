@@ -121,6 +121,7 @@ struct NewChatView: View {
         }
         .themedSheetBackground()
         .interactiveDismissDisabled(isLaunching)
+        .caveNavigationExitBlocked(isLaunching)
     }
 
     @ViewBuilder

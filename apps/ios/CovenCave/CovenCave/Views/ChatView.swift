@@ -27,6 +27,7 @@ private struct EmptyChatSuggestion: Identifiable {
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
@@ -84,6 +85,7 @@ struct ChatView: View {
     @Namespace private var pickerZoomNamespace
     @State private var scrollState = ChatScrollState()
     @State private var viewportRecovery = ChatViewportRecovery()
+    @State private var scrollAnchor = ChatScrollAnchorCoordinator()
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
     @State private var streamScroll = ScrollCoalescer()
@@ -337,6 +339,9 @@ struct ChatView: View {
 
     private func scrollToLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
         guard scrollState.isFollowingLatest, !scrollState.isUserScrolling else { return }
+        #if DEBUG
+        ChatScrollTrace.shared.note("scrollToLatest animated=\(animation != nil)")
+        #endif
         let target = thread.messages.last?.id ?? "bottom"
         if let animation, !reduceMotion {
             withAnimation(animation) { proxy.scrollTo(target, anchor: .bottom) }
@@ -365,6 +370,7 @@ struct ChatView: View {
         streamScroll.cancel()
         scrollState = ChatScrollState()
         viewportRecovery = ChatViewportRecovery()
+        scrollAnchor.reset()
         // A fresh scroll state follows latest, and the follow observer only
         // fires on a change, so the fresh recovery is told directly.
         viewportRecovery.noteFollowingLatest(scrollState.isFollowingLatest && !scrollState.isUserScrolling)
@@ -413,11 +419,13 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .groupedBackNavigation(canGoBack: $canGoBack)
         .toolbar {
-            if app.isPerformanceFixture && CaveTimelinePerformanceFixture.isEnabled {
+            if CaveTimelinePerformanceFixture.isEnabled {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Capture metrics") {
                         CaveTimelinePerformanceFixture.capture(threadID: thread.id,
-                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder)
+                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder,
+                            messageCount: thread.messages.count,
+                            activityCount: thread.messages.reduce(0) { $0 + $1.activitySteps.count })
                     }
                     .accessibilityIdentifier("Capture timeline metrics")
                 }
@@ -501,17 +509,17 @@ struct ChatView: View {
                     .zIndex(20)
             }
         }
-        .sheet(isPresented: $showCommands) {
+        .caveSheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
         }
-        .sheet(isPresented: $showNewChat) {
+        .caveSheet(isPresented: $showNewChat) {
             NewChatView(initialFamiliarIds: thread.familiarIds) { fresh in
                 showNewChat = false
                 flushDraftPersistence()
                 _ = app.requestOpen(fresh)
             }
         }
-        .sheet(isPresented: $showModelPicker) {
+        .caveSheet(isPresented: $showModelPicker) {
             ModelPickerSheet(
                 options: presentedModelPickerOptions,
                 current: modelPresentationIsCurrent ? modelPickerCurrent : "",
@@ -522,22 +530,22 @@ struct ChatView: View {
                 _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
         }
-        .sheet(isPresented: $showFamiliarPicker) {
+        .caveSheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { familiar in
                 showFamiliarPicker = false
                 switchTo(familiar)
             }
         }
-        .sheet(item: $forwardingMessage) { message in
+        .caveSheet(item: $forwardingMessage) { message in
             FamiliarPickerSheet(title: "Forward to familiar") { familiar in
                 forwardingMessage = nil
                 forward(message, to: familiar)
             }
         }
-        .sheet(item: $permissionsFamiliar) { familiar in
+        .caveSheet(item: $permissionsFamiliar) { familiar in
             FamiliarPermissionsSheet(familiar: familiar)
         }
-        .sheet(isPresented: $showPermissionFamiliarPicker) {
+        .caveSheet(isPresented: $showPermissionFamiliarPicker) {
             FamiliarPickerSheet(
                 title: "Choose a familiar",
                 familiarIds: thread.familiarIds
@@ -546,10 +554,11 @@ struct ChatView: View {
                 permissionsFamiliar = familiar
             }
         }
-        .sheet(item: $responseReader) { item in
+        .caveSheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
+                .presentationDetents([.large])
         }
-        .sheet(item: $toolOutputTarget) { target in
+        .caveSheet(item: $toolOutputTarget) { target in
             if target.scope == toolOutputScope {
                 ToolOutputDetailView(target: target)
                     .id(target.id)
@@ -561,7 +570,7 @@ struct ChatView: View {
                 toolOutputTarget = nil
             }
         }
-        .fullScreenCover(item: $voiceCall) { model in
+        .caveFullScreenCover(item: $voiceCall) { model in
             LiveVoiceCallView(model: model,
                               avatarSource: app.client?.familiarAvatarSource(for: model.familiar))
         }
@@ -620,11 +629,11 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: .caveZoomContent)) { note in
             if let target = note.object as? ZoomTarget { zoomTarget = target }
         }
-        .fullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
+        .caveFullScreenCover(item: $zoomTarget, onDismiss: CavePerformanceFixture.zoomDismissed) { target in
             ZoomableContentView(target: target)
                 .onAppear { CavePerformanceFixture.recordZoomFootprint(.presented) }
         }
-        .sheet(isPresented: $showSessionPicker) {
+        .caveSheet(isPresented: $showSessionPicker) {
             if let familiarId = thread.familiarIds.first,
                let familiar = app.familiar(familiarId) {
                 NavigationStack {
@@ -1018,6 +1027,12 @@ struct ChatView: View {
         }
     }
 
+    /// While following, the follow path owns the offset; anchoring both would
+    /// move it twice. Read when a layout pass settles, not when a row reports.
+    private func scrollAnchorRow(_ id: String) -> ChatScrollAnchorRowModifier {
+        ChatScrollAnchorRowModifier(id: id, coordinator: scrollAnchor) { !scrollState.isFollowingLatest }
+    }
+
     private func recoverTranscriptViewportIfNeeded(_ proxy: ScrollViewProxy) {
         guard viewportRecovery.hasPendingRecovery, !scrollState.isUserScrolling else { return }
         // Re-check after one runloop turn: a settling layout frame that brings
@@ -1025,6 +1040,9 @@ struct ChatView: View {
         DispatchQueue.main.async {
             guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
             streamScroll.cancel()
+            #if DEBUG
+            ChatScrollTrace.shared.note("viewportRecovery")
+            #endif
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -1039,41 +1057,29 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 let rows = thread.transcriptRows
-                let turnStart = TranscriptRow.currentTurnStart(in: rows)
                 VStack(spacing: 10) {
-                    // Keep history lazy, but never virtualize the current turn.
-                    // The latest row's large WebView must be mounted on
-                    // cold/repeated opens and must survive a sharp shrink while
-                    // reading above it (#5613). The message just sent, its day
-                    // divider and the pending replies stay mounted beside it,
-                    // so a send never inserts them into the lazy stack (#5933).
-                    LazyVStack(spacing: 10) {
-                        ForEach(rows[..<turnStart]) { row in
-                            VStack(spacing: 10) {
-                                transcriptRow(row, proxy: proxy)
-                            }
-                            .id(row.id)
-                        }
-                    }
-                    ForEach(rows[turnStart..<max(turnStart, rows.count - 1)]) { row in
+                    // Keep row geometry and identity stable. A nested lazy
+                    // history estimates its height independently of the eager
+                    // latest turn, rebasing the viewport as rows realize.
+                    // Virtualize historical WebKit content inside the retained
+                    // rows instead; the latest renderer remains mounted (#5613).
+                    ForEach(rows) { row in
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
+                        .accessibilityElement(children: .contain)
                         .id(row.id)
-                    }
-                    if let row = rows.last {
-                        VStack(spacing: 10) {
-                            transcriptRow(row, proxy: proxy)
-                        }
-                            .id(row.id)
+                        .modifier(scrollAnchorRow(row.id))
                             .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in
+                                guard row.id == rows.last?.id else { return nil }
                                 guard let viewport = geometry.bounds(of: .scrollView) else { return nil }
                                 return ChatScrollGeometry(
                                     contentHeight: geometry.size.height,
                                     visibleBottom: viewport.maxY
                                 )
                             } action: { previous, geometry in
-                                guard let geometry else { return }
+                                guard row.id == rows.last?.id, let geometry else { return }
+                                scrollAnchor.noteLatestGeometry(row.id, geometry)
                                 if previous?.contentHeight != geometry.contentHeight {
                                     // Only the latest reply's own shrink may arm
                                     // offset recovery (#5613), never a lazy
@@ -1081,8 +1087,10 @@ struct ChatView: View {
                                     viewportRecovery.noteLatestRow(id: row.id, height: geometry.contentHeight)
                                     recoverTranscriptViewportIfNeeded(proxy)
                                 }
-                                if scrollState.isAtBottom != geometry.isAtBottom {
-                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom)
+                                let movedAway = previous.map { geometry.visibleBottom < $0.visibleBottom } ?? false
+                                if scrollState.isAtBottom != geometry.isAtBottom
+                                    || (scrollState.isUserScrolling && movedAway) {
+                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom, movedAway: movedAway)
                                 }
                                 if scrollState.isFollowingLatest, !geometry.isAtBottom {
                                     streamScroll.request { scrollToLatest(proxy) }
@@ -1094,9 +1102,13 @@ struct ChatView: View {
                 .scrollTargetLayout()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 14)
+                .chatScrollAnchorContent(scrollAnchor)
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .accessibilityIdentifier("Chat transcript")
+            .chatScrollTrace(following: scrollState.isFollowingLatest,
+                             userScrolling: scrollState.isUserScrolling,
+                             atBottom: scrollState.isAtBottom)
             .onScrollGeometryChange(for: ChatViewportGeometry.self) { geometry in
                 ChatViewportGeometry(
                     contentHeight: geometry.contentSize.height,
@@ -1175,7 +1187,17 @@ struct ChatView: View {
                     scrollState.beginUserScroll()
                     streamScroll.cancel()
                 case .idle:
-                    scrollState.endUserScroll()
+                    let latestID = thread.transcriptRows.last?.id
+                    let currentGeometry = latestID.flatMap { scrollAnchor.geometry(for: $0) }
+                    let previousGeometry = latestID.flatMap { scrollAnchor.reportedGeometry(for: $0) }
+                    #if DEBUG
+                    if scrollState.isUserScrolling, let currentGeometry {
+                        ChatScrollTrace.shared.note("idleGeometry height=\(currentGeometry.contentHeight) "
+                            + "visibleBottom=\(currentGeometry.visibleBottom) "
+                            + "previousBottom=\(previousGeometry?.visibleBottom ?? .nan)")
+                    }
+                    #endif
+                    scrollState.endUserScroll(currentGeometry: currentGeometry, previousGeometry: previousGeometry)
                     recoverTranscriptViewportIfNeeded(proxy)
                 default: break
                 }
@@ -1194,6 +1216,7 @@ struct ChatView: View {
             // beyond that end is never a place the reader chose (#5933).
             .onChange(of: scrollState.isFollowingLatest && !scrollState.isUserScrolling,
                       initial: true) { _, following in
+                if following { scrollAnchor.cancelPendingCorrection() }
                 viewportRecovery.noteFollowingLatest(following)
                 recoverTranscriptViewportIfNeeded(proxy)
             }
@@ -1205,16 +1228,11 @@ struct ChatView: View {
             // final flush of a completed stream still lands its scroll.
             .onChange(of: thread.messages.last?.text) { _, _ in
                 guard scrollState.isFollowingLatest else { return }
-                // Ease only live tokens. A settled reply arriving with loaded
-                // history jumps: an animated scroll aims at the reply's
-                // placeholder height, and SwiftUI keeps re-asserting that
-                // stale target as the reply measures — on a short viewport
-                // (iPhone Duo's closed outer display) the follow and the
-                // animation then traded the offset forever (#6205).
-                let streaming = thread.messages.last?.streaming == true
-                streamScroll.request {
-                    scrollToLatest(proxy, animation: streaming ? .easeOut(duration: 0.15) : nil)
-                }
+                // Streaming also changes the target's height asynchronously.
+                // An animation keeps chasing an obsolete target while WebKit
+                // measures the next render. Coalesce immediate follow requests;
+                // explicit jumps and sends keep their separate motion policy.
+                streamScroll.request { scrollToLatest(proxy) }
             }
             // A new message reveals itself when it's the user's own send (you
             // always watch your message leave) or when already at the bottom —
@@ -1294,6 +1312,8 @@ struct ChatView: View {
                 : nil
             MessageBubble(message: message,
                           isGroup: thread.isGroup,
+                          colorScheme: colorScheme,
+                          chrome: chrome,
                           familiar: bubbleFamiliar,
                           isLast: message.id == thread.messages.last?.id,
                           onDelete: bubbleDelete,
@@ -1307,6 +1327,9 @@ struct ChatView: View {
                           operatorAvatarSource: app.operatorAvatarSource,
                           familiarAvatarSource: bubbleAvatarSource,
                           onContentHeightChange: {
+                              #if DEBUG
+                              ChatScrollTrace.shared.note("heightChange \(message.id) following=\(scrollState.isFollowingLatest)")
+                              #endif
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }
                           },
@@ -1537,7 +1560,7 @@ struct ChatView: View {
         }
         // The "+" menu's attach destinations. The pickers hang off the composer
         // (not the menu rows) so the menu can dismiss before they present.
-        .sheet(item: $scheduledReplyLaunch) { launch in
+        .caveSheet(item: $scheduledReplyLaunch) { launch in
             ScheduledChatSheet(client: launch.client, sessionId: launch.sessionId, message: launch.message,
                 canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
                 onScheduled: {
@@ -3038,6 +3061,7 @@ private struct UnreadDividerView: View {
 
 struct ResponseReaderView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     let item: ResponseReaderItem
     @State private var mdHeight: CGFloat = 0
     @AppStorage("cave:reader:fontScale") private var fontScale: Double = 1.0
@@ -3060,6 +3084,7 @@ struct ResponseReaderView: View {
                             scrollCommand: scrollCommand,
                             onHeadings: { headings = $0 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("Response reader content")
                 .background(theme.background.ignoresSafeArea())
                 .navigationTitle(item.title)
                 .navigationBarTitleDisplayMode(.inline)
@@ -3070,10 +3095,9 @@ struct ResponseReaderView: View {
     @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
-                UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
-                Haptics.tap()
+                app.navigationDrawerOpen = true
             } label: {
-                Label("Copy response", systemImage: "doc.on.doc")
+                Label("Open navigation", systemImage: "line.3.horizontal")
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
@@ -3095,6 +3119,12 @@ struct ResponseReaderView: View {
                 .accessibilityLabel("Table of contents")
             }
             Menu {
+                Button {
+                    UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
+                    Haptics.tap()
+                } label: {
+                    Label("Copy response", systemImage: "doc.on.doc")
+                }
                 Section("Text size") {
                     Button { fontScale = min(fontScale + 0.1, 1.8) } label: {
                         Label("Larger", systemImage: "textformat.size.larger")

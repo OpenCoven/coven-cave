@@ -47,6 +47,7 @@ import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/st
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
 import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
+import { managedNodeSpawnEnv } from "./src/lib/server/managed-node-toolchain.ts";
 import { warmHarnessSpawnPath } from "./src/lib/harness-spawn-env.ts";
 import {
   createRemoteJsonCompression,
@@ -2076,6 +2077,11 @@ function spawnPty(
   cwd: string | undefined,
   replayCursor: number | undefined,
 ): void {
+  const shellPath = augmentedPath();
+  // Auth terminals must resolve the same managed CLI and Node as local chat.
+  const authPath = threadId.startsWith("cave.auth.")
+    ? managedNodeSpawnEnv({ ...process.env, PATH: shellPath })?.PATH
+    : undefined;
   const shell = pty.spawn(defaultShell(), defaultShellArgs(), {
     name: "xterm-256color",
     cols: cols > 0 ? cols : 120,
@@ -2083,7 +2089,7 @@ function spawnPty(
     cwd: cwd ?? process.env.HOME ?? process.cwd(),
     env: {
       ...sanitizedEnv(),
-      PATH: augmentedPath(),
+      PATH: authPath ?? shellPath,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
       COVENCAVE: "1",

@@ -30,6 +30,8 @@ export function SessionOverflowMenu({
   sessionId,
   hasTurns,
   onOpenDebug,
+  onOpenGuidance,
+  guidanceLabel = "Working with familiars",
   promotableFamiliars,
   onPromoteToCoven,
   reflecting,
@@ -51,6 +53,8 @@ export function SessionOverflowMenu({
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
   hasTurns: boolean;
   onOpenDebug: () => void;
+  onOpenGuidance?: () => void;
+  guidanceLabel?: string;
   promotableFamiliars: Familiar[];
   onPromoteToCoven: (familiarId: string) => void;
   /** Reflect-on-thread (absent when the familiar has no id). */
@@ -232,6 +236,7 @@ export function SessionOverflowMenu({
                 ))}
               </Fragment>
             ))}
+            {onOpenGuidance ? <><PopoverSeparator /><PopoverItem onSelect={() => { close(); onOpenGuidance(); }}>{guidanceLabel}</PopoverItem></> : null}
             {promotableFamiliars.length > 0 ? (
               <>
                 <PopoverSeparator />

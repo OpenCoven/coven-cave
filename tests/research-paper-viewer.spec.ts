@@ -53,6 +53,8 @@ async function boot(page: Page): Promise<PdfRequest> {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["rida"] }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({

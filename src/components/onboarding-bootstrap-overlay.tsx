@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OnboardingSetupDiagnosticsModal } from "@/components/onboarding-setup-diagnostics";
-import { OnboardingRuntimeStep } from "@/components/onboarding-runtime-step";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -79,7 +78,6 @@ export function OnboardingOverlay({
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [runtimeReady, setRuntimeReady] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const diagnosticsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreDiagnosticsFocusRef = useRef(false);
@@ -113,9 +111,19 @@ export function OnboardingOverlay({
       runInBackground();
       return;
     }
-    if (!state.confirmed) persistDismissal();
     onDismiss();
-  }, [onDismiss, persistDismissal, runInBackground, state.confirmed, state.status]);
+  }, [onDismiss, runInBackground, state.status]);
+
+  const suppressAutomaticSetup = useCallback(() => {
+    try {
+      localStorage.setItem("cave:setup:suppressed", "1");
+    } catch { /* storage unavailable */ }
+    try {
+      document.cookie = "cave_setup_suppressed=1; Path=/; Max-Age=31536000; SameSite=Lax";
+    } catch { /* cookies unavailable */ }
+    announce("Automatic setup prompts turned off.");
+    dismiss();
+  }, [announce, dismiss]);
 
   const finish = useCallback(() => {
     persistDismissal();
@@ -258,7 +266,7 @@ export function OnboardingOverlay({
   }, [announce, open, state]);
 
   useEffect(() => {
-    if (!open || !autoFinishWhenComplete || !state.complete || !runtimeReady) {
+    if (!open || !autoFinishWhenComplete || !state.complete) {
       autoFinishFiredRef.current = false;
       return;
     }
@@ -266,7 +274,7 @@ export function OnboardingOverlay({
     autoFinishFiredRef.current = true;
     const timer = setTimeout(finish, 700);
     return () => clearTimeout(timer);
-  }, [autoFinishWhenComplete, finish, open, runtimeReady, state.complete]);
+  }, [autoFinishWhenComplete, finish, open, state.complete]);
 
   if (!open) return null;
 
@@ -275,6 +283,7 @@ export function OnboardingOverlay({
 
   return (
     <>
+      <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop-scrim)] p-4">
       <div
         ref={dialogRef}
         role="dialog"
@@ -282,7 +291,7 @@ export function OnboardingOverlay({
         inert={diagnosticsOpen || undefined}
         aria-label="Set up Cave"
         tabIndex={-1}
-        className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[color-mix(in_oklch,var(--bg-base)_94%,transparent)] p-4 backdrop-blur-sm"
+        className="max-h-full min-h-0 w-full max-w-2xl overflow-y-auto rounded-[var(--radius-panel)]"
       >
       <section className="w-full max-w-2xl rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-[var(--shadow-elevated)]">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-hairline)] p-5">
@@ -333,9 +342,6 @@ export function OnboardingOverlay({
             ))}
           </ol>
 
-          {state.complete ? (
-            <OnboardingRuntimeStep open={open} onReadyChange={setRuntimeReady} />
-          ) : null}
 
           {running ? (
             <div className="grid gap-1 rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] p-3 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
@@ -422,16 +428,15 @@ export function OnboardingOverlay({
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-hairline)] p-5">
           <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {state.complete
-              ? runtimeReady
-                ? "Cave is ready."
-                : "Local setup is complete. Install a chat runtime to start a chat."
+              ? "Local setup is complete. Choose your assistant next."
               : running
                 ? "Setup continues if you close this dialog."
                 : started
                   ? "Setup is ready to resume."
                   : "No provider credentials or administrator access are requested."}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" onClick={suppressAutomaticSetup}>Don’t show again</Button>
             {state.complete ? (
               <Button
                 variant="secondary"
@@ -444,7 +449,7 @@ export function OnboardingOverlay({
             {!started && !state.complete ? (
               <>
                 <Button variant="ghost" onClick={dismiss}>
-                  Not now
+                  Close
                 </Button>
                 <Button
                   variant="primary"
@@ -455,15 +460,9 @@ export function OnboardingOverlay({
                 </Button>
               </>
             ) : state.complete ? (
-              runtimeReady ? (
-                <Button variant="primary" onClick={finish}>
-                  Open Cave
-                </Button>
-              ) : (
-                <Button variant="ghost" onClick={finish}>
-                  Not now
-                </Button>
-              )
+              <Button variant="primary" onClick={finish}>
+                Open Cave
+              </Button>
             ) : running ? (
               <Button variant="secondary" onClick={runInBackground}>
                 Run in background
@@ -472,6 +471,7 @@ export function OnboardingOverlay({
           </div>
         </footer>
       </section>
+      </div>
       </div>
       {state.failure?.diagnostics && diagnosticsOpen ? (
         <OnboardingSetupDiagnosticsModal

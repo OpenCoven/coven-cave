@@ -31,6 +31,7 @@ const SESSIONS = [
     runtime: "local:/tmp/coven-cave",
     exit_code: null,
     archived_at: null,
+    attention: { state: "none", since: null, reason: null },
     created_at: ISO,
     updated_at: ISO,
   },
