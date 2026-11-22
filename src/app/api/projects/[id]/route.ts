@@ -4,6 +4,8 @@ import { confirmProjectFolderWithHuman } from "@/lib/server/project-folder-confi
 import { NextResponse } from "next/server";
 
 import { deleteProject, loadProjects, patchProject } from "@/lib/cave-projects";
+import { resolveLaunchBlockers } from "@/lib/cave-board";
+import { projectFolderBlockerRef, projectFolderConfirmedEvidence } from "@/lib/task-launch-blockers";
 import {
   CavePrivateStateGrantError,
   privateStateRootChangeGuard,
@@ -50,6 +52,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
     const confirmed = await confirmProjectFolderWithHuman(id);
     if (!confirmed.ok) return NextResponse.json(confirmed, { status: confirmed.status });
+    // #6562: tasks refused for this unconfirmed folder now wait on nothing
+    // from it. Best-effort: the confirmation itself already succeeded.
+    try {
+      await resolveLaunchBlockers(
+        projectFolderBlockerRef(id),
+        projectFolderConfirmedEvidence(confirmed.project.name, new Date().toISOString()),
+      );
+    } catch {
+      /* a board write failure must not report a failed confirmation */
+    }
     return NextResponse.json({ ok: true, project: confirmed.project });
   }
 
