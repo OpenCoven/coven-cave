@@ -231,14 +231,16 @@ export async function GET(req: Request) {
   // Build (Full access) for a local Claude binding needs Coven's
   // `--write-scope`; the send route refuses it otherwise (#6393). Report that
   // here so Chat never offers a Build that can't run (#6445).
-  const claudeLocal = state.harness === "claude" && localBinding;
+  const buildLocalBinding =
+    !isSshRuntime(binding.runtime) && !state.runtime?.startsWith("ssh:");
+  const claudeLocal = state.harness === "claude" && buildLocalBinding;
   const [writeScopeSupported, permissionForwarding] = claudeLocal
     ? await Promise.all([
         covenRunSupportsWriteScope().catch(() => false),
         covenRunSupportsPermission().catch(() => false),
       ])
     : [true, true];
-  const buildAccess = chatBuildAccessFor({ harness: state.harness, localBinding, writeScopeSupported, permissionForwarding });
+  const buildAccess = chatBuildAccessFor({ harness: state.harness, localBinding: buildLocalBinding, writeScopeSupported, permissionForwarding });
   const controls = withForwardableRuntimeCliControls(
     modelControlCapabilities(state.harness, state.effectiveModel)
       .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
