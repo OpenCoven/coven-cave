@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 
 /**
  * cave-lcxc6 — a transient toast must never steal a persistent control's hit
@@ -167,9 +167,15 @@ test("a toast keeps its own controls reachable", async ({ page }) => {
 // column. This case holds the milestone back until Tasks has rendered, so the
 // toast lands on the surface it used to cover instead of racing its 8s
 // auto-hide through a cold `next dev` compile.
-test("a toast leaves a surface header's actions usable", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`a toast leaves a surface header's actions usable at ${viewport.width}px`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize(viewport);
+    await checkBoardFilterClearance(page, testInfo);
+  });
+}
+
+async function checkBoardFilterClearance(page: Page, testInfo: TestInfo) {
   // The server picks the onboarding gate or the workspace from this cookie
   // (src/app/page.tsx); localStorage alone only covers the client.
   await page.context().addCookies([
@@ -244,7 +250,17 @@ test("a toast leaves a surface header's actions usable", async ({ page }, testIn
     const hit = await hitTest(page, box.x + box.width / 2, box.y + box.height / 2, ".ui-view-header-actions");
     expect(hit.matched, `elementFromPoint at "${name}" resolved to ${hit.describe}`).toBe(true);
   }
-});
+  const filter = actions.getByRole("button", { name: "Filter", exact: true });
+  await filter.click();
+  await expect(filter).toHaveAttribute("aria-expanded", "true");
+  const option = actions.getByRole("menuitemcheckbox").first();
+  await expect(option).toBeChecked();
+  await option.click();
+  await expect(option).not.toBeChecked();
+  await expect(toast).toBeVisible();
+  await toast.getByRole("button", { name: /^Dismiss:/ }).click();
+  await expect(toast).toBeHidden();
+}
 
 // #6142: the Relations toolbar sits below the surface header. A first-run
 // milestone covered Explore even though the shared header itself was clear.

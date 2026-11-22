@@ -15,9 +15,10 @@
 // maintainer to run. The runbook is docs/workflows/release-train.md.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { validateAcceptanceRecord } from "./release-acceptance.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPOSITORY = "OpenCoven/coven-cave";
@@ -43,9 +44,10 @@ export const PHASES = [
 export function deriveStatus(facts) {
   const { localVersion, mainVersion, published } = facts;
   if (mainVersion === published && localVersion === published) {
-    return facts.acceptanceRecords > 0
-      ? { phase: "preflight", summary: `v${published} is published and has an acceptance record. Nothing is stamped for the next release.` }
-      : { phase: "acceptance", summary: `v${published} is published, with no acceptance record in docs/release-acceptance-results yet.` };
+    if (facts.acceptance === "complete") {
+      return { phase: "preflight", summary: `v${published} passed acceptance. Nothing is stamped for the next release.` };
+    }
+    return { phase: "acceptance", summary: `v${published} is published. Acceptance status is ${facts.acceptance}.` };
   }
   if (mainVersion === published) {
     const pull = facts.stampPull ? `stamp PR #${facts.stampPull} is open` : "no stamp PR is open yet";
@@ -86,7 +88,7 @@ export function handoffRecord(facts) {
     ["Candidate tag", known(facts.candidateTags.at(-1))],
     ["Candidate run", known(facts.candidateRun?.url)],
     ["Release", known(facts.releaseUrl)],
-    ["Acceptance records", facts.acceptanceRecords > 0 ? String(facts.acceptanceRecords) : "not recorded"],
+    ["Acceptance", facts.acceptance],
     ["Rollout stage", "not recorded"],
     ["README screenshots", "not recorded"],
     ["Docs review", "not recorded"],
@@ -130,6 +132,21 @@ function peeledTag(tag) {
   return peeled ? peeled.split(/\s+/)[0] : null;
 }
 
+export function readAcceptance(directory, version, commit) {
+  let record;
+  try {
+    record = JSON.parse(readFileSync(path.join(directory, `v${version}.json`), "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return "not recorded";
+    if (error instanceof SyntaxError) return "invalid";
+    throw error;
+  }
+  const result = validateAcceptanceRecord(record);
+  if (result.errors.length) return "invalid";
+  if (record.candidate.version !== version || record.candidate.commit.toLowerCase() !== commit) return "unverified";
+  return result.status;
+}
+
 export function gatherFacts() {
   git(["fetch", "--quiet", "origin", "main"]);
   const localVersion = versionOf(readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -155,7 +172,7 @@ export function gatherFacts() {
   }
 
   const records = path.join(ROOT, "docs", "release-acceptance-results");
-  const acceptanceRecords = existsSync(records) ? readdirSync(records).filter((name) => name.includes(published)).length : 0;
+  const releaseCommit = peeledTag(`v${published}`);
   return {
     localVersion,
     mainVersion,
@@ -164,10 +181,10 @@ export function gatherFacts() {
     candidateTags,
     candidateRun,
     finalTag,
-    acceptanceRecords,
+    acceptance: readAcceptance(records, published, releaseCommit),
     openPulls: pulls.map((pull) => ({ number: pull.number, title: pull.title, draft: pull.draft })),
     commit: git(["rev-parse", "origin/main"]),
-    releaseCommit: peeledTag(`v${published}`),
+    releaseCommit,
     releaseUrl: latest.html_url,
   };
 }
@@ -256,11 +273,14 @@ const RUNNERS = {
     return ok;
   },
   acceptance({ facts, log }) {
-    log(`Acceptance records for v${facts.published}: ${facts.acceptanceRecords}.`);
-    log(`Start one with \`pnpm release:acceptance template ${facts.published}\`, run the journey on each OS, then`);
-    log("validate each record with `pnpm release:acceptance validate <record.json>`.");
+    log(`Acceptance for v${facts.published}: ${facts.acceptance}.`);
+    if (facts.acceptance !== "complete") {
+      if (facts.acceptance === "not recorded") log(`Start with \`pnpm release:acceptance template ${facts.published}\`.`);
+      nextLine(log, `review the three-OS results and run \`pnpm release:acceptance validate docs/release-acceptance-results/v${facts.published}.json\`.`);
+      return false;
+    }
     nextLine(log, "`pnpm release:train rollout --state <state.json>` before widening the audience.");
-    return facts.acceptanceRecords > 0;
+    return true;
   },
   rollout({ options, log }) {
     if (!options.state) {
