@@ -6379,7 +6379,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // In-place access actions (#6445). Each is an explicit press; none runs
   // from model output, and a grant is confirmed in the UI first.
   const accessProject =
-    selectedProject && !projectSelection.unregisteredRoot && selectedProject.access ? selectedProject : null;
+    selectedProject?.access ? selectedProject : null;
 
   // The access bar or strip button that had focus unmounts after its action.
   // Return focus to the composer only when that control held focus (keyboard
