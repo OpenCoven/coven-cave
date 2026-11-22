@@ -1204,20 +1204,18 @@ export function BoardView({
           </div>
 
           {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
-          {showGroupToggle ? (
-            <BoardFilterMenu
-              dimension={effectiveGroupBy === "project" ? "project" : "status"}
-              statusOptions={STATUSES.map((st) => ({ id: st, label: STATUS_TOOLBAR_LABELS[st], checked: !excludedStatus.has(st) }))}
-              projectOptions={projectFilterLabels.map((p) => ({ id: p, label: p, checked: !excludedProject.has(p) }))}
-              onToggleStatus={toggleStatusFilter}
-              onToggleProject={toggleProjectFilter}
-              onSelectAll={() => { setExcludedStatus(new Set()); setExcludedProject(new Set()); }}
-              activeCount={effectiveGroupBy === "project"
-                ? projectFilterLabels.filter((p) => !excludedProject.has(p)).length
-                : STATUSES.length - excludedStatus.size}
-              totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
-            />
-          ) : null}
+          <BoardFilterMenu
+            dimension={effectiveGroupBy === "project" ? "project" : "status"}
+            statusOptions={STATUSES.map((st) => ({ id: st, label: STATUS_TOOLBAR_LABELS[st], checked: !excludedStatus.has(st) }))}
+            projectOptions={projectFilterLabels.map((p) => ({ id: p, label: p, checked: !excludedProject.has(p) }))}
+            onToggleStatus={toggleStatusFilter}
+            onToggleProject={toggleProjectFilter}
+            onSelectAll={() => { setExcludedStatus(new Set()); setExcludedProject(new Set()); }}
+            activeCount={effectiveGroupBy === "project"
+              ? projectFilterLabels.filter((p) => !excludedProject.has(p)).length
+              : STATUSES.length - excludedStatus.size}
+            totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
+          />
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
