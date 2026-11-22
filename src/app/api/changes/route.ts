@@ -89,7 +89,7 @@ function childEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
 
 /** Run git via execFile (argument array, no shell interpolation). `env`
  *  adds to the server's own, for a commit's private index (#5795). */
-function git(cwd: string, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
+function git(cwd: TrustedRepoRoot, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync("git", args, {
     windowsHide: true,
     cwd,
@@ -102,7 +102,7 @@ function git(cwd: string, args: string[], env?: Record<string, string>): Promise
 /** Run git with `input` on stdin. Paths go through `--pathspec-from-file=-`
  *  this way, so a long list can't overrun the OS argument limit (#5756).
  *  Still execFile with an argument array: the promise carries its child. */
-function gitWithInput(cwd: string, args: string[], input: string, env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
+function gitWithInput(cwd: TrustedRepoRoot, args: string[], input: string, env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   const pending = execFileAsync("git", args, {
     windowsHide: true,
     cwd,
@@ -404,8 +404,10 @@ function stderrOf(err: unknown): string {
   return String(e?.message || err).trim();
 }
 
+type TrustedRepoRoot = string & { readonly __trustedRepoRoot: unique symbol };
+
 type RootResolution =
-  | { ok: true; repoRoot: string }
+  | { ok: true; repoRoot: TrustedRepoRoot }
   | { ok: false; status: number; error: string; notARepo?: boolean; missingRoot?: boolean };
 
 /** Validate projectRoot: absolute, exists, is a directory, is a git work tree.
@@ -438,10 +440,10 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
   if (!allowedRoot) {
     return { ok: false, status: 403, error: "path not allowed" };
   }
-  let real: string;
+  let real: TrustedRepoRoot;
   let stat: fs.Stats;
   try {
-    real = fs.realpathSync(path.resolve(allowedRoot));
+    real = fs.realpathSync(path.resolve(allowedRoot)) as TrustedRepoRoot;
     stat = fs.statSync(real);
   } catch {
     return { ok: false, status: 404, error: "projectRoot does not exist", missingRoot: true };
@@ -457,7 +459,7 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
     if (!(await isAllowed(repoRoot))) {
       return { ok: false, status: 403, error: "path not allowed" };
     }
-    return { ok: true, repoRoot };
+    return { ok: true, repoRoot: repoRoot as TrustedRepoRoot };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
