@@ -120,7 +120,7 @@ function gitWithInput(cwd: TrustedRepoRoot, args: string[], input: string, env?:
  *  that also matches `app/i/page.tsx`. Read-only (#5795): with stat-dirty
  *  files, a diff rewrote the index, `--no-optional-locks` or not, unless its
  *  refresh is off, and held the index lock an agent's `git add` needs. */
-function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function gitDiff(cwd: TrustedRepoRoot, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return git(cwd, ["--no-optional-locks", "-c", "diff.autoRefreshIndex=false", "--literal-pathspecs", "diff", ...PATCH_DIFF_ARGS, ...args]);
 }
 
@@ -128,7 +128,7 @@ function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr:
  *  without the index refresh that takes the index lock (#5795): every poll
  *  with stat-dirty files rewrote the index, where an agent's `git add` or
  *  `git commit` meeting it fails with "index.lock: File exists". */
-function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function gitStatus(cwd: TrustedRepoRoot, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return git(cwd, ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", ...args]);
 }
 
@@ -147,13 +147,13 @@ function timedOut(err: unknown): boolean {
 /** Commits, pushes and their read-backs: their hooks are stopped with them
  *  at the time limit (#5795), as a group, where the limit killed git alone
  *  and a hook went on changing the repository after the answer. */
-function gitLong(cwd: string, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
+function gitLong(cwd: TrustedRepoRoot, args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   return gitWithHooks(cwd, args, { env: childEnv(env), timeoutMs: netTimeoutMs(), maxBuffer: MAX_GIT_BUFFER });
 }
 /** Run the GitHub CLI (argument array, no shell) for PR creation: found on
  *  the user's tool PATH (#5795), where the desktop app's own PATH missed a
  *  Homebrew `gh`, and with the PR lookup's scrubbed environment. */
-async function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+async function ghCli(cwd: TrustedRepoRoot, args: string[]): Promise<{ stdout: string; stderr: string }> {
   const env = await githubCliSpawnEnvAsync();
   return execFileAsync("gh", args, { windowsHide: true, cwd, timeout: netTimeoutMs(), maxBuffer: MAX_GIT_BUFFER, env });
 }
@@ -162,7 +162,7 @@ const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;
 
 /** Current branch name, or "HEAD" when detached. Before the first commit
  *  (#5781), `rev-parse` can't name HEAD, so the symbolic ref does. */
-async function currentBranch(repoRoot: string): Promise<string> {
+async function currentBranch(repoRoot: TrustedRepoRoot): Promise<string> {
   try {
     const { stdout } = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
     return stdout.trim();
@@ -178,7 +178,7 @@ async function currentBranch(repoRoot: string): Promise<string> {
  *  `git worktree` checkout rather than the primary clone, else null. A linked
  *  worktree's --git-dir (.git/worktrees/<name>) differs from its
  *  --git-common-dir (the primary clone's .git). */
-async function worktreeName(repoRoot: string): Promise<string | null> {
+async function worktreeName(repoRoot: TrustedRepoRoot): Promise<string | null> {
   try {
     const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir"]);
     const [gitDir, commonDir] = stdout.trim().split("\n");
@@ -197,7 +197,7 @@ function worktreeNameOf(repoRoot: string, gitDir: string | undefined, commonDir:
 /** The current branch and linked-worktree name from one process (#5795):
  *  each summary poll ran a rev-parse for each. Before the first commit
  *  `--abbrev-ref HEAD` fails the whole call, and the two reads above answer. */
-async function branchAndWorktree(repoRoot: string): Promise<{ branch: string | null; worktree: string | null }> {
+async function branchAndWorktree(repoRoot: TrustedRepoRoot): Promise<{ branch: string | null; worktree: string | null }> {
   try {
     const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir", "--abbrev-ref", "HEAD"]);
     const [gitDir, commonDir, branch] = stdout.trim().split("\n");
@@ -219,7 +219,7 @@ const remoteHeadCache = new Map<string, { branch: string | null; at: number }>()
  *  with `git init` and pushed has none, so the desk committed on the real
  *  default and Create PR pushed to it. Null with no `origin`, or when it
  *  can't be asked without a prompt. */
-async function remoteHeadBranch(repoRoot: string): Promise<string | null> {
+async function remoteHeadBranch(repoRoot: TrustedRepoRoot): Promise<string | null> {
   const url = await originUrl(repoRoot);
   if (!url) return null;
   const key = `${repoRoot}\0${url}`;
@@ -236,7 +236,7 @@ async function remoteHeadBranch(repoRoot: string): Promise<string | null> {
   return branch;
 }
 
-async function defaultBranch(repoRoot: string): Promise<string> {
+async function defaultBranch(repoRoot: TrustedRepoRoot): Promise<string> {
   const remote = await remoteHeadBranch(repoRoot);
   if (remote) return remote;
   try {
@@ -255,7 +255,7 @@ async function defaultBranch(repoRoot: string): Promise<string> {
 }
 
 /** True when `ref` resolves to a commit in this repo. */
-async function refExists(repoRoot: string, ref: string): Promise<boolean> {
+async function refExists(repoRoot: TrustedRepoRoot, ref: string): Promise<boolean> {
   try {
     await git(repoRoot, ["rev-parse", "--verify", "--quiet", ref]);
     return true;
@@ -269,7 +269,7 @@ async function refExists(repoRoot: string, ref: string): Promise<boolean> {
  *  `feature/issue#12`, which git took, so Create PR answered "invalid
  *  expected branch" after every commit on one. `@{-1}` and the like expand to
  *  another name, so only a name git echoes back unchanged passes. */
-async function isGitBranchName(repoRoot: string, name: string): Promise<boolean> {
+async function isGitBranchName(repoRoot: TrustedRepoRoot, name: string): Promise<boolean> {
   if (!name || name.startsWith("-")) return false;
   try {
     const { stdout } = await git(repoRoot, ["check-ref-format", "--branch", name]);
@@ -280,18 +280,18 @@ async function isGitBranchName(repoRoot: string, name: string): Promise<boolean>
 }
 
 /** Where `git push origin` sends (#5795); "origin" when it can't be read. */
-async function originPushUrl(repoRoot: string): Promise<string> {
+async function originPushUrl(repoRoot: TrustedRepoRoot): Promise<string> {
   return git(repoRoot, ["remote", "get-url", "--push", "origin"]).then(({ stdout }) => stdout.trim() || "origin", () => "origin");
 }
 
 /** origin's URL as git and `gh` read it (`insteadOf` applied), or "" with no origin. */
-async function originUrl(repoRoot: string): Promise<string> {
+async function originUrl(repoRoot: TrustedRepoRoot): Promise<string> {
   return git(repoRoot, ["remote", "get-url", "origin"]).then(({ stdout }) => stdout.trim(), () => "");
 }
 
 /** Whether origin is a GitHub repository, for the panel's Create PR (#5795):
  *  it was offered for a GitLab, a bare or no remote, and pushed there. */
-async function originOnGitHub(repoRoot: string): Promise<boolean> {
+async function originOnGitHub(repoRoot: TrustedRepoRoot): Promise<boolean> {
   const url = await originUrl(repoRoot);
   return url ? isGitHubRemoteUrl(repoRoot, url).catch(() => false) : false;
 }
@@ -304,7 +304,7 @@ async function originOnGitHub(repoRoot: string): Promise<boolean> {
  * advice misled a GitLab user. The URL itself is never echoed: it can hold
  * a token.
  */
-async function pullRequestRefusal(repoRoot: string): Promise<{ status: number; error: string } | null> {
+async function pullRequestRefusal(repoRoot: TrustedRepoRoot): Promise<{ status: number; error: string } | null> {
   const url = await originUrl(repoRoot);
   if (!url) {
     return { status: 400, error: "this project has no origin remote, so there's nowhere to open a pull request; add a GitHub remote first" };
@@ -340,7 +340,7 @@ const MAX_BRANCH_ROWS = 40;
 /** Local branches (newest commit first, current branch pinned to the top)
  *  plus which worktree, if any, has each one checked out — powers the chat
  *  composer's branch menu. */
-async function listBranches(repoRoot: string) {
+async function listBranches(repoRoot: TrustedRepoRoot) {
   const [{ stdout: refsOut }, { stdout: wtOut }, current] = await Promise.all([
     git(repoRoot, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)"]),
     git(repoRoot, ["worktree", "list", "--porcelain"]),
@@ -544,7 +544,7 @@ function pathNotAllowed(): NextResponse {
 // parsePorcelainZ / parseNumstatZ / statusOf live in @/lib/git-changes so the
 // NUL/rename parsing can be unit-tested without next/server or a git process.
 
-async function isTracked(repoRoot: string, relPath: string): Promise<boolean> {
+async function isTracked(repoRoot: TrustedRepoRoot, relPath: string): Promise<boolean> {
   try {
     await git(repoRoot, ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", relPath]);
     return true;
@@ -555,7 +555,7 @@ async function isTracked(repoRoot: string, relPath: string): Promise<boolean> {
 
 /** True when <relPath> exists in the HEAD tree. False on an unborn branch
  *  (no HEAD) or when the path was never committed. */
-async function existsInHead(repoRoot: string, relPath: string): Promise<boolean> {
+async function existsInHead(repoRoot: TrustedRepoRoot, relPath: string): Promise<boolean> {
   try {
     await git(repoRoot, ["cat-file", "-e", `HEAD:${relPath}`]);
     return true;
@@ -567,7 +567,7 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
 /** The file's entry in the change list, or null when it isn't changed. A
  *  revert reads its status from here (#5781): a rename reverts as a whole,
  *  and a conflict is refused. */
-async function changedEntry(repoRoot: string, relPath: string): Promise<ChangedFile | null> {
+async function changedEntry(repoRoot: TrustedRepoRoot, relPath: string): Promise<ChangedFile | null> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   // Either Unicode form names the file (#5781): the tree reads names as the
   // disk stores them (NFD on macOS), while git reports them precomposed.
@@ -580,7 +580,7 @@ async function changedEntry(repoRoot: string, relPath: string): Promise<ChangedF
 /** The working tree as the status list sees it, with `path\0changeVersion`
  *  keys from the same stamps. A commit can name the list it was reviewed
  *  against and be refused when the tree has moved since (#5745). */
-async function changeSnapshot(repoRoot: string): Promise<{ files: ChangedFile[]; keys: string[] }> {
+async function changeSnapshot(repoRoot: TrustedRepoRoot): Promise<{ files: ChangedFile[]; keys: string[] }> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
   await stampChangedFiles(files, containedMetadata(repoRoot));
@@ -612,7 +612,7 @@ function expectedChangeKeys(raw: unknown): string[] | null | "invalid" | "too-ma
 
 /** The change list, shared by every caller polling this repository (#5795):
  *  one read at a time, kept for a moment; every write drops it. */
-async function listChanges(repoRoot: string): Promise<NextResponse> {
+async function listChanges(repoRoot: TrustedRepoRoot): Promise<NextResponse> {
   return NextResponse.json(await sharedChangeSummary(repoRoot, () => readChanges(repoRoot)));
 }
 
@@ -620,7 +620,7 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
  *  commit (#5807). A commit the client stopped waiting for is found landed
  *  in a later list; with these, its Create PR can be pinned to the exact
  *  commit when the subject shows it is the one that was sent. */
-async function headCommit(repoRoot: string): Promise<{ oid: string; subject: string } | null> {
+async function headCommit(repoRoot: TrustedRepoRoot): Promise<{ oid: string; subject: string } | null> {
   try {
     const { stdout } = await git(repoRoot, ["log", "-1", "--format=%H%x00%s", "HEAD", "--"]);
     const [oid, subject = ""] = stdout.replace(/\n$/, "").split("\0");
@@ -636,7 +636,7 @@ async function headCommit(repoRoot: string): Promise<{ oid: string; subject: str
  *  a cut list could not have been committed whole anyway. */
 const MAX_LISTED_CHANGES = MAX_EXPECTED_CHANGES;
 
-async function readChanges(repoRoot: string) {
+async function readChanges(repoRoot: TrustedRepoRoot) {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const changed = parsePorcelainZ(stdout);
   const truncated = changed.length > MAX_LISTED_CHANGES;
@@ -705,7 +705,7 @@ async function readChanges(repoRoot: string) {
  *  remounts on every chat open, and running `gh pr view` each time cost
  *  ~0.5 s per open and spent the shared GraphQL quota. The cache uses REST
  *  and is shared with the sessions list, so an open usually costs nothing. */
-async function branchPr(repoRoot: string): Promise<NextResponse> {
+async function branchPr(repoRoot: TrustedRepoRoot): Promise<NextResponse> {
   let branch: string | null = null;
   try {
     branch = await currentBranch(repoRoot);
@@ -730,7 +730,7 @@ async function branchPr(repoRoot: string): Promise<NextResponse> {
   return NextResponse.json({ ok: true, branch, pr: null });
 }
 
-async function diffFile(repoRoot: string, entry: ChangedFile): Promise<NextResponse> {
+async function diffFile(repoRoot: TrustedRepoRoot, entry: ChangedFile): Promise<NextResponse> {
   const relPath = entry.path;
   // A .env file's diff showed the secrets project-file redacts (#5795): it
   // says the file changed, and nothing of what's in it.
@@ -839,7 +839,7 @@ export async function GET(req: NextRequest) {
  *  or null — read-only probe behind the project-setup modal's GitHub prefill.
  *  Credential-bearing remotes (https://token@github.com/…) and non-GitHub
  *  remotes are stripped to null so secrets never reach the client. */
-async function originRemoteUrl(repoRoot: string): Promise<NextResponse> {
+async function originRemoteUrl(repoRoot: TrustedRepoRoot): Promise<NextResponse> {
   try {
     const { stdout } = await git(repoRoot, ["config", "--get", "remote.origin.url"]);
     const remoteUrl = stdout.trim();
@@ -853,7 +853,7 @@ async function originRemoteUrl(repoRoot: string): Promise<NextResponse> {
 
 /** Absolute path to this repo's checkpoint store (under .git so snapshots
  *  never themselves show up as worktree changes). */
-async function checkpointDirOf(repoRoot: string): Promise<string> {
+async function checkpointDirOf(repoRoot: TrustedRepoRoot): Promise<string> {
   const { stdout: gitDirOut } = await git(repoRoot, ["rev-parse", "--git-dir"]);
   const gitDirRaw = gitDirOut.trim();
   const gitDir = path.isAbsolute(gitDirRaw) ? gitDirRaw : path.resolve(/* turbopackIgnore: true */ repoRoot, gitDirRaw);
@@ -862,7 +862,7 @@ async function checkpointDirOf(repoRoot: string): Promise<string> {
 
 /** Validate a checkpoint name and resolve it inside the checkpoint dir.
  *  Returns null on a bad name or a path that escapes the dir. */
-async function resolveCheckpointPath(repoRoot: string, name: string): Promise<string | null> {
+async function resolveCheckpointPath(repoRoot: TrustedRepoRoot, name: string): Promise<string | null> {
   if (!isCheckpointName(name)) return null;
   // path.basename strips any directory component — a recognized path-injection
   // barrier and redundant with isCheckpointName (which already forbids slashes).
@@ -879,7 +879,7 @@ async function resolveCheckpointPath(repoRoot: string, name: string): Promise<st
  *  the whole working tree, and none was ever removed. */
 const CHECKPOINTS_KEPT = 50;
 
-async function checkpointChanges(repoRoot: string): Promise<{ path: string; skipped: string[] }> {
+async function checkpointChanges(repoRoot: TrustedRepoRoot): Promise<{ path: string; skipped: string[] }> {
   // Store snapshots under .git/coven-cave/checkpoints so the checkpoint never
   // creates new worktree changes.
   const checkpointDir = await checkpointDirOf(repoRoot);
@@ -907,7 +907,7 @@ function pruneCheckpoints(dir: string): void {
 type CheckpointMeta = { name: string; savedAt: string; bytes: number };
 
 /** List saved checkpoints, newest first. The stamp name sorts chronologically. */
-async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
+async function listCheckpoints(repoRoot: TrustedRepoRoot): Promise<CheckpointMeta[]> {
   const dir = await checkpointDirOf(repoRoot);
   let names: string[];
   try {
@@ -932,7 +932,7 @@ async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
 /** Bring back what a checkpoint holds, file by file (#5756). Files changed
  *  since it was taken are kept, and the state before restoring is itself
  *  saved as a checkpoint first, so the restore can be undone too. */
-async function restoreCheckpoint(repoRoot: string, abs: string): Promise<CheckpointRestoreOutcome> {
+async function restoreCheckpoint(repoRoot: TrustedRepoRoot, abs: string): Promise<CheckpointRestoreOutcome> {
   return restoreCheckpointPatch(repoRoot, abs, {
     contain: (relPath) => resolveContainedFile(repoRoot, relPath),
     beforeWrite: async () => (await checkpointChanges(repoRoot)).path,
@@ -995,7 +995,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function postAction(root: { repoRoot: string }, body: PostBody): Promise<NextResponse> {
+async function postAction(root: { repoRoot: TrustedRepoRoot }, body: PostBody): Promise<NextResponse> {
   const action = body.action ?? "revert";
   if (action === "checkpoint") {
     // Under the repository lock (#5795): its pruning could remove the
