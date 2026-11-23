@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "../fixtures/first-use";
 
 // Phone chat layout contracts from the interface review (#5527). Each one was
 // observed broken on origin/main 426f3d812 at 390×844:
@@ -54,6 +55,8 @@ async function openThread(page: Page) {
     localStorage.setItem("cave:workspace:project-scope:v1", "null");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Keep this layout contract independent of the first-use Explore default.
+    localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "full" }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
@@ -91,6 +94,13 @@ async function openThread(page: Page) {
   await page.route("**/api/chat/conversation/**", (route) =>
     route.fulfill({ json: { ok: true, conversation: { activeLeafId: "a-3", turns: turns() } } }),
   );
+  await installCompletedFirstUse(page, {
+    project: { id: "p-phone-layout", name: "Phone layout", root: "/tmp/coven-cave" },
+    familiarIds: ["nova"],
+    actingFamiliarId: "nova",
+    permissionMode: "full",
+    harness: "claude",
+  });
   await page.goto("/");
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
   // Same entry as tests/mobile/code-rail-sheet.spec.ts: re-dispatch inside the

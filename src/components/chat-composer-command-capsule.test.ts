@@ -13,8 +13,8 @@ const activityCss = read("../styles/cave-chat/activity.css");
 
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*?id:\s*"access"[\s\S]*?label:\s*"Access"[\s\S]*?value:\s*permissionMode[\s\S]*?value:\s*"read",\s*label:\s*"Explore · read only"[\s\S]*?value:\s*"full",\s*label:\s*"Build · full access"[\s\S]*?setPermissionMode\(value\)/,
-  "the functional access modes live in the low-profile Response options surface",
+  /const composerResponseSections:[\s\S]*?id:\s*"access"[\s\S]*?label:\s*"Access"[\s\S]*?value:\s*effectivePermissionMode[\s\S]*?value:\s*"read",\s*label:\s*"Explore · read only"[\s\S]*?value:\s*"full",\s*label:\s*"Build · full access"[\s\S]*?setPermissionMode\(value\);\s*setChatAccess\(null\);/,
+  "the functional access modes live in the low-profile Response options surface; the menu shows this chat's access and a pick sets the shared default and ends the chat's in-place override (#6445)",
 );
 assert.doesNotMatch(source, /cave-composer-mode-switch|cave-composer-mode-option/, "access mode should not consume the composer command rail");
 assert.match(

@@ -133,12 +133,20 @@ every write is refused, even with Full access selected.
 | `sandbox_mode` | Commands Codex runs can |
 |---|---|
 | `read-only` | Read files. `codex exec` uses this when the setting is absent. |
-| `workspace-write` | Also write in the folder the chat runs in and the folders Cave grants with `--add-dir`. |
+| `workspace-write` | Also write in the folder the chat runs in and the writable project folders Cave passes with `--add-dir`. |
 | `danger-full-access` | Run with no sandbox. |
 
 Which one to use is your choice, and Cave doesn't change that file. The #6049
 smoke test confirmed writes on both local servers with
 `sandbox_mode = "danger-full-access"` and `approval_policy = "never"`.
+
+Cave still applies its project grants first. A Full access turn in a project
+the familiar can only read is refused before Codex starts, on every runtime,
+so a writable `sandbox_mode` never makes that project writable (#6445). Chat
+then offers to give the familiar write access or to retry in Read only. Only
+projects the familiar can write are passed with `--add-dir`. Codex's sandbox
+can't protect a read-only project nested inside the folder a chat runs in,
+so keep a project you only want read outside a writable one.
 
 ## Beyond chat
 

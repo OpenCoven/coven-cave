@@ -94,7 +94,8 @@ import { readFile } from "node:fs/promises";
 {
   const source = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
   assert.match(source, /const usageLimit = code === "harness_usage_limit";/, "the strip recognizes the usage-limit code");
-  assert.match(source, /\{canRetry && !usageLimit \? \(/, "a quota failure hides the plain Retry");
+  assert.match(source, /\{canRetry && !usageLimit && !\(accessFix\?\.replacesRetry && accessFix\.actions\.length\) \? \(/, "a quota failure hides the plain Retry, and so does a read-only-project refusal whose fixes cover every way out (#6445)");
+assert.match(source, /replacesRetry: accessRefusal\.code === "project_write_access_required",/, "runtime write-scope blockers keep Retry, which follows a runtime switch (#6419)");
   assert.match(
     source,
     /code !== "harness_auth_configuration_required" && !usageLimit \? \(/,

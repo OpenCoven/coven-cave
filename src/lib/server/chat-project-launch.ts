@@ -135,6 +135,10 @@ export type ChatProjectLaunchErrorCode =
   | "project_root_unconfirmed"
   | "project_root_moved";
 
+/** Shown when a familiar's grant on the chat's project is gone. */
+export const PROJECT_ACCESS_REVOKED_MESSAGE =
+  "This familiar no longer has access to that project. Choose another project.";
+
 export class ChatProjectLaunchError extends Error {
   readonly code: ChatProjectLaunchErrorCode;
   readonly status: 400 | 403 | 409;
@@ -259,11 +263,7 @@ export async function authorizeChatProjectLaunch(
 
   const allowed = await deps.hasProjectAccess(input.familiarId, projectId, input.surface);
   if (!allowed) {
-    throw new ChatProjectLaunchError(
-      "project_access_denied",
-      403,
-      "This familiar no longer has access to that project. Choose another project.",
-    );
+    throw new ChatProjectLaunchError("project_access_denied", 403, PROJECT_ACCESS_REVOKED_MESSAGE);
   }
 
   const { name, pin, root: registeredRoot } = deps.projectRootPin(projectId);
