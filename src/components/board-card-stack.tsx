@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
+import { visibleStatusSections } from "@/lib/board-sections";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
@@ -67,7 +68,7 @@ export function BoardCardStack({
     select: selectFilter,
   } = useSurfaceHistory<FilterValue>({ id: "board:stack-filter", initial: "all", coalesceMs: 700 });
   const visibleSections = useMemo(
-    () => (hiddenStatuses?.size ? SECTIONS.filter((s) => !hiddenStatuses.has(s.id)) : SECTIONS),
+    () => visibleStatusSections(SECTIONS, hiddenStatuses),
     [hiddenStatuses],
   );
   // A tab the toolbar Filter has since excluded shows All rather than nothing.

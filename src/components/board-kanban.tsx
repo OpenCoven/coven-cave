@@ -8,6 +8,7 @@ import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { CaveProject } from "@/lib/cave-projects";
+import { NO_PROJECT_KEY, boardProjectKey, boardProjectLabel, compareBoardProjectSections, visibleStatusSections } from "@/lib/board-sections";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
@@ -71,15 +72,13 @@ type Props = {
   hiddenStatuses?: ReadonlySet<CardStatus>;
 };
 
-const NO_PROJECT_KEY = "__noproject__";
-
 function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: CaveProject[]): { key: string; label: string; cards: Card[] }[] {
   // Status grouping is the single full-height board (status → columns).
   if (by === "status") return [{ key: "all", label: "", cards }];
   // familiar / project grouping → one swimlane per group.
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : (c.projectId ?? NO_PROJECT_KEY);
+    const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : boardProjectKey(c);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
@@ -87,16 +86,12 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
     key,
     label: by === "familiar"
       ? (key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key))
-      : (key === NO_PROJECT_KEY ? "No project" : (projects.find((p) => p.id === key)?.name ?? key)),
+      : boardProjectLabel(key, projects),
     cards: grpCards,
   }));
   if (by === "project") {
     // Named projects alphabetically; the "No project" lane always last.
-    entries.sort((a, b) => {
-      if (a.key === NO_PROJECT_KEY) return 1;
-      if (b.key === NO_PROJECT_KEY) return -1;
-      return a.label.localeCompare(b.label);
-    });
+    entries.sort(compareBoardProjectSections);
   }
   return entries;
 }
@@ -194,7 +189,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const visibleColumns = useMemo(
-    () => (hiddenStatuses?.size ? COLUMNS.filter((col) => !hiddenStatuses.has(col.id)) : COLUMNS),
+    () => visibleStatusSections(COLUMNS, hiddenStatuses),
     [hiddenStatuses],
   );
   const columnIndex = useCallback(
