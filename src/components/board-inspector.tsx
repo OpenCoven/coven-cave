@@ -119,6 +119,11 @@ type Props = {
   /** Harness-failure recovery: rebind the card's familiar to this adapter and
    *  re-run the task-chat start (provided only when chatLinkError is this card's). */
   onUseHarnessFix?: (harnessId: string) => void | Promise<void>;
+  /** In-place folder confirmation for an unconfirmed-folder refusal (#6560),
+   *  provided only when chatLinkError is this card's and names a project. The
+   *  board-level banner sits behind this modal drawer, so it is offered here. */
+  onConfirmFolder?: () => void | Promise<void>;
+  confirmingFolder?: boolean;
 };
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
@@ -1705,7 +1710,7 @@ function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanc
 }
 
 
-export function BoardInspector({ card: listCard, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced: replaceListCard, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
+export function BoardInspector({ card: listCard, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced: replaceListCard, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix, onConfirmFolder, confirmingFolder = false }: Props) {
   // The board list leaves out Enhance proposal history (#5690), so the
   // inspector loads its card in full and refreshes it whenever the card
   // changes. Mutation responses carry the full card and update it directly,
@@ -2213,6 +2218,19 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
                       />
                     ) : null;
                   })()}
+                  {chatLinkError && onConfirmFolder ? (
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      leadingIcon="ph:seal-check"
+                      loading={confirmingFolder}
+                      disabled={chatLinking}
+                      className="mt-1 self-start"
+                      onClick={() => void onConfirmFolder()}
+                    >
+                      Confirm folder
+                    </Button>
+                  ) : null}
                 </span>
                 <div className="flex flex-col gap-1">
                   <button

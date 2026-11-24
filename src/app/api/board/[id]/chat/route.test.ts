@@ -186,8 +186,8 @@ assert.match(
 // changes the response.
 assert.match(
   source,
-  /const recordFolderBlocker = async \(error: ChatProjectLaunchError\) => \{\s*if \(error\.code !== "project_root_unconfirmed" \|\| !card\.projectId\) return;[\s\S]*?recordLaunchBlocker\(card\.id, \{\s*ref: projectFolderBlockerRef\(card\.projectId\),\s*kind: "human",/,
-  "only an unconfirmed folder on the task's own project is recorded, as a human-cleared blocker",
+  /const recordFolderBlocker = async \(error: ChatProjectLaunchError\) => \{[\s\S]*?const refusedProjectId = error\.projectId \?\? card\.projectId;\s*if \(error\.code !== "project_root_unconfirmed" \|\| !refusedProjectId\) return;[\s\S]*?recordLaunchBlocker\(card\.id, \{\s*ref: projectFolderBlockerRef\(refusedProjectId\),\s*kind: "human",/,
+  "only an unconfirmed folder is recorded, under the project the refusal names, as a human-cleared blocker",
 );
 const recordCalls = source.match(/if \(error instanceof ChatProjectLaunchError\) \{\s*await recordFolderBlocker\(error\);/g) ?? [];
 assert.equal(recordCalls.length, 2, "admission and the pre-launch recheck both record the refusal");

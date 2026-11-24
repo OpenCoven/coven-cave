@@ -100,11 +100,13 @@ export async function POST(
   // is recorded on the task once, so the board says what it waits on. The
   // Touch ID confirmation resolves it. Best-effort: never masks the refusal.
   const recordFolderBlocker = async (error: ChatProjectLaunchError) => {
-    if (error.code !== "project_root_unconfirmed" || !card.projectId) return;
-    const name = projects.find((project) => project.id === card.projectId)?.name ?? "";
+    // The refusal names its project; a card filed only by folder has none.
+    const refusedProjectId = error.projectId ?? card.projectId;
+    if (error.code !== "project_root_unconfirmed" || !refusedProjectId) return;
+    const name = projects.find((project) => project.id === refusedProjectId)?.name ?? "";
     try {
       await recordLaunchBlocker(card.id, {
-        ref: projectFolderBlockerRef(card.projectId),
+        ref: projectFolderBlockerRef(refusedProjectId),
         kind: "human",
         label: projectFolderBlockerLabel(name),
       });

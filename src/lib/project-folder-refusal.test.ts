@@ -31,3 +31,11 @@ test("a refusal without a usable project id yields none", () => {
     assert.equal(refusedUnconfirmedProjectId(body), null, JSON.stringify(body));
   }
 });
+
+test("the in-place message names the project and never points to settings", async () => {
+  const { confirmFolderInPlaceMessage } = await import(new URL("./project-folder-refusal.ts", import.meta.url).href);
+  assert.equal(confirmFolderInPlaceMessage("Nova"), "Confirm Nova’s folder to continue. Projects added before folder pinning need this once.");
+  assert.equal(confirmFolderInPlaceMessage("  "), "Confirm this project’s folder to continue. Projects added before folder pinning need this once.");
+  assert.equal(confirmFolderInPlaceMessage(), confirmFolderInPlaceMessage(null));
+  assert.doesNotMatch(confirmFolderInPlaceMessage("Nova"), /settings/);
+});

@@ -361,7 +361,7 @@ import {
   type ModelControlValues,
 } from "@/lib/model-control-capabilities";
 import { useProjects } from "@/lib/use-projects";
-import { refusedUnconfirmedProjectId } from "@/lib/project-folder-refusal";
+import { confirmFolderInPlaceMessage, refusedUnconfirmedProjectId } from "@/lib/project-folder-refusal";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
@@ -1104,8 +1104,8 @@ function ChatErrorStrip({
             <button
               type="button"
               onClick={onConfirmFolder}
-              disabled={confirmingFolder}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)] disabled:opacity-40"
+              disabled={confirmingFolder || busy}
+              className={primaryBtn}
             >
               <Icon name={confirmingFolder ? "ph:arrows-clockwise" : "ph:seal-check"} width={11} className={confirmingFolder ? "animate-spin" : undefined} aria-hidden />
               {confirmingFolder ? "Confirming…" : "Confirm folder"}
@@ -2649,6 +2649,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }));
   }, []);
   const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
+  const lastFailedSendRef = useRef<FailedSend | null>(null);
+  useEffect(() => {
+    lastFailedSendRef.current = lastFailedSend;
+  }, [lastFailedSend]);
   // The working directory of a send that failed the 403 project-access check —
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
@@ -2660,7 +2664,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [projectsFixNeeded, setProjectsFixNeeded] = useState(false);
   // The project the server refused as unconfirmed (409 project_root_unconfirmed
   // with its id): the error strip confirms that folder in place (#6560).
-  const [unconfirmedFolderProjectId, setUnconfirmedFolderProjectId] = useState<string | null>(null);
+  // The project a refusal asks a person to confirm, tied to the message it
+  // came with: the button shows only while that message is on screen (#6560).
+  const [folderConfirm, setFolderConfirm] = useState<{ projectId: string; message: string } | null>(null);
+  // Read after the Touch ID await in confirmFolderAndRetry: render values
+  // captured at click time can be stale by then (#6560).
+  const sendGenerationRef = useRef(0);
   const [confirmingFolder, setConfirmingFolder] = useState(false);
   // A project whose Write grant overlaps Cave's private state: Projects is
   // where that grant changes, so the error offers to open it there (#6451).
@@ -5674,13 +5683,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       },
     };
     const projectRootForRequest = requestedProjectRoot;
+    sendGenerationRef.current += 1;
     setBusy(true);
     setError(null);
     setDebugError(null);
     setLastFailedSend(null);
     setProjectAccessRoot(null);
     setProjectsFixNeeded(false);
-    setUnconfirmedFolderProjectId(null);
+    setFolderConfirm(null);
     setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
@@ -5980,13 +5990,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           (refusal?.code === "project_root_unconfirmed" || refusal?.code === "project_root_moved")
         ) {
           const folderProjectId = refusedUnconfirmedProjectId(refusal);
-          setUnconfirmedFolderProjectId(folderProjectId);
           setProjectsFixNeeded(!folderProjectId);
           surfacedMessage = refusal.code === "project_root_moved"
             ? "This project’s folder now resolves somewhere else. Confirm its folder in project settings before starting chat."
             : folderProjectId
-              ? "Confirm this project’s folder before starting chat. Projects added before folder pinning need this once."
+              ? confirmFolderInPlaceMessage()
               : "Confirm this project’s folder in project settings before starting chat. Projects added before folder pinning need this once.";
+          setFolderConfirm(folderProjectId ? { projectId: folderProjectId, message: surfacedMessage } : null);
         }
         // Missing, unregistered, and newly revoked project contexts all need a
         // fresh choice. Retry alone cannot repair them, so route every stable
@@ -6346,18 +6356,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // PUT /api/projects/[id] { confirmRoot } route and native Touch ID prompt as
   // project settings, so the server still decides. Only a confirmed folder
   // retries; a declined or unavailable prompt keeps the server's message.
+  //
+  // The Touch ID prompt can stay open while the person keeps working, so the
+  // retry is bound to what was failing when they clicked: the same send
+  // generation, the same chat, and the same preserved message. If any of
+  // those moved on, the folder is still confirmed but nothing is resent.
   const confirmFolderAndRetry = async () => {
-    const projectId = unconfirmedFolderProjectId;
-    if (!projectId || confirmingFolder || busy) return;
+    const target = folderConfirm;
+    if (!target || target.message !== error || confirmingFolder || busy) return;
+    const generation = sendGenerationRef.current;
+    const chatSession = currentSessionRef.current;
+    const pending = lastFailedSend;
     setConfirmingFolder(true);
     try {
-      const result = await confirmRoot(projectId);
+      const result = await confirmRoot(target.projectId);
       if (!result.ok) {
+        // The strip is an alert region, so setting the error announces it.
+        // The same project stays confirmable beside the new message.
+        setFolderConfirm({ projectId: target.projectId, message: result.error });
         setError(result.error);
-        announce(result.error, "polite");
         return;
       }
-      setUnconfirmedFolderProjectId(null);
+      setFolderConfirm(null);
+      const stillPending =
+        pending !== null &&
+        sendGenerationRef.current === generation &&
+        currentSessionRef.current === chatSession &&
+        lastFailedSendRef.current === pending;
+      if (!stillPending) {
+        setError(null);
+        announce("Folder confirmed.", "polite");
+        return;
+      }
       announce("Folder confirmed. Retrying your message.", "polite");
       retryFailedSend();
     } finally {
@@ -9134,7 +9164,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
-          onConfirmFolder={unconfirmedFolderProjectId ? () => void confirmFolderAndRetry() : undefined}
+          onConfirmFolder={
+            folderConfirm && error === folderConfirm.message
+              ? () => void confirmFolderAndRetry()
+              : undefined
+          }
           confirmingFolder={confirmingFolder}
           onOpenProjects={
             projectsFixNeeded
@@ -9198,7 +9232,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setDebugError(null);
             setProjectAccessRoot(null);
             setProjectsFixNeeded(false);
-            setUnconfirmedFolderProjectId(null);
+            setFolderConfirm(null);
             setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);

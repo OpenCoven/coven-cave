@@ -18,8 +18,8 @@ assert.match(
 );
 assert.match(
   board,
-  /const folderProjectId = refusedUnconfirmedProjectId\(json\);\s*setChatLinkFolderConfirm\(folderProjectId \? \{ message, projectId: folderProjectId \} : null\);\s*throw new Error\(message\);/,
-  "only a server-named unconfirmed project becomes a confirm target, tied to that message",
+  /const folderProjectId = refusedUnconfirmedProjectId\(json\);[\s\S]{0,200}const message = folderProjectId\s*\? confirmFolderInPlaceMessage\(chatProjectById\(folderProjectId, projects\)\?\.name\)\s*: json\.error \?\? "failed to open task work";\s*setChatLinkFolderConfirm\(folderProjectId \? \{ message, projectId: folderProjectId \} : null\);\s*throw new Error\(message\);/,
+  "only a server-named unconfirmed project becomes a confirm target, tied to in-place copy that matches its button",
 );
 
 const handlerIndex = board.indexOf("const confirmTaskFolderAndRetry = async");
@@ -32,6 +32,12 @@ assert.match(
   /if \(!result\.ok\) \{[\s\S]*setChatLinkError\(result\.error\);[\s\S]*return;[\s\S]*\}[\s\S]*await openTaskWork\(id\);/,
   "a declined or unavailable confirmation shows the server's message and never re-runs the task chat",
 );
+// Another task chat can start during the Touch ID prompt; the confirmation
+// then reopens nothing (#6560 review).
+assert.match(handler, /const attempt = taskChatAttemptRef\.current;/);
+assert.match(handler, /if \(taskChatAttemptRef\.current !== attempt\) \{[\s\S]*?return;\s*\}[\s\S]*await openTaskWork\(id\);/, "a stale confirmation never reopens a card");
+assert.match(board, /if \(!firstUse\.ensureIntroduction\(\)\) return null;\s*taskChatAttemptRef\.current \+= 1;/, "every task-chat start bumps the attempt");
+assert.doesNotMatch(handler, /announce\(result\.error/, "the alert banner already announces a failure");
 
 assert.match(
   board,
