@@ -100,6 +100,7 @@
 .board-filter-caret { flex-shrink:0; color:var(--text-muted); transition:transform .15s; }
 .board-filter-caret--open { transform:rotate(180deg); }
 .board-filter-menu { position:absolute; top:42px; right:0; width:262px; background:var(--popover); border:1px solid var(--border-hairline); border-radius:var(--radius-control); box-shadow:0 14px 36px -10px color-mix(in oklch,var(--shadow-color) 62%,transparent); padding:6px; z-index:46; max-height:420px; overflow-y:auto; }
+.board-filter-menu-group { margin-top:4px; padding-top:4px; border-top:1px solid var(--border-hairline); }
 .board-filter-menu-head { display:flex; align-items:center; justify-content:space-between; padding:6px 8px 5px; }
 .board-filter-menu-title { font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-muted); }
 .board-filter-selectall { background:transparent; border:0; color:var(--accent-presence); font-family:inherit; font-size:11.5px; cursor:pointer; padding:0; }

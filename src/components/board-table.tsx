@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
+import { boardProjectKey, boardProjectLabel, compareBoardProjectSections } from "@/lib/board-sections";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
@@ -41,8 +42,6 @@ function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familia
   });
 }
 
-const NO_PROJECT_KEY = "__noproject__";
-
 /** The group a card lands in for a given grouping — shared by the grouper and
  *  the keep-selection-visible logic so the two can never disagree. */
 function cardGroupKey(c: Card, by: GroupBy): string {
@@ -50,7 +49,7 @@ function cardGroupKey(c: Card, by: GroupBy): string {
     ? c.status
     : by === "familiar"
       ? (c.familiarId ?? "__unassigned__")
-      : (c.projectId ?? NO_PROJECT_KEY);
+      : boardProjectKey(c);
 }
 
 function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects: CaveProject[]): { key: string; label: string; cards: Card[] }[] {
@@ -65,7 +64,7 @@ function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects:
     if (by === "familiar") {
       label = key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key);
     } else if (by === "project") {
-      label = key === NO_PROJECT_KEY ? "No project" : (projects.find((p) => p.id === key)?.name ?? key);
+      label = boardProjectLabel(key, projects);
     } else {
       label = key.charAt(0).toUpperCase() + key.slice(1);
     }
@@ -75,11 +74,7 @@ function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects:
     entries.sort((a, b) => (STATUS_ORDER[a.key as CardStatus] ?? 9) - (STATUS_ORDER[b.key as CardStatus] ?? 9));
   } else if (by === "project") {
     // Named projects alphabetically; the "No project" bucket always last.
-    entries.sort((a, b) => {
-      if (a.key === NO_PROJECT_KEY) return 1;
-      if (b.key === NO_PROJECT_KEY) return -1;
-      return a.label.localeCompare(b.label);
-    });
+    entries.sort(compareBoardProjectSections);
   }
   return entries;
 }
