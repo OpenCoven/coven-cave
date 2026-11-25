@@ -178,10 +178,29 @@ export function BoardView({
   // turn. Once the normal chat path persists that local conversation, stop
   // treating this as a first-launch handoff so reopening the task never sends
   // the task prompt twice.
+  //
+  // That same moment is when the task's work has actually started, so a
+  // ready task moves to dispatched (Running) now, not when its chat was only
+  // reserved (#6562). The server re-checks readiness under the board lock and
+  // returns a waiting or untriaged task unchanged.
   useEffect(() => {
-    if (pendingBridgeStart && sessions.some((session) => session.id === pendingBridgeStart.sessionId)) {
-      setPendingBridgeStart(null);
-    }
+    if (!pendingBridgeStart || !sessions.some((session) => session.id === pendingBridgeStart.sessionId)) return;
+    const { cardId, sessionId } = pendingBridgeStart;
+    setPendingBridgeStart(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/board/${encodeURIComponent(cardId)}/lifecycle`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ to: "dispatched", onlyIfReady: true, reason: `Task chat started (session ${sessionId})` }),
+        });
+        const json = await res.json().catch(() => null) as { ok?: boolean; card?: Card } | null;
+        const card = json?.ok ? json.card : undefined;
+        if (card) setCards((prev) => prev.map((candidate) => candidate.id === card.id ? card : candidate));
+      } catch {
+        /* the chat is running either way; the next board load shows the card */
+      }
+    })();
   }, [pendingBridgeStart, sessions]);
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
@@ -948,6 +967,10 @@ export function BoardView({
           ? confirmFolderInPlaceMessage(chatProjectById(folderProjectId, projects)?.name)
           : json.error ?? "failed to open task work";
         setChatLinkFolderConfirm(folderProjectId ? { message, projectId: folderProjectId } : null);
+        // A refusal can record what the task now waits on (#6562); show it
+        // without waiting for a board reload, which the open drawer defers.
+        const refusedCard = json.card;
+        if (refusedCard) setCards((prev) => prev.map((candidate) => candidate.id === id ? refusedCard : candidate));
         throw new Error(message);
       }
       const updatedCard = json.card;

@@ -9,9 +9,12 @@ export function projectFolderBlockerRef(projectId: string): string {
   return `project-folder:${projectId}`;
 }
 
-export function projectFolderBlockerLabel(projectName: string): string {
-  const name = projectName.trim() || "this project";
-  return `Confirm ${name}’s project folder so this task can start`;
+export function projectFolderBlockerLabel(projectName: string, moved = false): string {
+  const name = projectName.trim();
+  const owner = name ? `${name}’s` : "this project’s";
+  return moved
+    ? `Confirm where ${owner} folder moved so this task can start`
+    : `Confirm ${owner} folder so this task can start`;
 }
 
 export function projectFolderConfirmedEvidence(projectName: string, at: string): string {

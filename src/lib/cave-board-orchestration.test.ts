@@ -863,7 +863,7 @@ const launchB = await board.createCard({ title: "Launch blocked B" });
 const blockedA = await board.recordLaunchBlocker(launchA.id, {
   ref: folderRef,
   kind: "human",
-  label: "Confirm Nova’s project folder so this task can start",
+  label: "Confirm Nova’s folder so this task can start",
 });
 assert.equal(blockedA?.lifecycle, "queued", "recording a launch blocker never changes the lifecycle");
 assert.equal(blockedA?.status, launchA.status);
@@ -875,13 +875,13 @@ assert.equal(orchestration.deriveReadiness(blockedA!, (await board.loadBoard()).
 const again = await board.recordLaunchBlocker(launchA.id, {
   ref: folderRef,
   kind: "human",
-  label: "Confirm Nova’s project folder so this task can start",
+  label: "Confirm Nova’s folder so this task can start",
 });
 assert.equal(again?.dependencies?.filter((entry) => entry.ref === folderRef).length, 1, "a repeated refusal is not duplicated");
 await board.recordLaunchBlocker(launchB.id, {
   ref: folderRef,
   kind: "human",
-  label: "Confirm Nova’s project folder so this task can start",
+  label: "Confirm Nova’s folder so this task can start",
 });
 const resolvedIds = await board.resolveLaunchBlockers(folderRef, "Nova’s folder was confirmed");
 assert.deepEqual(resolvedIds.sort(), [launchA.id, launchB.id].sort());
@@ -902,5 +902,84 @@ assert.equal(
   (await board.loadBoard()).cards.find((card) => card.id === humanRef.id)?.dependencies?.[0]?.state,
   "unresolved",
 );
+
+// ── #6562 review: dispatch only a ready, triaged task, decided in the lock ──
+const dispatchable = await board.createCard({ title: "Ready to dispatch" });
+const notYet = await board.transitionCard(dispatchable.id, { to: "dispatched", onlyIf: () => false });
+assert.equal(notYet?.lifecycle, "queued", "a false guard returns the card unchanged");
+assert.equal(board.readyToDispatch(dispatchable, (await board.loadBoard()).cards), true);
+const inboxTask = await board.createCard({ title: "Untriaged", status: "inbox" });
+assert.equal(inboxTask.status, "inbox");
+assert.equal(board.readyToDispatch(inboxTask, (await board.loadBoard()).cards), false, "an Inbox task is not dispatched by opening its chat");
+const approvalTask = await board.createCard({ title: "Needs approval", nextStep: humanNextStep });
+assert.equal(board.readyToDispatch(approvalTask, (await board.loadBoard()).cards), false, "a pending approval blocks dispatch");
+const waitingTask = await board.createCard({ title: "Waiting", dependencies: [{ ...blocker, id: "waiting-dep" }] });
+assert.equal(board.readyToDispatch(waitingTask, (await board.loadBoard()).cards), false, "a task that waits on something is not dispatched");
+// The guard sees the latest card: a blocker added after a stale check still wins.
+const raced = await board.createCard({ title: "Raced" });
+const staleCheck = board.readyToDispatch(raced, (await board.loadBoard()).cards);
+await board.updateCard(raced.id, { dependencies: [{ ...blocker, id: "raced-dep" }] });
+assert.equal(staleCheck, true);
+const racedResult = await board.transitionCard(raced.id, { to: "dispatched", onlyIf: board.readyToDispatch });
+assert.equal(racedResult?.lifecycle, "queued", "the in-lock guard sees the blocker added after the stale check");
+const dispatchedNow = await board.transitionCard(dispatchable.id, { to: "dispatched", onlyIf: board.readyToDispatch });
+assert.equal(dispatchedNow?.lifecycle, "dispatched");
+
+// ── #6562 review: retry keeps the step for a blocker that is still open ─────
+const humanDep = { ...blocker, id: "still-open" };
+const mixed = await board.createCard({
+  title: "Fails while also waiting on a person",
+  dependencies: [humanDep],
+  primaryBlockerId: humanDep.id,
+  primaryBlockerPinned: true,
+  status: "blocked",
+  nextStep: { summary: humanDep.label, requiresApproval: true, origin: "system", updatedAt: now },
+});
+await board.transitionCard(mixed.id, { to: "cancelled", reason: "Stopped" });
+const mixedRetried = await board.transitionCard(mixed.id, { to: "queued" });
+assert.equal(mixedRetried?.dependencies?.find((d) => d.id === humanDep.id)?.state, "unresolved", "the person's blocker stays open");
+assert.equal(mixedRetried?.primaryBlockerId, humanDep.id);
+assert.equal(mixedRetried?.nextStep?.summary, humanDep.label, "the open blocker's step is restored, not dropped");
+assert.notEqual(mixedRetried?.nextStep?.summary, "Review the failed run and choose retry or repair");
+assert.equal(mixedRetried?.needsHuman, mixedRetried?.nextStep?.requiresApproval === true, "needsHuman follows the remaining step");
+
+// ── #6562 review: a launch blocker on a settled Blocked card becomes primary ─
+const settlingDep = { ...blocker, id: "settling" };
+const toSettle = await board.createCard({
+  title: "Blocked with settled blockers",
+  dependencies: [settlingDep],
+  primaryBlockerId: settlingDep.id,
+  status: "blocked",
+  nextStep: { summary: settlingDep.label, requiresApproval: true, origin: "system", updatedAt: now },
+});
+// Resolving the only blocker leaves the card Blocked with no open primary.
+const settledBlocked = await board.updateCard(toSettle.id, {
+  dependencies: [{ ...settlingDep, state: "resolved", evidence: "done", resolvedAt: now, resolvedBy: "cody" }],
+});
+assert.equal(settledBlocked?.status, "blocked");
+assert.equal(settledBlocked?.primaryBlockerId, null);
+const recordedOnBlocked = await board.recordLaunchBlocker(settledBlocked.id, {
+  ref: "project-folder:proj-settled", kind: "human", label: "Confirm Settled’s folder so this task can start",
+});
+const added = recordedOnBlocked?.dependencies?.find((d) => d.ref === "project-folder:proj-settled");
+assert.ok(added, "the blocker is recorded instead of being rejected by the blocked contract");
+assert.equal(recordedOnBlocked?.primaryBlockerId, added.id);
+assert.equal(recordedOnBlocked?.nextStep?.summary, added.label);
+assert.equal(recordedOnBlocked?.needsHuman, true);
+
+// ── #6562 review: moving a task to another project settles the old folder ──
+const moving = await board.createCard({ title: "Moves project" });
+await board.updateCard(moving.id, { projectId: "proj-old" }).catch(() => null);
+const beforeMove = (await board.loadBoard()).cards.find((c) => c.id === moving.id);
+if (beforeMove?.projectId === "proj-old") {
+  await board.recordLaunchBlocker(moving.id, { ref: "project-folder:proj-old", kind: "human", label: "Confirm Old’s folder so this task can start" });
+  const moved = await board.updateCard(moving.id, { projectId: null });
+  const oldDep = moved?.dependencies?.find((d) => d.ref === "project-folder:proj-old");
+  assert.equal(oldDep?.state, "resolved", "the old project's folder no longer blocks the task");
+  assert.match(oldDep?.evidence ?? "", /^Task moved to another project at /);
+  assert.equal(orchestration.deriveReadiness(moved!, (await board.loadBoard()).cards), "ready");
+} else {
+  assert.fail(`the test fixture could not assign a project: ${JSON.stringify(beforeMove?.projectId)}`);
+}
 
 console.log("cave-board-orchestration.test.ts OK");

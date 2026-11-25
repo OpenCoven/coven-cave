@@ -101,20 +101,31 @@ contract — there is no second, weaker path into Blocked.
 
 Retrying or re-queuing is that choice. Moving the task back to `queued`
 resolves the system `execution` dependencies with evidence ("Retried at …" or
-"Re-queued at …") and clears the system's next step, so the task can be
+"Re-queued at …") and drops the failure's own next step, so the task can be
 dispatched again. Human-written dependencies, pinned blockers, and next steps
-stay as they are (#6562).
+stay as they are. If another blocker is still open, its step comes back and
+the task still needs whoever it waits on (#6562).
 
 A launch refusal that only a person can clear is recorded the same way. When a
-task chat is refused because its project's folder is unconfirmed (#6215), the
-task gets one system dependency with ref `project-folder:<projectId>`. A
-repeat refusal doesn't add another. Confirming the folder resolves it on every
-task that carries it, and a declined confirmation resolves nothing. The
-lifecycle and column don't change; the task is just waiting.
+task chat is refused because its project's folder is unconfirmed or now
+resolves somewhere else (#6215), the task gets one system dependency with ref
+`project-folder:<projectId>`. A repeat refusal doesn't add another, and on a
+Blocked task whose other blockers are settled it becomes the primary blocker.
+It is resolved, on every task that carries it, by:
 
-Starting a task chat dispatches a task only when it is `queued`, ready, and
-has no next step awaiting approval. A task that is waiting can still have its
-chat opened to discuss it.
+- confirming the folder, or a person-confirmed root change;
+- any later launch that passes the folder check;
+- moving the task to another project, or removing the project.
+
+A declined confirmation resolves nothing. Recording never changes the
+lifecycle or column; the task is just waiting.
+
+Starting work dispatches a task only when it is `queued`, triaged (not in
+Inbox), ready, and has no next step awaiting approval. The check runs inside
+the board lock. A daemon session dispatches when it is created, because it
+starts with the task prompt. A native Chat task dispatches once its first
+prompt lands. Opening a waiting or untriaged task's chat to discuss it
+doesn't dispatch it.
 
 ## What Enhance may and may not do
 
