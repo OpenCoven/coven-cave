@@ -33,7 +33,7 @@ const nativeMock = registerHooks({
 try {
   const { loadProjects } = await import("@/lib/cave-projects");
   const { POST } = await import("./route.ts");
-  const { PUT, PATCH } = await import("./[id]/route.ts");
+  const { PUT, PATCH, DELETE } = await import("./[id]/route.ts");
   const { authorizeChatProjectLaunch, projectRootPinIn } = await import("@/lib/server/chat-project-launch");
   const { validateCaveProjectRoot } = await import("@/lib/server/project-paths");
   const { assertProjectAccess, grantProjectToFamiliar, revokeProjectFromFamiliar, ProjectAccessDeniedError } = await import("@/lib/project-permissions");
@@ -100,7 +100,7 @@ try {
     const board = await import("@/lib/cave-board");
     const { projectFolderBlockerRef } = await import("@/lib/task-launch-blockers");
     const task = await board.createCard({ title: "Task in the legacy project" });
-    await board.recordLaunchBlocker(task.id, { ref: projectFolderBlockerRef(created.id), kind: "human", label: "Confirm Legacy’s project folder so this task can start" });
+    await board.recordLaunchBlocker(task.id, { ref: projectFolderBlockerRef(created.id), kind: "human", label: "Confirm Legacy’s folder so this task can start" });
     const folderBlocker = async () => (await board.loadBoard()).cards.find((card) => card.id === task.id)
       .dependencies.find((dependency) => dependency.ref === projectFolderBlockerRef(created.id));
     globalThis.__folderNativeApprove = false;
@@ -138,11 +138,28 @@ try {
     const { project: created } = await (await register({ name: "Mover", root: source })).json();
     const moved = path.join(base, "moved");
     fs.mkdirSync(moved);
+    // #6562: a task waiting on this project's folder stops waiting once a
+    // person confirms the new root, not only through the confirm button.
+    const board = await import("@/lib/cave-board");
+    const { projectFolderBlockerRef } = await import("@/lib/task-launch-blockers");
+    const ref = projectFolderBlockerRef(created.id);
+    const task = await board.createCard({ title: "Task in the moving project" });
+    await board.recordLaunchBlocker(task.id, { ref, kind: "human", label: "Confirm where Mover’s folder moved so this task can start" });
     const response = await PATCH(request(`http://localhost/api/projects/${created.id}`, "PATCH", { root: moved }), {
       params: Promise.resolve({ id: created.id }),
     });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).project.rootRealpath, fs.realpathSync.native(moved));
+    const blockerState = async (id) => (await board.loadBoard()).cards.find((card) => card.id === id)
+      .dependencies.find((dependency) => dependency.ref === ref)?.state;
+    assert.equal(await blockerState(task.id), "resolved", "a confirmed root change settles the folder blocker");
+
+    // Removing a project settles what its tasks waited on: it can never be confirmed.
+    const other = await board.createCard({ title: "Another task in it" });
+    await board.recordLaunchBlocker(other.id, { ref, kind: "human", label: "Confirm Mover’s folder so this task can start" });
+    const removed = await DELETE(request(`http://localhost/api/projects/${created.id}`, "DELETE"), { params: Promise.resolve({ id: created.id }) });
+    assert.equal(removed.status, 200);
+    assert.equal(await blockerState(other.id), "resolved", "deleting the project settles its folder blocker");
   });
 
   await test("confirming a missing folder fails and keeps the previous pin", async () => {

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
-import { loadBoard, recordLaunchBlocker, transitionCard, updateCard, type Card } from "@/lib/cave-board";
-import { deriveReadiness } from "@/lib/task-orchestration";
-import { projectFolderBlockerLabel, projectFolderBlockerRef } from "@/lib/task-launch-blockers";
+import { loadBoard, readyToDispatch, recordLaunchBlocker, resolveLaunchBlockers, transitionCard, updateCard, type Card } from "@/lib/cave-board";
+import { projectFolderBlockerLabel, projectFolderBlockerRef, projectFolderConfirmedEvidence } from "@/lib/task-launch-blockers";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
@@ -96,47 +95,53 @@ export async function POST(
   let projectRoot: string | null = null;
   const projects = await loadProjects();
 
-  // #6562: a refusal only a person can clear (an unconfirmed folder, #6215)
-  // is recorded on the task once, so the board says what it waits on. The
-  // Touch ID confirmation resolves it. Best-effort: never masks the refusal.
-  const recordFolderBlocker = async (error: ChatProjectLaunchError) => {
+  // #6562: a refusal only a person can clear is recorded on the task once,
+  // so the board says what it waits on: a folder never confirmed (#6215), or
+  // one that now resolves somewhere else. Both are cleared by confirming the
+  // folder, and a later successful launch check resolves the blocker too.
+  // Best-effort: never masks the refusal. Returns the updated card so the
+  // refusal can carry it to the Board without waiting for a reload.
+  const recordFolderBlocker = async (
+    error: ChatProjectLaunchError,
+    knownProjectId: string | null = null,
+  ): Promise<Card | null> => {
+    if (error.code !== "project_root_unconfirmed" && error.code !== "project_root_moved") return null;
     // The refusal names its project; a card filed only by folder has none.
-    const refusedProjectId = error.projectId ?? card.projectId;
-    if (error.code !== "project_root_unconfirmed" || !refusedProjectId) return;
+    const refusedProjectId = error.projectId ?? knownProjectId ?? card.projectId;
+    if (!refusedProjectId) return null;
     const name = projects.find((project) => project.id === refusedProjectId)?.name ?? "";
     try {
-      await recordLaunchBlocker(card.id, {
+      return await recordLaunchBlocker(card.id, {
         ref: projectFolderBlockerRef(refusedProjectId),
         kind: "human",
-        label: projectFolderBlockerLabel(name),
+        label: projectFolderBlockerLabel(name, error.code === "project_root_moved"),
       });
-    } catch {
-      /* the refusal itself is the authoritative answer */
+    } catch (recordError) {
+      console.warn(`[board-chat] could not record the folder blocker on ${card.id}:`, recordError instanceof Error ? recordError.message : recordError);
+      return null;
     }
   };
+  const refusal = (error: ChatProjectLaunchError, recorded: Card | null) =>
+    NextResponse.json(
+      { ...chatProjectLaunchRefusalBody(error), ...(recorded ? { card: recorded } : {}) },
+      { status: error.status },
+    );
 
-  // #6562: a started task chat moves a ready, queued task to dispatched, so
-  // the board shows it under Running. A task waiting on a blocker or on an
-  // approval-bound next step keeps its lifecycle: opening its chat to
-  // discuss it is not dispatching it.
+  // #6562: a started daemon session dispatches a ready, queued, triaged task,
+  // so the board shows it under Running. The check runs inside the board
+  // lock. A native Chat reservation has not sent the prompt yet; the Board
+  // dispatches it once the first send lands (lifecycle `onlyIfReady`).
   const markTaskStarted = async (started: Card, sessionId: string): Promise<Card> => {
     try {
-      const latest = await loadBoard();
-      const current = latest.cards.find((candidate) => candidate.id === started.id);
-      if (
-        !current ||
-        current.lifecycle !== "queued" ||
-        current.nextStep?.requiresApproval ||
-        deriveReadiness(current, latest.cards) !== "ready"
-      ) {
-        return started;
-      }
-      return (await transitionCard(current.id, {
+      return (await transitionCard(started.id, {
         to: "dispatched",
         reason: `Task chat started (session ${sessionId})`,
+        onlyIf: readyToDispatch,
       })) ?? started;
-    } catch {
-      return started; // The chat started; a lifecycle refusal must not undo that.
+    } catch (error) {
+      // The chat started; a lifecycle refusal must not undo that.
+      console.warn(`[board-chat] could not dispatch ${started.id}:`, error instanceof Error ? error.message : error);
+      return started;
     }
   };
 
@@ -222,10 +227,24 @@ export async function POST(
     authorizedProjectId = authorized.projectId;
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
-      await recordFolderBlocker(error);
-      return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
+      return refusal(error, await recordFolderBlocker(error));
     }
     throw error;
+  }
+
+  // #6562: the folder passed the pin check, so any task waiting on it to be
+  // confirmed waits no longer, however it was confirmed (the confirm button,
+  // a Touch ID root change, or settings). Idempotent and best-effort.
+  if (authorizedProjectId) {
+    const folderRef = projectFolderBlockerRef(authorizedProjectId);
+    if (card.dependencies?.some((dependency) => dependency?.ref === folderRef && dependency.state === "unresolved")) {
+      const name = projects.find((project) => project.id === authorizedProjectId)?.name ?? "";
+      try {
+        await resolveLaunchBlockers(folderRef, projectFolderConfirmedEvidence(name, new Date().toISOString()));
+      } catch (error) {
+        console.warn(`[board-chat] could not resolve ${folderRef}:`, error instanceof Error ? error.message : error);
+      }
+    }
   }
 
   const recheckProjectRoot = async (expectedRoot = projectRoot): Promise<Response | null> => {
@@ -236,8 +255,7 @@ export async function POST(
       return null;
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) {
-        await recordFolderBlocker(error);
-        return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
+        return refusal(error, await recordFolderBlocker(error, authorizedProjectId));
       }
       throw error;
     }
@@ -388,11 +406,10 @@ export async function POST(
       recordSessionFamiliar(sessionId, familiarId),
       setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
     ]);
-    const started = await markTaskStarted(updated, sessionId);
     return NextResponse.json({
       ok: true,
       reused: false,
-      card: started,
+      card: updated,
       sessionId,
       familiarId,
       projectRoot: sessionRoot,

@@ -181,25 +181,35 @@ assert.match(
   "a malformed persisted Hermes profile binding blocks task launch instead of degrading to sticky Hermes",
 );
 
-// #6562: an unconfirmed-folder refusal is recorded on the task (once, keyed by
-// project) on both the admission and the pre-launch recheck paths, and never
-// changes the response.
-assert.match(
-  source,
-  /const recordFolderBlocker = async \(error: ChatProjectLaunchError\) => \{[\s\S]*?const refusedProjectId = error\.projectId \?\? card\.projectId;\s*if \(error\.code !== "project_root_unconfirmed" \|\| !refusedProjectId\) return;[\s\S]*?recordLaunchBlocker\(card\.id, \{\s*ref: projectFolderBlockerRef\(refusedProjectId\),\s*kind: "human",/,
-  "only an unconfirmed folder is recorded, under the project the refusal names, as a human-cleared blocker",
-);
-const recordCalls = source.match(/if \(error instanceof ChatProjectLaunchError\) \{\s*await recordFolderBlocker\(error\);/g) ?? [];
-assert.equal(recordCalls.length, 2, "admission and the pre-launch recheck both record the refusal");
+// #6562: a folder refusal a person must clear (unconfirmed, or moved) is
+// recorded on the task once, keyed by the project the refusal names, on both
+// the admission and the pre-launch recheck paths. The refusal carries the
+// updated card, and recording never changes its status or code.
+const recordBlock = source.slice(source.indexOf("const recordFolderBlocker = async"), source.indexOf("const refusal = ("));
+assert.match(recordBlock, /if \(error\.code !== "project_root_unconfirmed" && error\.code !== "project_root_moved"\) return null;/, "only folder refusals a person clears are recorded");
+assert.match(recordBlock, /const refusedProjectId = error\.projectId \?\? knownProjectId \?\? card\.projectId;/, "the blocker names the refused project");
+assert.match(recordBlock, /recordLaunchBlocker\(card\.id, \{\s*ref: projectFolderBlockerRef\(refusedProjectId\),\s*kind: "human",\s*label: projectFolderBlockerLabel\(name, error\.code === "project_root_moved"\),/);
+assert.match(recordBlock, /console\.warn\(/, "a failed write is logged, not silently dropped");
+assert.match(source, /const refusal = \(error: ChatProjectLaunchError, recorded: Card \| null\) =>\s*NextResponse\.json\(\s*\{ \.\.\.chatProjectLaunchRefusalBody\(error\), \.\.\.\(recorded \? \{ card: recorded \} : \{\}\) \},\s*\{ status: error\.status \},/, "the refusal keeps its body and status and adds the updated card");
+assert.match(source, /return refusal\(error, await recordFolderBlocker\(error\)\);/, "admission records the refusal");
+assert.match(source, /return refusal\(error, await recordFolderBlocker\(error, authorizedProjectId\)\);/, "the pre-launch recheck records the refusal");
 
-// #6562: a started task chat dispatches a ready queued task, from both the
-// native reservation and the daemon session, and never one waiting on a
-// blocker or an approval-bound next step.
+// #6562: a launch that passes the pin check resolves the task's wait on that
+// folder however it was confirmed. It runs only after authorization.
+const resolveIndex = source.indexOf("await resolveLaunchBlockers(folderRef");
+assert.ok(resolveIndex > source.indexOf("authorizedProjectId = authorized.projectId;"), "resolution follows a passing launch check");
+assert.ok(resolveIndex < source.indexOf("const recheckProjectRoot"), "resolution happens before any launch work");
+
+// #6562: only a started daemon session dispatches here, and only a ready,
+// triaged task, decided inside the board lock. A native Chat reservation has
+// not sent the prompt; the Board dispatches it once the first send lands.
 const markStart = source.slice(source.indexOf("const markTaskStarted = async"), source.indexOf("const reserveNativeChatTask"));
-assert.match(markStart, /current\.lifecycle !== "queued" \|\|\s*current\.nextStep\?\.requiresApproval \|\|\s*deriveReadiness\(current, latest\.cards\) !== "ready"/, "only a ready queued task without a pending approval is dispatched");
-assert.match(markStart, /transitionCard\(current\.id, \{\s*to: "dispatched",/, "dispatch goes through the lifecycle state machine");
-assert.match(markStart, /\} catch \{\s*return started;/, "a lifecycle refusal never undoes a started chat");
-assert.equal((source.match(/const started = await markTaskStarted\(updated, sessionId\);/g) ?? []).length, 2, "both launch paths mark the task started");
+assert.match(markStart, /transitionCard\(started\.id, \{\s*to: "dispatched",\s*reason: `Task chat started \(session \$\{sessionId\}\)`,\s*onlyIf: readyToDispatch,/, "dispatch goes through the guarded state machine");
+assert.doesNotMatch(markStart, /loadBoard\(\)/, "no readiness check outside the lock");
+assert.match(markStart, /\} catch \(error\) \{[\s\S]*?return started;/, "a lifecycle refusal never undoes a started chat");
+assert.equal((source.match(/const started = await markTaskStarted\(updated, sessionId\);/g) ?? []).length, 1, "only the daemon path dispatches at start");
+const reserve = source.slice(source.indexOf("const reserveNativeChatTask"), source.indexOf("// OpenClaw has no daemon adapter"));
+assert.doesNotMatch(reserve, /markTaskStarted/, "a native reservation never dispatches before its prompt is sent");
 
 // #6562: daemon offline is the only daemon failure that falls back, and only
 // on this computer for a trusted runtime. A timeout may have created the

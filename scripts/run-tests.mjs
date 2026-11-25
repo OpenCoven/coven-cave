@@ -1553,6 +1553,7 @@ export const SUITES = {
     "src/components/board-confirm-folder.test.ts",
     "src/components/board-filter-hidden-sections.test.ts",
     "src/lib/board-sections.test.ts",
+    "src/components/board-task-dispatch.test.ts",
     "src/components/board-inspector-debug.test.ts",
     "src/components/board-view-display.test.ts",
     "src/components/calendar-view-primitives.test.ts",
@@ -1649,6 +1650,7 @@ export const SUITES = {
     "src/lib/server/global-npm-install-lane.test.ts",
     "src/app/api/cave-home-migration/route.test.ts",
     "src/app/api/board/[id]/enhance/route.test.ts",
+    "src/app/api/board/[id]/lifecycle/route.test.ts",
     "src/app/api/queue/readiness/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/lib/server/voice-chat-create.test.ts",
@@ -2525,6 +2527,7 @@ const ALIAS_LOADER = new Set([
   // imports both board routes through the @/ alias (#5690)
   "src/app/api/board/board-list-lean-route.test.ts",
   "src/app/api/board/[id]/enhance/route.test.ts",
+  "src/app/api/board/[id]/lifecycle/route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint

@@ -18,8 +18,14 @@ assert.match(
 );
 assert.match(
   board,
-  /const folderProjectId = refusedUnconfirmedProjectId\(json\);[\s\S]{0,200}const message = folderProjectId\s*\? confirmFolderInPlaceMessage\(chatProjectById\(folderProjectId, projects\)\?\.name\)\s*: json\.error \?\? "failed to open task work";\s*setChatLinkFolderConfirm\(folderProjectId \? \{ message, projectId: folderProjectId \} : null\);\s*throw new Error\(message\);/,
+  /const folderProjectId = refusedUnconfirmedProjectId\(json\);[\s\S]{0,200}const message = folderProjectId\s*\? confirmFolderInPlaceMessage\(chatProjectById\(folderProjectId, projects\)\?\.name\)\s*: json\.error \?\? "failed to open task work";\s*setChatLinkFolderConfirm\(folderProjectId \? \{ message, projectId: folderProjectId \} : null\);[\s\S]{0,400}throw new Error\(message\);/,
   "only a server-named unconfirmed project becomes a confirm target, tied to in-place copy that matches its button",
+);
+
+assert.match(
+  board,
+  /const refusedCard = json\.card;\s*if \(refusedCard\) setCards\(\(prev\) => prev\.map\(\(candidate\) => candidate\.id === id \? refusedCard : candidate\)\);\s*throw new Error\(message\);/,
+  "a refusal applies the card it recorded a blocker on (#6562)",
 );
 
 const handlerIndex = board.indexOf("const confirmTaskFolderAndRetry = async");

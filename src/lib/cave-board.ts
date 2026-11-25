@@ -51,8 +51,10 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   assertValidOrchestration,
   dependenciesOf,
+  deriveReadiness,
   validateOrchestration,
 } from "@/lib/task-orchestration";
+import { projectFolderBlockerRef } from "@/lib/task-launch-blockers";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -1523,6 +1525,15 @@ async function updateCardLocked(
   } else {
     delete next.predatesDependencies;
   }
+  // A task moved to another project no longer waits on the old project's
+  // folder (#6562). Only the Cave's own launch blocker is resolved.
+  if (current.projectId && next.projectId !== current.projectId) {
+    const staleRef = projectFolderBlockerRef(current.projectId);
+    next.dependencies = (next.dependencies ?? []).map((dependency) =>
+      dependency?.ref === staleRef && dependency.origin === "system" && dependency.state === "unresolved"
+        ? { ...dependency, state: "resolved", resolvedAt: now, resolvedBy: "system", evidence: `Task moved to another project at ${now}` }
+        : dependency);
+  }
   const promotion = promoteResolvedPrimary(current, next, patch, now, options);
   if (statusChanged) next.needsHuman = next.status === "blocked";
   if (next.nextStep?.requiresApproval) next.needsHuman = true;
@@ -1597,7 +1608,27 @@ export type TransitionInput = {
   to: CardLifecycle;
   reason?: string;
   retry?: boolean;
+  /**
+   * Checked inside the board lock against the latest card. When it returns
+   * false the card is returned unchanged, so a guard can never race a
+   * concurrent write the way a check before the call can (#6562).
+   */
+  onlyIf?: (card: Card, cards: readonly Card[]) => boolean;
 };
+
+/**
+ * Whether starting a task's work may dispatch it: queued and triaged (not
+ * Inbox), no next step waiting on approval, and nothing it waits on (#6562).
+ * Opening a waiting or untriaged task's chat to discuss it is not dispatching.
+ */
+export function readyToDispatch(card: Card, cards: readonly Card[]): boolean {
+  return (
+    card.lifecycle === "queued" &&
+    card.status !== "inbox" &&
+    !card.nextStep?.requiresApproval &&
+    deriveReadiness(card, [...cards]) === "ready"
+  );
+}
 
 function executionDependency(
   to: "failed" | "cancelled",
@@ -1615,9 +1646,11 @@ function executionDependency(
   };
 }
 
+const FAILURE_NEXT_STEP_SUMMARY = "Review the failed run and choose retry or repair";
+
 function failureNextStep(now: string): TaskNextStep {
   return {
-    summary: "Review the failed run and choose retry or repair",
+    summary: FAILURE_NEXT_STEP_SUMMARY,
     requiresApproval: true,
     origin: "system",
     updatedAt: now,
@@ -1676,18 +1709,27 @@ function clearExecutionBlockers(next: Card, evidence: string, now: string): void
     next.primaryBlockerId = remaining?.id ?? null;
     next.primaryBlockerPinned = false;
   }
-  if (next.nextStep?.origin === "system") next.nextStep = null;
+  // Drop only the failure's own step. A failure replaced any system step
+  // derived from a blocker, so if one is still open, restore its step.
+  if (next.nextStep?.origin === "system" && next.nextStep.summary === FAILURE_NEXT_STEP_SUMMARY) {
+    next.nextStep = null;
+  }
+  const primary = next.dependencies.find(
+    (dependency) => dependency?.id === next.primaryBlockerId && dependency.state === "unresolved",
+  );
+  if (!next.nextStep && primary) next.nextStep = nextStepForDependency(primary, now);
 }
 
 export async function transitionCard(
   id: string,
-  { to, reason, retry }: TransitionInput,
+  { to, reason, retry, onlyIf }: TransitionInput,
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
   const current = board.cards[idx];
+  if (onlyIf && !onlyIf(current, board.cards)) return current;
   if (!VALID_NEXT[current.lifecycle]?.includes(to)) {
     throw new Error(`invalid transition: ${current.lifecycle} → ${to}`);
   }
@@ -1725,7 +1767,8 @@ export async function transitionCard(
     }
     clearExecutionBlockers(next, `${retry ? "Retried" : "Re-queued"} at ${now}`, now);
     next.status = "backlog";
-    next.needsHuman = false;
+    // Still needs a person only if a remaining step waits on their approval.
+    next.needsHuman = Boolean(next.nextStep?.requiresApproval);
   } else if (to === "cancelled") {
     const blocker = executionDependency(to, reason, now);
     applyExecutionBlocker(current, next, blocker, now);
@@ -1777,6 +1820,18 @@ export async function recordLaunchBlocker(
       updatedAt: now,
     };
     delete next.predatesDependencies;
+    // A Blocked card must name an open primary blocker and a next step. One
+    // whose blockers were all settled has neither, so the new one becomes it.
+    const added = next.dependencies![next.dependencies!.length - 1];
+    const hasOpenPrimary = dependencies.some(
+      (dependency) => dependency?.id === current.primaryBlockerId && dependency.state === "unresolved",
+    );
+    if (current.status === "blocked" && !hasOpenPrimary) {
+      next.primaryBlockerId = added.id;
+      next.primaryBlockerPinned = false;
+      if (next.nextStep?.origin !== "human") next.nextStep = nextStepForDependency(added, now);
+      if (next.nextStep?.requiresApproval) next.needsHuman = true;
+    }
     assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true });
     board.cards[idx] = next;
     await saveBoard(board, [next.id]);
@@ -1814,8 +1869,10 @@ export async function resolveLaunchBlockers(ref: string, evidence: string): Prom
       }
       try {
         assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true, allowReadyBlocked: true });
-      } catch {
-        return current; // Leave a card the contract would reject untouched.
+      } catch (error) {
+        // Leave a card the contract would reject untouched, but say so.
+        console.warn(`[cave-board] left launch blocker ${ref} open on ${current.id}:`, error instanceof Error ? error.message : error);
+        return current;
       }
       changed.push(next);
       return next;
