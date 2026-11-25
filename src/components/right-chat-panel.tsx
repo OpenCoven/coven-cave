@@ -238,41 +238,50 @@ export function RightChatPanel(props: Props) {
     familiarId: string | null; sessions: SessionRow[]; loaded: boolean; error: boolean;
   }>({ familiarId: null, sessions: [], loaded: false, error: false });
   const requestGeneration = useRef(0);
+  const listInFlightRef = useRef<{ familiarId: string; generation: number; promise: Promise<void> } | null>(null);
   // Last accepted payload per familiar, replayed on a 304 (#5594), the same
   // conditional read the workspace poll uses (#5579).
   const lastListRef = useRef<{ familiarId: string; etag: string; json: { ok?: boolean; sessions?: unknown } } | null>(null);
-  const refresh = useCallback(async () => {
-    if (!familiarId) return;
+  const refresh = useCallback((options?: { fresh?: boolean }) => {
+    if (!familiarId) return Promise.resolve();
+    const pending = listInFlightRef.current;
+    if (!options?.fresh && pending?.familiarId === familiarId && pending.generation === requestGeneration.current) return pending.promise;
     const generation = ++requestGeneration.current;
-    try {
-      const params = new URLSearchParams({ familiarId, classifyFamiliarWorkspace: "1" });
-      const cached = lastListRef.current?.familiarId === familiarId ? lastListRef.current : null;
-      const response = await fetch(`/api/sessions/list?${params}`, {
-        cache: "no-store",
-        // Bounded, so a stalled request can't hold the serialized poll.
-        signal: AbortSignal.timeout(15_000),
-        ...(cached ? { headers: { "If-None-Match": cached.etag } } : {}),
-      });
-      let json;
-      if (response.status === 304 && cached) {
-        json = cached.json;
-      } else {
-        json = await response.json();
-        const etag = response.headers?.get?.("ETag");
-        if (response.ok && json?.ok && etag) lastListRef.current = { familiarId, etag, json };
+    const promise = (async () => {
+      try {
+        const params = new URLSearchParams({ familiarId, classifyFamiliarWorkspace: "1" });
+        const cached = lastListRef.current?.familiarId === familiarId ? lastListRef.current : null;
+        const response = await fetch(`/api/sessions/list?${params}`, {
+          cache: "no-store",
+          // Bounded, so a stalled request can't hold the serialized poll.
+          signal: AbortSignal.timeout(15_000),
+          ...(cached ? { headers: { "If-None-Match": cached.etag } } : {}),
+        });
+        let json;
+        if (response.status === 304 && cached) {
+          json = cached.json;
+        } else {
+          json = await response.json();
+          const etag = response.headers?.get?.("ETag");
+          if (generation === requestGeneration.current && response.ok && json?.ok && etag) lastListRef.current = { familiarId, etag, json };
+        }
+        if (!(response.ok || response.status === 304) || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
+        if (generation !== requestGeneration.current) return;
+        setRoster({ familiarId, sessions: json.sessions, loaded: true, error: false });
+      } catch {
+        if (generation !== requestGeneration.current) return;
+        setRoster((previous) => ({
+          familiarId,
+          sessions: previous.familiarId === familiarId ? previous.sessions : [],
+          loaded: true,
+          error: true,
+        }));
       }
-      if (!(response.ok || response.status === 304) || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
-      if (generation !== requestGeneration.current) return;
-      setRoster({ familiarId, sessions: json.sessions, loaded: true, error: false });
-    } catch {
-      if (generation !== requestGeneration.current) return;
-      setRoster((previous) => ({
-        familiarId,
-        sessions: previous.familiarId === familiarId ? previous.sessions : [],
-        loaded: true,
-        error: true,
-      }));
-    }
+    })().finally(() => {
+      if (listInFlightRef.current?.generation === generation) listInFlightRef.current = null;
+    });
+    listInFlightRef.current = { familiarId, generation, promise };
+    return promise;
   }, [familiarId]);
   useEffect(() => {
     if (!familiarId || !props.open) return;
@@ -309,12 +318,13 @@ export function RightChatPanel(props: Props) {
       sessionsScopeFamiliarId={familiarId}
       onSetActiveFamiliar={() => {}}
       onRetrySessions={() => void refresh()}
-      onSessionStarted={() => { void refresh(); props.onSessionStarted(); }}
-      onSessionsChanged={() => { void refresh(); props.onSessionsChanged(); }}
+      onSessionStarted={() => { void refresh({ fresh: true }); props.onSessionStarted(); }}
+      onSessionsChanged={() => { void refresh({ fresh: true }); props.onSessionsChanged(); }}
       onSessionsDeleted={(ids) => {
         setRoster((previous) => ({ ...previous, sessions: previous.sessions.filter((row) => !ids.includes(row.id)) }));
         props.onSessionsDeleted(ids);
-        void refresh();
+        lastListRef.current = null;
+        void refresh({ fresh: true });
       }}
     />
   );

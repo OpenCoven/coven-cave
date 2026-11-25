@@ -850,6 +850,7 @@ export function Workspace() {
   // sessions.
   const loadSessionsReqRef = useRef(0);
   const loadFamiliarsReqRef = useRef(0);
+  const loadFamiliarsInFlightRef = useRef<Promise<void> | null>(null);
   const loadGitHubTasksReqRef = useRef(0);
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
@@ -1927,40 +1928,49 @@ export function Workspace() {
     });
   }, [daemonStatusUnavailable, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
 
-  const loadFamiliars = useCallback(async () => {
+  const loadFamiliars = useCallback((options?: { fresh?: boolean }) => {
+    // Boot, polling and focus can all ask at once. Explicit invalidations
+    // after a settings write still supersede a read started before that write.
+    if (!options?.fresh && loadFamiliarsInFlightRef.current) return loadFamiliarsInFlightRef.current;
     const requestGeneration = ++loadFamiliarsReqRef.current;
-    setFamiliarRosterLoading(true);
-    setFamiliarRosterLoadedSuccessfully(false);
-    const isCurrent = () =>
-      isLatestFamiliarRosterRequest(
-        requestGeneration,
-        loadFamiliarsReqRef.current,
-      );
-    try {
-      const res = await fetch("/api/familiars", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-      const json = await res.json();
-      if (!isCurrent()) return;
-      if (!json.ok) {
-        // Keep the last-known-good roster: a failed load means "can't see the
-        // familiars right now", not "there are none". Clearing here made three
-        // surfaces show first-run copy over an intact roster (cave-atzv).
-        setFamiliarsError(json.error ?? "daemon offline");
-        setFamiliarRosterLoadedSuccessfully(false);
-        return;
-      }
-      setFamiliarsError(null);
-      setFamiliars((json.familiars ?? []) as Familiar[]);
-      setFamiliarRosterLoadedSuccessfully(true);
-    } catch (err) {
-      if (!isCurrent()) return;
-      setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+    const promise = (async () => {
+      setFamiliarRosterLoading(true);
       setFamiliarRosterLoadedSuccessfully(false);
-    } finally {
-      if (isCurrent()) {
-        setFamiliarsLoaded(true);
-        setFamiliarRosterLoading(false);
+      const isCurrent = () =>
+        isLatestFamiliarRosterRequest(
+          requestGeneration,
+          loadFamiliarsReqRef.current,
+        );
+      try {
+        const res = await fetch("/api/familiars", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+        const json = await res.json();
+        if (!isCurrent()) return;
+        if (!res.ok || !json.ok || !Array.isArray(json.familiars)) {
+          // Keep the last-known-good roster: a failed load means "can't see the
+          // familiars right now", not "there are none". Clearing here made three
+          // surfaces show first-run copy over an intact roster (cave-atzv).
+          setFamiliarsError(json.error ?? "daemon offline");
+          setFamiliarRosterLoadedSuccessfully(false);
+          return;
+        }
+        setFamiliarsError(null);
+        setFamiliars((json.familiars ?? []) as Familiar[]);
+        setFamiliarRosterLoadedSuccessfully(true);
+      } catch (err) {
+        if (!isCurrent()) return;
+        setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+        setFamiliarRosterLoadedSuccessfully(false);
+      } finally {
+        if (isCurrent()) {
+          setFamiliarsLoaded(true);
+          setFamiliarRosterLoading(false);
+        }
       }
-    }
+    })().finally(() => {
+      if (loadFamiliarsInFlightRef.current === promise) loadFamiliarsInFlightRef.current = null;
+    });
+    loadFamiliarsInFlightRef.current = promise;
+    return promise;
   }, []);
 
   // A roster load that failed (or raced the daemon's boot) self-heals once the
@@ -2239,7 +2249,7 @@ export function Workspace() {
   // empty-state identity line) shouldn't wait for the next natural reload —
   // the switch paths fire this event so the roster catches up immediately.
   useEffect(() => {
-    const onFamiliarsRefresh = () => void loadFamiliars();
+    const onFamiliarsRefresh = () => void loadFamiliars({ fresh: true });
     window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
@@ -2251,7 +2261,7 @@ export function Workspace() {
   // `shadow` mode the client only counts invalidations and calls nothing, so
   // the polls above stay authoritative and unchanged.
   useCaveEventPlane("sessions", () => void loadSessions());
-  useCaveEventPlane("familiars", () => void loadFamiliars());
+  useCaveEventPlane("familiars", () => void loadFamiliars({ fresh: true }));
   useCaveEventPlane("daemon", () => void daemonConnectionSupervisorRef.current?.refresh({ fresh: true }));
   usePausablePoll(() => loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
     serialize: true,
@@ -2543,7 +2553,7 @@ export function Workspace() {
   }, []);
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
-    void loadFamiliars();
+    void loadFamiliars({ fresh: true });
     const origin = onboardingOriginRef.current;
     onboardingOriginRef.current = "surface";
     // Familiar creation lives in the app now (the Summoning Circle on the
@@ -4784,7 +4794,7 @@ export function Workspace() {
         }}
         onOpenOnboarding={openOnboarding}
         onFamiliarCreated={(id) => {
-          void loadFamiliars();
+          void loadFamiliars({ fresh: true });
           selectFamiliar(id);
         }}
         familiarsError={familiarsError}
@@ -5444,7 +5454,7 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         canShow={onboardingResolved && !onboardingOpen}
         onManageFamiliars={() => setMode("agents")}
-        onFamiliarsChange={() => { void loadFamiliars(); }}
+        onFamiliarsChange={() => { void loadFamiliars({ fresh: true }); }}
         onStartChat={async (defaults, draft) => {
           const current = await firstUse.refresh();
           if (!current || current.state.step !== "complete" || current.resolution.kind !== "ready"

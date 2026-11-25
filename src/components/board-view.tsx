@@ -13,6 +13,7 @@ import { noteCaveEventPollAvoided } from "@/lib/cave-event-plane-client";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
+import { boardProjectKey, boardProjectLabel, compareBoardProjectSections, defaultNewTaskStatus } from "@/lib/board-sections";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
@@ -376,17 +377,6 @@ export function BoardView({
   }, [cards]);
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  // Stable project label for a card — the key the project filter/grouping keys
-  // on. Mirrors the board's project grouping: named project → its name, else a
-  // cwd basename, else the "No project" bucket.
-  const projectLabelOf = useCallback((c: Card): string => {
-    if (c.projectId) {
-      const p = chatProjectById(c.projectId, projects);
-      if (p?.name) return p.name;
-    }
-    if (c.cwd) return c.cwd.split("/").filter(Boolean).pop() ?? c.cwd;
-    return "No project";
-  }, [projects]);
   const filtered = useMemo(() => {
     // Hide cards whose delete is pending in the undo window (restored on Undo).
     const hidden = new Set((deletePending?.item ?? []).map((c) => c.id));
@@ -397,10 +387,12 @@ export function BoardView({
           ? familiarInScope(scopeFamiliarIds, c.familiarId)
           : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
         !excludedStatus.has(c.status) &&
-        !excludedProject.has(projectLabelOf(c)) &&
+        // The same key the project lanes and table groups use, so an
+        // unchecked project section disappears entirely (#6561).
+        !excludedProject.has(boardProjectKey(c)) &&
         cardMatchesBoardSearch(c, searchQuery, familiarsById),
     );
-  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject, projectLabelOf]);
+  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject]);
 
   // Done cards in the CURRENT scope (the filtered set the user is viewing) —
   // the exact set "Clear done" operates on.
@@ -421,11 +413,18 @@ export function BoardView({
         : activeFamiliarId === null || c.familiarId === activeFamiliarId),
     [cards, scopeFamiliarIds, activeFamiliarId],
   );
-  const projectFilterLabels = useMemo(
-    () => [...new Set(scopedCards.map(projectLabelOf))].sort((a, b) =>
-      a === "No project" ? -1 : b === "No project" ? 1 : a.localeCompare(b)),
-    [scopedCards, projectLabelOf],
+  const projectFilterSections = useMemo(
+    () => [...new Set(scopedCards.map(boardProjectKey))]
+      .map((key) => ({ key, label: boardProjectLabel(key, projects) }))
+      .sort(compareBoardProjectSections),
+    [scopedCards, projects],
   );
+  const filterCount = excludedStatus.size + excludedProject.size;
+  const clearFilters = useCallback(() => {
+    setExcludedStatus(new Set());
+    setExcludedProject(new Set());
+  }, []);
+  const newTaskStatus = defaultNewTaskStatus(STATUSES, excludedStatus);
   const toggleStatusFilter = useCallback((id: CardStatus) => {
     setExcludedStatus((prev) => {
       const next = new Set(prev);
@@ -1253,18 +1252,18 @@ export function BoardView({
             </button>
           </div>
 
-          {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
+          {/* Filter dropdown. Status sections are always listed, since every
+              Kanban and phone layout draws status columns. Project sections
+              are listed while grouped by project, or while one is hidden, so
+              a hidden section can always be brought back (#6561). */}
           <BoardFilterMenu
-            dimension={effectiveGroupBy === "project" ? "project" : "status"}
+            showProjects={(!isMobile && effectiveGroupBy === "project") || excludedProject.size > 0}
             statusOptions={STATUSES.map((st) => ({ id: st, label: STATUS_TOOLBAR_LABELS[st], checked: !excludedStatus.has(st) }))}
-            projectOptions={projectFilterLabels.map((p) => ({ id: p, label: p, checked: !excludedProject.has(p) }))}
+            projectOptions={projectFilterSections.map((p) => ({ id: p.key, label: p.label, checked: !excludedProject.has(p.key) }))}
             onToggleStatus={toggleStatusFilter}
             onToggleProject={toggleProjectFilter}
-            onSelectAll={() => { setExcludedStatus(new Set()); setExcludedProject(new Set()); }}
-            activeCount={effectiveGroupBy === "project"
-              ? projectFilterLabels.filter((p) => !excludedProject.has(p)).length
-              : STATUSES.length - excludedStatus.size}
-            totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
+            onSelectAll={clearFilters}
+            hiddenCount={filterCount}
           />
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
@@ -1308,7 +1307,7 @@ export function BoardView({
             label: "New task",
             placement: "primary",
             icon: "ph:plus",
-            onSelect: () => { setModalDefaultStatus("backlog"); setModalOpen(true); },
+            onSelect: () => { setModalDefaultStatus(newTaskStatus); setModalOpen(true); },
           },
           ...(!isMobile && (viewMode === "kanban" || viewMode === "table") ? [{
             id: "select-tasks",
@@ -1584,7 +1583,27 @@ export function BoardView({
           // Every view mode lands here so the kanban no longer silently shows
           // empty columns when nothing matches.
           <div className="flex h-full items-center justify-center p-6">
-            {searchQuery.trim() ? (
+            {filterCount > 0 ? (
+              <EmptyState
+                icon="ph:funnel"
+                headline="No tasks match your filters"
+                subtitle={searchQuery.trim()
+                  ? `Nothing in the sections you’re showing matches “${searchQuery.trim()}”.`
+                  : "The Filter menu is hiding every section that has tasks in it."}
+                actions={
+                  <>
+                    <Button leadingIcon="ph:funnel" onClick={clearFilters}>
+                      Show all sections
+                    </Button>
+                    {searchQuery.trim() ? (
+                      <Button variant="ghost" leadingIcon="ph:x" onClick={() => setSearchQuery("")}>
+                        Clear search
+                      </Button>
+                    ) : null}
+                  </>
+                }
+              />
+            ) : searchQuery.trim() ? (
               <EmptyState
                 icon="ph:magnifying-glass"
                 headline="No tasks match your search"
@@ -1613,6 +1632,7 @@ export function BoardView({
           </div>
         ) : isMobile ? (
           <BoardCardStack cards={filtered} familiars={familiars} sessions={sessions}
+            hiddenStatuses={excludedStatus}
             selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
             onMoveStatus={moveCardToStatus}
@@ -1622,6 +1642,7 @@ export function BoardView({
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
+            hiddenStatuses={excludedStatus}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}

@@ -43,6 +43,20 @@ tests), so when a project gains or loses a frame, update this table by hand.
 
 ---
 
+## November dashboard handoff
+
+The original Home launcher landed in [#3758](https://github.com/OpenCoven/coven-cave/pull/3758). The November handoff changes what people see first on Home and how they inspect a familiar’s work. Its adoption and acceptance are tracked in [#6403](https://github.com/OpenCoven/coven-cave/issues/6403).
+
+| On `main` | Delivery evidence | What it establishes |
+| --- | --- | --- |
+| Reduced default navigation | [Navigation change](https://github.com/OpenCoven/coven-cave/pull/6410) · [T1 close-out](https://github.com/OpenCoven/coven-cave/issues/6398) | The default navigation exposes the retained journeys. The November Home layout has its own acceptance criteria. |
+| Built-in Ask Salem removed | [Removal and legacy history access](https://github.com/OpenCoven/coven-cave/pull/6408) · [Palette cleanup](https://github.com/OpenCoven/coven-cave/pull/6437) · [T2 acceptance](https://github.com/OpenCoven/coven-cave/issues/6399) | Historical data and legacy history access survive removal of the built-in assistant. |
+| Submissions admission | [Build and admission change](https://github.com/OpenCoven/coven-cave/pull/6412) · [T3 close-out](https://github.com/OpenCoven/coven-cave/issues/6400) | The default build can gate Submissions before loading it. The minimal artifact and the reinstall, retained-data and rollback journeys retain their [T4](https://github.com/OpenCoven/coven-cave/issues/6401) and [T5](https://github.com/OpenCoven/coven-cave/issues/6402) gates. |
+
+**Dashboard candidate.** PR #6438 puts the composer first and shows attention, running work, unknown outcomes and observation freshness in an Overview scoped to the selected familiar. Settled history opens on demand through inline Activity. The candidate’s acceptance record distinguishes rendered fixtures from evidence that a real producer supplied a receipt and that sensitive output stayed redacted. [Dashboard PR](https://github.com/OpenCoven/coven-cave/pull/6438) · [Acceptance record on the reviewed candidate](https://github.com/OpenCoven/coven-cave/blob/8d502c2146db8a88b6030cb6f326ddd682c295b5/docs/design-handoff/dashboard-2026-11-04/ACCEPTANCE.md)
+
+**Acceptance still due.** On 24 November 2026, the macOS arm64 package for dashboard revision `8d502c2146` contained 9,054 sidecar files against the 9,045 limit. The packaging owner must qualify a correction and produce the desktop candidate. Val owns the visual and VoiceOver walkthrough on that build. The dashboard owner records the remaining producer, privacy and recovery evidence on #6403. After acceptance and merge, Cody and Lucian assess each affected Home, share-card, roster, MCP catalog and page-title item against its own criteria. The existing close-out ledger records those decisions. [Packaging evidence](https://github.com/OpenCoven/coven-cave/issues/6405#issuecomment-7153791170) · [Design backlog](https://github.com/OpenCoven/coven-cave/issues/6358) · [Close-out ledger](https://github.com/OpenCoven/coven-cave/issues/6405)
+
 ## Landed
 
 | Frame | Surface | Landed by |
