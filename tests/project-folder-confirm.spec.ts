@@ -182,8 +182,13 @@ const TASK = {
   createdAt: ISO, updatedAt: ISO, lifecycle: "queued", lifecycleAt: ISO, retryCount: 0, maxRetries: 3, steps: [],
 };
 
-async function setupBoard(page: Page, confirm: { status: number; json: Record<string, unknown> }) {
-  const starts: number[] = [];
+const OTHER_PROJECT = { ...PROJECT, id: "other-project", name: "Other", root: "/tmp/other-board-project" };
+const OTHER_TASK = { ...TASK, id: "other-card", title: "Inspect the other runtime", cwd: OTHER_PROJECT.root, projectId: OTHER_PROJECT.id };
+const OTHER_ERROR = "The other task's runtime is unavailable.";
+
+async function setupBoard(page: Page, confirm: { status: number; json: Record<string, unknown>; hold?: Promise<void> }) {
+  const starts: { path: string; projectRoot?: string }[] = [];
+  const cards = confirm.hold ? [{ ...TASK, projectId: PROJECT.id }, OTHER_TASK] : [TASK];
   const confirms: string[] = [];
   await page.addInitScript(() => {
     localStorage.setItem("cave:active-familiar", "nova");
@@ -204,18 +209,23 @@ async function setupBoard(page: Page, confirm: { status: number; json: Record<st
     ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }],
   } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
-  await page.route("**/api/projects**", (route) => {
+  await page.route("**/api/projects**", async (route) => {
     if (route.request().method() === "PUT") {
       confirms.push(new URL(route.request().url()).pathname);
+      await confirm.hold;
       return route.fulfill({ status: confirm.status, json: confirm.json });
     }
-    return route.fulfill({ json: { ok: true, projects: [{ ...PROJECT, access: "write" }] } });
+    return route.fulfill({ json: { ok: true, projects: [PROJECT, OTHER_PROJECT].map(project => ({ ...project, access: "write" })) } });
   });
-  await page.route("**/api/board", (route) => route.fulfill({ json: { ok: true, cards: [TASK] } }));
+  await page.route("**/api/board", (route) => route.fulfill({ json: { ok: true, cards } }));
   await page.route("**/api/chat/conversation/**", (route) => route.fulfill({ json: { ok: true, conversation: { turns: [] }, context: {} } }));
   await page.route("**/api/chat/send**", (route) => route.fulfill({ json: { ok: true } }));
   await page.route("**/api/board/*/chat", (route) => {
-    starts.push(Date.now());
+    const path = new URL(route.request().url()).pathname;
+    starts.push({ path, projectRoot: route.request().postDataJSON().projectRoot });
+    if (path === `/api/board/${OTHER_TASK.id}/chat`) {
+      return route.fulfill({ status: 409, json: { ok: false, error: OTHER_ERROR } });
+    }
     if (starts.length === 1) return route.fulfill({ status: 409, json: UNCONFIRMED });
     return route.fulfill({ json: {
       ok: true, sessionId: "s-task", familiarId: "nova", bridge: "native-chat",
@@ -258,3 +268,43 @@ test("Board: a declined confirmation never restarts the task chat", async ({ pag
   expect(confirms).toHaveLength(1);
   expect(starts).toHaveLength(1);
 });
+
+for (const surface of ["banner", "drawer"]) {
+  for (const outcome of ["success", "decline"]) {
+    test(`Board preserves a newer task's error after a late ${outcome} from the ${surface}`, async ({ page }) => {
+      let finishConfirmation!: () => void;
+      const hold = new Promise<void>((resolve) => { finishConfirmation = resolve; });
+      const result = outcome === "success"
+        ? { status: 200, json: { ok: true, project: { ...PROJECT, rootRealpath: PROJECT.root } } }
+        : { status: 403, json: { ok: false, error: "Folder confirmation declined." } };
+      const { starts, confirms, banner: drawer } = await setupBoard(page, { ...result, hold });
+      const board = page.locator(".board-shell");
+      const closeDrawer = () => drawer.getByLabel("Close", { exact: true }).click();
+      try {
+        if (surface === "banner") await closeDrawer();
+        const origin = surface === "drawer" ? drawer : board.getByRole("alert");
+        await origin.getByRole("button", { name: "Confirm folder", exact: true }).click();
+        await expect.poll(() => confirms.length).toBe(1);
+        if (surface === "drawer") await closeDrawer();
+        await board.locator(`[data-card-id="${OTHER_TASK.id}"]`).getByTitle("Start work").click();
+        const error = board.getByRole("alert");
+        await expect(error).toContainText(OTHER_ERROR);
+
+        const response = page.waitForResponse((r) => r.request().method() === "PUT" && r.url().endsWith(`/api/projects/${PROJECT.id}`));
+        finishConfirmation();
+        await (await response).finished();
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+        await expect(error).toContainText(OTHER_ERROR);
+        await expect(error.getByRole("button", { name: "Confirm folder" })).toHaveCount(0);
+        expect(starts).toEqual([
+          { path: `/api/board/${TASK.id}/chat`, projectRoot: PROJECT.root },
+          { path: `/api/board/${OTHER_TASK.id}/chat`, projectRoot: OTHER_PROJECT.root },
+        ]);
+        expect(confirms).toEqual([`/api/projects/${PROJECT.id}`]);
+      } finally {
+        finishConfirmation();
+      }
+    });
+  }
+}

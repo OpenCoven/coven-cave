@@ -1059,12 +1059,14 @@ export function BoardView({
     const id = chatLinkErrorCardId;
     const target = chatLinkFolderConfirm;
     if (!id || !target || target.message !== chatLinkError || chatLinkingId !== null || confirmingTaskFolder) return;
-    // Another task chat can start while the Touch ID prompt is open. Only
-    // reopen this card if nothing else was started meanwhile (#6560).
+    // A newer task owns its error, actions and retry while this prompt is open.
     const attempt = taskChatAttemptRef.current;
     setConfirmingTaskFolder(true);
     try {
       const result = await confirmRoot(target.projectId);
+      if (taskChatAttemptRef.current !== attempt) {
+        return;
+      }
       if (!result.ok) {
         // The banner is an alert region, so setting the error announces it.
         setChatLinkFolderConfirm({ message: result.error, projectId: target.projectId });
@@ -1072,10 +1074,6 @@ export function BoardView({
         return;
       }
       setChatLinkFolderConfirm(null);
-      if (taskChatAttemptRef.current !== attempt) {
-        announce("Folder confirmed.", "polite");
-        return;
-      }
       announce("Folder confirmed. Starting the task chat.", "polite");
       await openTaskWork(id);
     } finally {
