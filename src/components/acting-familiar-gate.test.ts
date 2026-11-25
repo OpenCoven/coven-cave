@@ -52,7 +52,7 @@ assert.match(
 );
 assert.match(
   workspaceSource,
-  /const loadFamiliars = useCallback\(async \(\) => \{[\s\S]{0,300}setFamiliarRosterLoading\(true\)[\s\S]{0,100}setFamiliarRosterLoadedSuccessfully\(false\)/,
+  /const loadFamiliars = useCallback\([\s\S]{0,750}setFamiliarRosterLoading\(true\)[\s\S]{0,100}setFamiliarRosterLoadedSuccessfully\(false\)/,
   "a new roster generation masks retained launch authority synchronously in state",
 );
 assert.match(

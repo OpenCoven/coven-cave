@@ -9,7 +9,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const board = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");
 
 assert.match(workspace, /useCaveEventPlane\("sessions", \(\) => void loadSessions\(\)\);/, "Workspace subscribes the session list owner");
-assert.match(workspace, /useCaveEventPlane\("familiars", \(\) => void loadFamiliars\(\)\);/, "Workspace subscribes the familiar roster owner");
+assert.match(workspace, /useCaveEventPlane\("familiars", \(\) => void loadFamiliars\(\{ fresh: true \}\)\);/, "Workspace subscribes the familiar roster owner");
 assert.match(
   workspace,
   /useCaveEventPlane\("daemon", \(\) => void daemonConnectionSupervisorRef\.current\?\.refresh\(\{ fresh: true \}\)\);/,

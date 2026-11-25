@@ -823,6 +823,7 @@ export const SUITES = {
     "src/components/new-card-modal.test.ts",
     "src/lib/active-familiar.test.ts",
     "src/lib/use-project-familiars.test.ts",
+    "src/lib/chat-loading-recovery.test.ts",
     "src/lib/project-scope.test.ts",
     "src/lib/use-projects.test.ts",
     "src/lib/use-projects-race.test.ts",
@@ -2359,6 +2360,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/chat-loading-recovery.test.ts",
   "src/lib/signal-sweep-identity.test.ts",
   "src/app/api/chat/signal-sweeps/route.integration.test.ts",
   "src/app/api/chat/send/coven-write-scope-refresh.test.ts",
