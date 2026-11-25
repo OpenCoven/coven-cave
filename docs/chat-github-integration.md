@@ -200,12 +200,12 @@ see `gh-review-draft.ts` and its tests.
 > era: "bead" there is now a GitHub issue.
 
 **`src/lib/stage-model.ts` (new, extracted):** the bead↔PR↔session join and
-lane resolution currently inside `src/lib/beads-work-queue.ts` (lanes:
+lane resolution currently inside the former Beads work queue (lanes:
 checks-failing, needs-review, ready-to-merge, waiting, post-merge-cleanup)
 moves into a shared pure module; the queue and the header consume the same
 model. This is the "one stage model" acceptance criterion made literal.
 
-**`src/components/chat-stage-header.tsx` (new):** a slim strip between the
+**Original stage header:** a slim strip between the
 chat top bar and the transcript rendering the pipeline
 `bead → branch/PR → checks → review → merged`. Data sources all exist:
 session `project_root`/branch (git-chip source `/api/changes`), PR join
