@@ -82,8 +82,10 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // history-state-restore joins too (#6442): browser Back must restore the page
 // on phones as well as desktop. private-state-access joins too (#6451): the
 // grant flags and Chat's Open projects action must work at phone width.
+// project-folder-confirm joins too (#6560): Chat's Confirm folder action must
+// stay reachable in the wrapped error strip at phone width.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey|private-state-access|signal-sweep-recovery)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey|private-state-access|project-folder-confirm|signal-sweep-recovery)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 

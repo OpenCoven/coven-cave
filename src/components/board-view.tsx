@@ -41,6 +41,7 @@ import { TaskWorkCockpit } from "@/components/task-work-cockpit";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
+import { confirmFolderInPlaceMessage, refusedUnconfirmedProjectId } from "@/lib/project-folder-refusal";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
@@ -163,7 +164,14 @@ export function BoardView({
   // The card whose chat start failed — the harness fix row needs it to know
   // which familiar to rebind and which task chat to re-run.
   const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
-  const { projects } = useProjects();
+  // A task chat refused because its project's folder is unconfirmed, with the
+  // project the server named. It belongs to that exact error message, so a
+  // later, different error never inherits the Confirm folder action (#6560).
+  const [chatLinkFolderConfirm, setChatLinkFolderConfirm] = useState<{ message: string; projectId: string } | null>(null);
+  const [confirmingTaskFolder, setConfirmingTaskFolder] = useState(false);
+  // Bumped by every task-chat start; see confirmTaskFolderAndRetry.
+  const taskChatAttemptRef = useRef(0);
+  const { projects, confirmRoot } = useProjects();
   const firstUse = useFirstUse();
 
   // The OpenClaw bridge reserves its conversation id before the first streamed
@@ -877,6 +885,7 @@ export function BoardView({
     bridge?: string;
   } | null> => {
     if (!firstUse.ensureIntroduction()) return null;
+    taskChatAttemptRef.current += 1;
     const card = cards.find((candidate) => candidate.id === id);
     // Project-backed tasks must retain an explicit familiar chosen from the
     // project's authorized roster. Falling back to the active/default
@@ -922,6 +931,8 @@ export function BoardView({
       const json = await res.json() as {
         ok?: boolean;
         error?: string;
+        code?: string;
+        projectId?: string;
         card?: Card;
         sessionId?: string;
         familiarId?: string | null;
@@ -930,7 +941,14 @@ export function BoardView({
         bridge?: string;
       };
       if (!res.ok || !json.ok || !json.sessionId) {
-        throw new Error(json.error ?? "failed to open task work");
+        const folderProjectId = refusedUnconfirmedProjectId(json);
+        // Beside the in-place button, say what it does rather than echoing
+        // the server's "in project settings" copy.
+        const message = folderProjectId
+          ? confirmFolderInPlaceMessage(chatProjectById(folderProjectId, projects)?.name)
+          : json.error ?? "failed to open task work";
+        setChatLinkFolderConfirm(folderProjectId ? { message, projectId: folderProjectId } : null);
+        throw new Error(message);
       }
       const updatedCard = json.card;
       if (updatedCard) {
@@ -1035,7 +1053,37 @@ export function BoardView({
       setChatLinkError("Could not switch harness.");
     }
   };
+  // Confirm the refused project's folder in place (#6560): the same settings
+  // route and Touch ID prompt. Only a confirmed folder re-runs the task chat.
+  const confirmTaskFolderAndRetry = async () => {
+    const id = chatLinkErrorCardId;
+    const target = chatLinkFolderConfirm;
+    if (!id || !target || target.message !== chatLinkError || chatLinkingId !== null || confirmingTaskFolder) return;
+    // A newer task owns its error, actions and retry while this prompt is open.
+    const attempt = taskChatAttemptRef.current;
+    setConfirmingTaskFolder(true);
+    try {
+      const result = await confirmRoot(target.projectId);
+      if (taskChatAttemptRef.current !== attempt) {
+        return;
+      }
+      if (!result.ok) {
+        // The banner is an alert region, so setting the error announces it.
+        setChatLinkFolderConfirm({ message: result.error, projectId: target.projectId });
+        setChatLinkError(result.error);
+        return;
+      }
+      setChatLinkFolderConfirm(null);
+      announce("Folder confirmed. Starting the task chat.", "polite");
+      await openTaskWork(id);
+    } finally {
+      setConfirmingTaskFolder(false);
+    }
+  };
   const chatLinkFailure = chatLinkError ? parseHarnessFailure(chatLinkError) : null;
+  const chatLinkConfirmsFolder = Boolean(
+    chatLinkError && chatLinkErrorCardId && chatLinkFolderConfirm?.message === chatLinkError,
+  );
   const workSession = workCard?.sessionId
     ? sessions.find((session) => session.id === workCard.sessionId) ?? null
     : null;
@@ -1335,6 +1383,18 @@ export function BoardView({
         >
           <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{chatLinkError}</span>
+          {chatLinkConfirmsFolder ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              leadingIcon="ph:seal-check"
+              loading={confirmingTaskFolder}
+              disabled={chatLinkingId !== null}
+              onClick={() => void confirmTaskFolderAndRetry()}
+            >
+              Confirm folder
+            </Button>
+          ) : null}
           {chatLinkFailure && chatLinkErrorCardId ? (
             <HarnessFixActions
               failure={chatLinkFailure}
@@ -1632,6 +1692,12 @@ export function BoardView({
           onOpenUrl={onOpenUrl}
           chatLinking={chatLinkingId === selectedCard.id}
           chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}
+          onConfirmFolder={
+            chatLinkConfirmsFolder && chatLinkErrorCardId === selectedCard.id
+              ? confirmTaskFolderAndRetry
+              : undefined
+          }
+          confirmingFolder={confirmingTaskFolder}
           onUseHarnessFix={
             chatLinkErrorCardId === selectedCard.id ? useHarnessForTaskChat : undefined
           }

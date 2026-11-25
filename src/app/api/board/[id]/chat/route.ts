@@ -14,6 +14,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  chatProjectLaunchRefusalBody,
   projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { assertCurrentPinnedLaunchRoot } from "@/lib/server/project-root-pin";
@@ -99,11 +100,13 @@ export async function POST(
   // is recorded on the task once, so the board says what it waits on. The
   // Touch ID confirmation resolves it. Best-effort: never masks the refusal.
   const recordFolderBlocker = async (error: ChatProjectLaunchError) => {
-    if (error.code !== "project_root_unconfirmed" || !card.projectId) return;
-    const name = projects.find((project) => project.id === card.projectId)?.name ?? "";
+    // The refusal names its project; a card filed only by folder has none.
+    const refusedProjectId = error.projectId ?? card.projectId;
+    if (error.code !== "project_root_unconfirmed" || !refusedProjectId) return;
+    const name = projects.find((project) => project.id === refusedProjectId)?.name ?? "";
     try {
       await recordLaunchBlocker(card.id, {
-        ref: projectFolderBlockerRef(card.projectId),
+        ref: projectFolderBlockerRef(refusedProjectId),
         kind: "human",
         label: projectFolderBlockerLabel(name),
       });
@@ -220,14 +223,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
       await recordFolderBlocker(error);
-      return NextResponse.json(
-        {
-          ok: false,
-          error: error.message,
-          code: error.code,
-        },
-        { status: error.status },
-      );
+      return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
     }
     throw error;
   }
@@ -241,10 +237,7 @@ export async function POST(
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) {
         await recordFolderBlocker(error);
-        return NextResponse.json(
-          { ok: false, error: error.message, code: error.code },
-          { status: error.status },
-        );
+        return NextResponse.json(chatProjectLaunchRefusalBody(error), { status: error.status });
       }
       throw error;
     }
