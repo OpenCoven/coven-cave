@@ -790,9 +790,7 @@ async function main() {
     assert.deepEqual(restored.appearance.backdrop.accentSeed, preferencePatch.appearance.backdrop.accentSeed);
     assert.equal(restored.appearance.backdrop.image.present, true);
     assert.equal(restored.appearance.backdrop.image.mime, "image/png");
-    // The patch leaves the opt-in Quick Chat shortcut unset, so the restored
-    // preferences carry its normalized default (off).
-    assert.deepEqual(restored.general, { quickChatShortcut: false, ...preferencePatch.general });
+    assert.deepEqual(restored.general, preferencePatch.general);
     assert.deepEqual(restored.phone, preferencePatch.phone);
     assert.deepEqual(restored.voice, preferencePatch.voice);
 
