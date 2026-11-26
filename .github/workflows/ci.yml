@@ -493,6 +493,77 @@ jobs:
       - name: Validate Windows startup controls
         run: node --experimental-strip-types --test --test-concurrency=1 scripts/client-v1-conformance.test.mjs
 
+  # TEMPORARY (#6403): measure the sidecar on every platform, for this branch
+  # and for the dashboard PR #6438 merged with it. Removed before this pull
+  # request merges.
+  sidecar-inventory-diagnostic:
+    name: Sidecar inventory diagnostic (${{ matrix.os }}, ${{ matrix.variant }})
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-15]
+        variant: [branch, with-6438]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge the dashboard PR head
+        if: matrix.variant == 'with-6438'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags https://github.com/${{ github.repository }}.git refs/pull/6438/head
+          git -c user.name=diagnostic -c user.email=diagnostic@localhost merge --no-edit FETCH_HEAD
+          echo "6438 head: $(git rev-parse FETCH_HEAD)"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build packaged sidecar bundle
+        run: bash scripts/sidecar-bundle.sh
+      - name: Smoke the packaged sidecar
+        run: pnpm test:sidecar-runtime
+      - name: Inventory the sidecar tree
+        if: always()
+        run: |
+          mkdir -p inventory
+          cat > inventory/walk.mjs <<'EOF'
+          import { lstat, readdir } from "node:fs/promises";
+          import { writeFileSync } from "node:fs";
+          import path from "node:path";
+          const [root, out] = process.argv.slice(2);
+          const lines = [];
+          async function walk(dir) {
+            for (const name of (await readdir(dir)).sort()) {
+              const full = path.join(dir, name);
+              const metadata = await lstat(full);
+              if (metadata.isDirectory()) await walk(full);
+              else lines.push(`${path.relative(root, full).split(path.sep).join("/")}\t${metadata.size}`);
+            }
+          }
+          await walk(root);
+          writeFileSync(out, lines.join("\n") + "\n");
+          console.log(`${root}: ${lines.length} files`);
+          EOF
+          node inventory/walk.mjs src-tauri/resources/server inventory/sidecar.tsv | tee inventory/count.txt
+          echo "- ${{ matrix.os }} / ${{ matrix.variant }}: $(cat inventory/count.txt)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: sidecar-inventory-${{ matrix.os }}-${{ matrix.variant }}
+          path: inventory/
+          retention-days: 7
+
   frontend-bundle:
     name: Frontend bundle
     needs: paths
