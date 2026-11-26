@@ -1492,6 +1492,8 @@ export const SUITES = {
     "src/lib/task-run-reconcile.test.ts",
     "src/lib/server/task-run-liveness.test.ts",
     "src/lib/server/task-chat-reuse.test.ts",
+    "src/lib/server/task-first-send.test.ts",
+    "src/lib/server/task-start-lock.test.ts",
     "src/lib/task-work-handoff.test.ts",
     "src/lib/cave-board-schema-version.test.ts",
     "src/lib/enrich-steps-orchestration.test.ts",
@@ -2528,6 +2530,8 @@ const ALIAS_LOADER = new Set([
   // probe → verdict → board mutation; loads cave-board.ts through "@/lib/…" (#6562)
   "src/lib/server/task-run-liveness.test.ts",
   "src/lib/server/task-chat-reuse.test.ts",
+  "src/lib/server/task-first-send.test.ts",
+  "src/lib/server/task-start-lock.test.ts",
   "src/lib/cave-board-schema-version.test.ts",
   "src/lib/enrich-steps-orchestration.test.ts",
   "src/lib/board-agentic-enhance.test.ts",

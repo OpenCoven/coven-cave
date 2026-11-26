@@ -31,6 +31,11 @@ assert.match(
   /const reserveNativeChatTask = async \(\) => \{[\s\S]*?sessionId,\s*nativeSessionId: sessionId,[\s\S]*?claimFirstPromptHandoff\(sessionId\);[\s\S]*?initialPrompt: buildInitialTaskChatPrompt\(card\)/,
   "only a native reservation marks its session as Cave's own, and its start claims the first prompt (#6562)",
 );
+assert.match(
+  source,
+  /return serializeTaskStart\(id, async \(\) => \{[\s\S]*?const locked = await withTaskStartLock\(id, \(\) => startTaskChat\(id, parsed\.body\)\);[\s\S]*?if \(locked\.ok\) return locked\.value;[\s\S]*?code: "task_start_busy"[\s\S]*?status: 409/,
+  "every start holds the task's cross-process lock, and a busy lock refuses instead of starting unlocked (#6562)",
+);
 assert.match(source, /binding\.harness === "openclaw"[\s\S]*?return reserveNativeChatTask\(\)/, "OpenClaw uses the override-preserving native handoff");
 assert.match(source, /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]*?return reserveNativeChatTask\(\)/, "local Copilot uses the override-preserving native handoff");
 assert.match(

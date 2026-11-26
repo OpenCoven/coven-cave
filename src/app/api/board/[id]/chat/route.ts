@@ -26,6 +26,7 @@ import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-sca
 import { isLocalCodexHarness } from "@/lib/local-codex";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { claimFirstPromptHandoff, reservedFirstPromptPending, validReuseModelOverride } from "@/lib/server/task-chat-reuse";
+import { withTaskStartLock } from "@/lib/server/task-start-lock";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -36,7 +37,8 @@ const UNSUPPORTED_HARNESS_RE = /not a supported harness/i;
 
 export const dynamic = "force-dynamic";
 
-// #6562: one start per task at a time in this server process. Two quick
+// #6562: one start per task at a time, in this server process here and
+// across processes through withTaskStartLock below. Two quick
 // presses (or two surfaces) used to both see no session, both reserve or
 // create one, and the second write orphaned the first. Each start now runs
 // after the previous one for the same task settles, so the later one sees
@@ -67,7 +69,21 @@ export async function POST(
     MAX_SESSION_JSON_BYTES,
   );
   if (!parsed.ok) return parsed.response;
-  return serializeTaskStart(id, () => startTaskChat(id, parsed.body));
+  return serializeTaskStart(id, async () => {
+    // And across processes: another Cave server sharing this board may be
+    // starting the same task (#6562).
+    const locked = await withTaskStartLock(id, () => startTaskChat(id, parsed.body));
+    if (locked.ok) return locked.value;
+    console.warn(`[board-chat] task ${id} start refused: ${locked.error}`);
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "task_start_busy",
+        error: "This task is already starting in another Cave window. Try again in a moment.",
+      },
+      { status: 409 },
+    );
+  });
 }
 
 async function startTaskChat(
