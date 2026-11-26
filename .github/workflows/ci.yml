@@ -508,6 +508,9 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04, macos-15]
         variant: [branch, with-6438]
+        include:
+          - os: ubuntu-24.04
+            variant: main-baseline
     defaults:
       run:
         shell: bash
@@ -523,6 +526,13 @@ jobs:
           git fetch --no-tags https://github.com/${{ github.repository }}.git refs/pull/6438/head
           git -c user.name=diagnostic -c user.email=diagnostic@localhost merge --no-edit FETCH_HEAD
           echo "6438 head: $(git rev-parse FETCH_HEAD)"
+      - name: Restore main's closure (baseline only; budget lifted here, never merged)
+        if: matrix.variant == 'main-baseline'
+        run: |
+          set -euo pipefail
+          git checkout ${{ github.event.pull_request.base.sha }} -- scripts/sidecar-runtime-closure.mjs scripts/sidecar-bundle.sh
+          node -e 'const f="scripts/sidecar-runtime-budget.json";const j=JSON.parse(require("fs").readFileSync(f));j.fileCount=9600;require("fs").writeFileSync(f,JSON.stringify(j,null,2)+"\n")'
+          git status --short
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -532,7 +542,25 @@ jobs:
       - name: Build packaged sidecar bundle
         run: bash scripts/sidecar-bundle.sh
       - name: Smoke the packaged sidecar
+        if: runner.os != 'Windows'
         run: pnpm test:sidecar-runtime
+      # As in the release runtime job: the default Windows shell, so the smoke's
+      # archive extraction uses Windows tar rather than Git Bash's GNU tar.
+      - name: Smoke the packaged sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pnpm test:sidecar-runtime
+      - name: Explain a native-module load failure
+        if: failure()
+        working-directory: src-tauri/resources/server
+        run: |
+          node_bin="$(ls ../node/bin/node* | head -1)"
+          echo "bundled node: $node_bin ($("$node_bin" -v))"
+          ls -la node_modules/node-pty/build/Release || true
+          "$node_bin" -e 'try { require("./node_modules/node-pty/build/Release/pty.node"); console.log("pty.node loads directly") } catch (e) { console.log("direct load error:", e.message) }'
+          "$node_bin" -e 'try { require("node-pty"); console.log("node-pty loads") } catch (e) { console.log("node-pty error:", e.message) }'
+          if command -v ldd >/dev/null; then ldd node_modules/node-pty/build/Release/pty.node || true; fi
+          ls -la ../../../node_modules/node-pty/build/Release 2>/dev/null || true
       - name: Inventory the sidecar tree
         if: always()
         run: |
