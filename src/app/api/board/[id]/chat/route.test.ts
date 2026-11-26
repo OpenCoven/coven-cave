@@ -21,6 +21,16 @@ assert.match(
   /taskModelOverride \? \{ initialModelOverride: taskModelOverride \} : \{\}/,
   "native OpenClaw and local Copilot task handoffs retain the validated card model for their first Chat send",
 );
+assert.match(
+  source,
+  /const pendingFirstPromptFields = async \(reserved: Card\) => \{[\s\S]*?reservedFirstPromptPending\(reserved\)[\s\S]*?initialPrompt: buildInitialTaskChatPrompt\(card\)[\s\S]*?bridge: "native-chat"[\s\S]*?if \(card\.sessionId\) \{[\s\S]*?recheckProjectRoot\(\)[\s\S]*?\.\.\.\(await pendingFirstPromptFields\(card\)\)/,
+  "a reused native reservation whose first prompt never landed hands the prompt back, after the same root recheck (#6562)",
+);
+assert.match(
+  source,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]*?sessionId,\s*nativeSessionId: sessionId,[\s\S]*?claimFirstPromptHandoff\(sessionId\);[\s\S]*?initialPrompt: buildInitialTaskChatPrompt\(card\)/,
+  "only a native reservation marks its session as Cave's own, and its start claims the first prompt (#6562)",
+);
 assert.match(source, /binding\.harness === "openclaw"[\s\S]*?return reserveNativeChatTask\(\)/, "OpenClaw uses the override-preserving native handoff");
 assert.match(source, /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]*?return reserveNativeChatTask\(\)/, "local Copilot uses the override-preserving native handoff");
 assert.match(

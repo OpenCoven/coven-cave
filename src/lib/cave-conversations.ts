@@ -729,6 +729,21 @@ function pathFor(sessionId: string): string {
   return resolved;
 }
 
+/**
+ * Whether a transcript file exists for this session, readable or not. Lets a
+ * caller tell "never written" from "written but unreadable", which
+ * `loadConversation` folds into one null. Errors other than absence (and an
+ * unsafe id) report true, so a caller fails closed.
+ */
+export async function conversationFileExists(sessionId: string): Promise<boolean> {
+  try {
+    await stat(pathFor(sessionId));
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code !== "ENOENT";
+  }
+}
+
 export async function loadConversation(sessionId: string): Promise<ConversationFile | null> {
   try {
     const raw = await readFile(pathFor(sessionId), "utf8");

@@ -1489,6 +1489,10 @@ export const SUITES = {
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/lib/cave-board-orchestration.test.ts",
+    "src/lib/task-run-reconcile.test.ts",
+    "src/lib/server/task-run-liveness.test.ts",
+    "src/lib/server/task-chat-reuse.test.ts",
+    "src/lib/task-work-handoff.test.ts",
     "src/lib/cave-board-schema-version.test.ts",
     "src/lib/enrich-steps-orchestration.test.ts",
     "src/lib/board-agentic-enhance.test.ts",
@@ -1846,6 +1850,7 @@ export const SUITES = {
     "src/app/api/board/orchestration-route.test.ts",
     "src/app/api/board/board-list-lean-route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
+    "src/app/api/board/[id]/chat/route-daemon.integration.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
     "src/lib/server/sessions-list.test.ts",
@@ -2520,6 +2525,9 @@ const ALIAS_LOADER = new Set([
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  // probe → verdict → board mutation; loads cave-board.ts through "@/lib/…" (#6562)
+  "src/lib/server/task-run-liveness.test.ts",
+  "src/lib/server/task-chat-reuse.test.ts",
   "src/lib/cave-board-schema-version.test.ts",
   "src/lib/enrich-steps-orchestration.test.ts",
   "src/lib/board-agentic-enhance.test.ts",
@@ -2528,6 +2536,8 @@ const ALIAS_LOADER = new Set([
   "src/app/api/board/board-list-lean-route.test.ts",
   "src/app/api/board/[id]/enhance/route.test.ts",
   "src/app/api/board/[id]/lifecycle/route.test.ts",
+  // drives the real board chat route against a daemon double on a scratch socket (#6562)
+  "src/app/api/board/[id]/chat/route-daemon.integration.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint

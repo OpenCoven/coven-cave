@@ -125,7 +125,42 @@ Inbox), ready, and has no next step awaiting approval. The check runs inside
 the board lock. A daemon session dispatches when it is created, because it
 starts with the task prompt. A native Chat task dispatches once its first
 prompt lands. Opening a waiting or untriaged task's chat to discuss it
-doesn't dispatch it.
+doesn't dispatch it. Starts for one task run one at a time, so a double press
+reuses the first session instead of creating a second.
+
+Reopening a native Chat task whose first prompt never landed hands the
+prompt back to the work view, so the chat doesn't open empty. That happens
+only when nothing could have been sent: the board chat route reserved the
+session itself as native Chat (it records `nativeSessionId`, which no card
+edit can set), no run is in flight, no transcript exists, and no other view
+was handed the prompt in the last two minutes. A daemon session never gets
+its prompt back, even after the daemon prunes it. Chat's start page and the
+GitHub view send such a task to the Board's work view (`#work-<id>`), which
+sends the prompt once and dispatches the task (#6562).
+
+### Runs that ended
+
+A `dispatched` or `running` task whose session has ended is settled from
+evidence when the Board loads (#6562). The check runs at most once a minute
+and skips anything dispatched or active in the last 30 minutes. A message
+with no reply waits a full day, because another Cave server sharing the board
+may still be streaming it. A Board load waits at most a couple of seconds for
+the check. Evidence is a
+chat run in flight, the native transcript's last turn, or the daemon's session
+row:
+
+| What the session shows | The task becomes |
+| --- | --- |
+| A reply that finished, or a daemon session that completed | `review`, needing a person, with the system step "Review what the task chat produced" |
+| A reply that errored, a message with no reply, a daemon failure or ghost row, or a session the daemon reports as `session_not_found` | `failed`, with an `execution` blocker carrying that evidence |
+| A reply the person stopped | `cancelled`, with its execution blocker |
+
+Nothing is ever marked `completed`. The review step only fills an empty
+next step, and completing a reviewed task drops it. An unreachable daemon or an unreadable transcript settles
+nothing. The move applies only if the task is still in the state the check
+saw, so a transition that lands first wins. Human-written dependencies and next
+steps are kept, and repeating the check changes nothing. It never kills,
+resends or restarts a run.
 
 ## What Enhance may and may not do
 
