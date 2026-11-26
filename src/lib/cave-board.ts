@@ -55,6 +55,11 @@ import {
   validateOrchestration,
 } from "@/lib/task-orchestration";
 import { projectFolderBlockerRef } from "@/lib/task-launch-blockers";
+import {
+  ENDED_RUN_REVIEW_STEP_SUMMARY,
+  isRunningTaskLifecycle,
+  type EndedRunOutcome,
+} from "@/lib/task-run-reconcile";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -1758,6 +1763,10 @@ export async function transitionCard(
   } else if (to === "completed") {
     next.status = "done";
     next.needsHuman = false;
+    // Completing is the review an ended run asked for (#6562).
+    if (next.nextStep?.origin === "system" && next.nextStep.summary === ENDED_RUN_REVIEW_STEP_SUMMARY) {
+      next.nextStep = null;
+    }
   } else if (to === "failed") {
     const blocker = executionDependency(to, reason, now);
     applyExecutionBlocker(current, next, blocker, now);
@@ -1879,6 +1888,91 @@ export async function resolveLaunchBlockers(ref: string, evidence: string): Prom
     });
     if (changed.length) await saveBoard(board, changed.map((card) => card.id));
     return changed.map((card) => card.id);
+  });
+}
+
+/** One probed verdict, bound to the card state the probe saw. */
+export type EndedTaskRunSettlement = {
+  id: string;
+  /** The session the probe inspected. */
+  sessionId: string;
+  /** The card's `lifecycleAt` when it was probed. */
+  lifecycleAt: string;
+  outcome: EndedRunOutcome;
+  evidence: string;
+};
+
+function endedRunReviewStep(now: string): TaskNextStep {
+  return {
+    summary: ENDED_RUN_REVIEW_STEP_SUMMARY,
+    requiresApproval: true,
+    origin: "system",
+    updatedAt: now,
+  };
+}
+
+/**
+ * Settle running tasks whose session provably ended (#6562 slice 2), under
+ * the board lock. Each settlement applies only if the card is still in the
+ * running state the probe saw (same lifecycle stamp and session), so a
+ * transition that landed meanwhile always wins. A run that ended cleanly goes
+ * to Review with a system next step; a failed or cancelled one gets the same
+ * execution blocker as a reported failure. Nothing is marked completed, and
+ * human-written dependencies and next steps are kept. Idempotent: a settled
+ * card is no longer running, so a repeat call changes nothing. Returns the
+ * cards it changed.
+ */
+export async function settleEndedTaskRuns(
+  settlements: readonly EndedTaskRunSettlement[],
+): Promise<Card[]> {
+  if (settlements.length === 0) return [];
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const now = new Date().toISOString();
+    const changed: Card[] = [];
+    for (const settlement of settlements) {
+      const idx = board.cards.findIndex((card) => card.id === settlement.id);
+      if (idx < 0) continue;
+      const current = board.cards[idx];
+      if (
+        !isRunningTaskLifecycle(current) ||
+        current.sessionId !== settlement.sessionId ||
+        current.lifecycleAt !== settlement.lifecycleAt
+      ) {
+        continue;
+      }
+      // A dispatched task that ended cleanly did run: it settles straight to
+      // Review rather than through a Running stop it was never observed in.
+      const to: CardLifecycle = settlement.outcome;
+      const next: Card = {
+        ...current,
+        lifecycle: to,
+        lifecycleAt: now,
+        lifecycleReason: settlement.evidence,
+        updatedAt: now,
+      };
+      delete next.runningSince;
+      if (to === "review") {
+        next.status = "review";
+        next.needsHuman = true;
+        // Only an empty slot takes the review step. Any existing step, a
+        // person's, Enhance's or one derived from an open blocker, stays.
+        if (!next.nextStep) next.nextStep = endedRunReviewStep(now);
+      } else {
+        applyExecutionBlocker(current, next, executionDependency(to, settlement.evidence, now), now);
+      }
+      if (next.nextStep?.requiresApproval) next.needsHuman = true;
+      try {
+        assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true });
+      } catch (error) {
+        console.warn(`[cave-board] left ended run on ${current.id} unsettled:`, error instanceof Error ? error.message : error);
+        continue;
+      }
+      board.cards[idx] = next;
+      changed.push(next);
+    }
+    if (changed.length) await saveBoard(board, changed.map((card) => card.id));
+    return changed;
   });
 }
 

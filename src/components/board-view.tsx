@@ -50,6 +50,7 @@ import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, invalidateSurfaceResourcesFor, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { takeTaskWorkHandoff, taskWorkCardIdFromHash } from "@/lib/task-work-handoff";
 
 
 type Props = {
@@ -1035,6 +1036,49 @@ export function BoardView({
     pendingWorkFocusIdRef.current = id;
     setWorkCardId(id);
   };
+
+  // Honour `#work-<id>`: Chat's start page and the GitHub view send a native
+  // task chat that still owes its first prompt here, because this work view
+  // is what sends it once and dispatches the task (#6562). A parked prompt for
+  // the card's current session opens directly; otherwise the normal start
+  // runs, and the server hands the prompt back if it is still unsent.
+  const openTaskWorkRef = useRef(openTaskWork);
+  openTaskWorkRef.current = openTaskWork;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const apply = () => {
+      const id = taskWorkCardIdFromHash(window.location.hash);
+      if (!id) return;
+      const snapshot = cards.find((candidate) => candidate.id === id);
+      if (!snapshot) return;
+      replaceHistoryUrl(window.location.pathname + window.location.search);
+      const handoff = takeTaskWorkHandoff(id);
+      // A board snapshot from before the start doesn't show the reserved
+      // session yet; the card the start returned does.
+      const card = handoff?.card && snapshot.sessionId !== handoff.sessionId
+        ? { ...snapshot, ...(handoff.card as Partial<Card>) }
+        : snapshot;
+      if (card !== snapshot) {
+        setCards((prev) => prev.map((candidate) => candidate.id === id ? card : candidate));
+      }
+      if (handoff && card.sessionId === handoff.sessionId) {
+        setPendingBridgeStart({
+          cardId: id,
+          sessionId: handoff.sessionId,
+          initialPrompt: handoff.initialPrompt,
+          initialModelOverride: handoff.initialModelOverride,
+        });
+        setSelectedCardId(null);
+        pendingWorkFocusIdRef.current = id;
+        setWorkCardId(id);
+        return;
+      }
+      void openTaskWorkRef.current(id);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, [cards]);
 
   // Recovery for a harness/runtime failure while starting a task chat: rebind
   // the card's familiar to the chosen adapter via /api/config, then re-run the

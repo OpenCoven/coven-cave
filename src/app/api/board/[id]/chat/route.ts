@@ -25,6 +25,7 @@ import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-per
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { isLocalCodexHarness } from "@/lib/local-codex";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { claimFirstPromptHandoff, reservedFirstPromptPending, validReuseModelOverride } from "@/lib/server/task-chat-reuse";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -34,6 +35,24 @@ import { isSshRuntime } from "@/lib/familiar-runtime";
 const UNSUPPORTED_HARNESS_RE = /not a supported harness/i;
 
 export const dynamic = "force-dynamic";
+
+// #6562: one start per task at a time in this server process. Two quick
+// presses (or two surfaces) used to both see no session, both reserve or
+// create one, and the second write orphaned the first. Each start now runs
+// after the previous one for the same task settles, so the later one sees
+// the session the earlier one recorded and reuses it.
+const taskStarts = new Map<string, Promise<unknown>>();
+
+function serializeTaskStart<T>(cardId: string, start: () => Promise<T>): Promise<T> {
+  const previous = taskStarts.get(cardId) ?? Promise.resolve();
+  const run = previous.then(start, start);
+  const settled = run.then(() => undefined, () => undefined);
+  taskStarts.set(cardId, settled);
+  void settled.then(() => {
+    if (taskStarts.get(cardId) === settled) taskStarts.delete(cardId);
+  });
+  return run;
+}
 
 export async function POST(
   req: Request,
@@ -48,8 +67,13 @@ export async function POST(
     MAX_SESSION_JSON_BYTES,
   );
   if (!parsed.ok) return parsed.response;
-  const body = parsed.body;
+  return serializeTaskStart(id, () => startTaskChat(id, parsed.body));
+}
 
+async function startTaskChat(
+  id: string,
+  body: { familiarId?: string | null; projectRoot?: string | null },
+): Promise<Response> {
   const board = await loadBoard();
   const card = board.cards.find((candidate) => candidate.id === id);
   if (!card) {
@@ -263,6 +287,22 @@ export async function POST(
 
   // A persisted card/session link can outlive deletion, permission changes, or
   // reassignment. Reuse it only after the same launch gate as a new session.
+  // #6562: a native Chat reservation whose first prompt never landed (the
+  // work view closed before the send, or the send failed) would reopen
+  // empty. Hand the prompt back so the work view sends it, exactly as a
+  // fresh reservation does. Never for a session that has a message, a run
+  // in flight, or a daemon record.
+  const pendingFirstPromptFields = async (reserved: Card) => {
+    if (!(await reservedFirstPromptPending(reserved))) return {};
+    const reuseModelOverride = validReuseModelOverride(card, binding.harness);
+    return {
+      projectRoot,
+      initialPrompt: buildInitialTaskChatPrompt(card),
+      ...(reuseModelOverride ? { initialModelOverride: reuseModelOverride } : {}),
+      bridge: "native-chat",
+    };
+  };
+
   if (card.sessionId) {
     const rootChanged = await recheckProjectRoot();
     if (rootChanged) return rootChanged;
@@ -273,6 +313,7 @@ export async function POST(
       card,
       sessionId: card.sessionId,
       familiarId,
+      ...(await pendingFirstPromptFields(card)),
     });
   }
 
@@ -394,6 +435,7 @@ export async function POST(
     const sessionId = crypto.randomUUID();
     const updated = await updateCard(card.id, {
       sessionId,
+      nativeSessionId: sessionId,
       familiarId,
       ...(worktree
         ? { cwd: sessionRoot }
@@ -406,6 +448,8 @@ export async function POST(
       recordSessionFamiliar(sessionId, familiarId),
       setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
     ]);
+    // This start hands out the first prompt; a reopen right after it must not.
+    claimFirstPromptHandoff(sessionId);
     return NextResponse.json({
       ok: true,
       reused: false,
