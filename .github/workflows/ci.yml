@@ -534,10 +534,11 @@ jobs:
           node -e 'const f="scripts/sidecar-runtime-budget.json";const j=JSON.parse(require("fs").readFileSync(f));j.fileCount=9600;require("fs").writeFileSync(f,JSON.stringify(j,null,2)+"\n")'
           git status --short
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      # No pnpm cache (#6576): on ubuntu-24.04 the shared store restores a
+      # node-pty build from ubuntu-26.04 that needs glibc 2.42.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build packaged sidecar bundle
         run: bash scripts/sidecar-bundle.sh
