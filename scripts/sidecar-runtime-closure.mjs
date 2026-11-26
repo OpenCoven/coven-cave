@@ -409,11 +409,35 @@ function packageParts(relativePath) {
   };
 }
 
-function shouldSkipPackageEntry(relativePath, entryName, _isDirectory) {
+// Package documentation the runtime never reads (#6403). Matched by basename,
+// so a licence or notice file can never match: those always ship.
+const PACKAGE_DOC_FILE_RE = /^(?:README|CHANGELOG|CHANGES|HISTORY)(?:\.(?:md|markdown|txt))?$/i;
+// Type declarations in every module flavour, with their maps.
+const TYPE_DECLARATION_RE = /\.d\.[cm]?ts(?:\.map)?$/;
+
+/**
+ * Subtrees of @swc/helpers that Node never loads (#6403).
+ *
+ * The package declares an `exports` map, so Node resolves every subpath through
+ * it: `@swc/helpers/_/_interop_require_default` (the form Next's compiled output
+ * requires) maps to `cjs/_interop_require_default.cjs`, and `import` maps to
+ * `esm/`. With an `exports` map, Node never falls back to directory
+ * resolution, so the `_/<helper>/package.json` shims (one per helper, for
+ * resolvers without `exports` support) are never read. `src/` holds the
+ * TypeScript-flavoured sources, which nothing in the runtime imports, and
+ * `scripts/` holds the package's own build tooling. Together they are about
+ * half of the package's files. sidecar-bundle.sh proves the helpers still
+ * resolve from the assembled runtime.
+ */
+const SWC_HELPERS_NONRUNTIME_RE = /^@swc\/helpers\/(?:_|src|scripts)(?:\/|$)/;
+
+export function shouldSkipPackageEntry(relativePath, entryName, isDirectory) {
   if (entryName === "node_modules") return true;
-  if (entryName.endsWith(".map") || entryName.endsWith(".d.ts") || entryName.endsWith(".d.ts.map")) return true;
+  if (entryName.endsWith(".map") || TYPE_DECLARATION_RE.test(entryName)) return true;
+  if (!isDirectory && PACKAGE_DOC_FILE_RE.test(entryName)) return true;
 
   const normalized = relativePath.split(path.sep).join("/");
+  if (SWC_HELPERS_NONRUNTIME_RE.test(normalized)) return true;
   if (/^node-pty\/(?:deps|scripts|src|typings)(?:\/|$)/.test(normalized)) return true;
   if (/^node-pty\/lib\/.*\.test\.js$/.test(normalized)) return true;
   if (/^node-pty\/.*\.pdb$/i.test(normalized)) return true;
