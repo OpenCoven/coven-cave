@@ -121,6 +121,13 @@ for (const summaries of [true, false]) {
       await expect(main.getByText(SUMMARY, { exact: true })).toBeVisible();
     }
     for (const tool of tools.slice(0, 2)) await emit(page, { kind: "tool_use", ...tool, status: "running", activity: activity(tool.id, "running", tool.activity.sequence), output: undefined });
+    const activitySummary = main.getByRole("button", { name: "Agent activity", exact: true });
+    await expect(activitySummary).toHaveAccessibleDescription(/Read/);
+    // Two tools plus the application response-progress step are running.
+    await expect(activitySummary).toHaveAccessibleDescription(/3 running 2 done/);
+    // The canonical state and counts carry activity; no decorative perpetual spin.
+    await expect(activitySummary.locator(".cave-run-activity__icon")).toHaveCSS("animation-name", "none");
+    await activitySummary.screenshot({ path: test.info().outputPath("live-activity-summary.png") });
     const live = main.locator(".cave-bubble-assistant").last();
     await expect(live.locator(".cave-tool-block")).toHaveCount(2);
     const first = live.locator(".cave-tool-block").first();
@@ -153,6 +160,81 @@ for (const summaries of [true, false]) {
       await main.locator(".cave-run-details > summary").click();
       await expect(main.locator(".cave-run-details__row").filter({ hasText: "Reasoning summaries" })).toContainText("not available on this path");
     }
+  });
+}
+
+for (const [width, theme, mode, reducedMotion] of [[1440, "coven", "dark", "no-preference"], [1100, "tide", "dark", "reduce"], [390, "coven", "light", "reduce"]] as const) {
+  test(`D0 inline Activity preserves older reading, Run Details focus and the next draft: ${width}px ${theme} ${mode}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion });
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:shell:nav-open", "0");
+      localStorage.setItem("cave:shell:nav-open:source", "user");
+    });
+    const historicalTools = Array.from({ length: 24 }, (_, i) => ({ id: `history-${i}`, name: "Read", status: "ok", input: JSON.stringify({ file_path: `/tmp/history-${i}` }), output: "Historical display-safe result", textOffset: 0, activity: activity(`history-${i}`, "ok", i + 1) }));
+    const { main, metadata } = await setup(page, true, false, false, historicalTools, undefined, undefined, true);
+    await page.evaluate(([theme, mode]) => { document.documentElement.dataset.theme = theme; document.documentElement.dataset.mode = mode; }, [theme, mode]);
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Keep reading while a new comparison runs");
+    await main.getByRole("button", { name: "Send message", exact: true }).click();
+    await emit(page, { kind: "response_metadata", responseMetadata: metadata });
+    const call = { id: "current-read", name: "Read", input: '{"file_path":"/tmp/current-read"}', textOffset: 0 };
+    await emit(page, { kind: "tool_use", ...call, status: "running", activity: activity(call.id, "running", 30) });
+    await emit(page, { kind: "assistant_chunk", text: Array.from({ length: 100 }, (_, i) => `Current comparison detail ${i + 1} remains below the earlier response.`).join("\n\n") + "\n\n" });
+    const transcript = main.locator(".cave-chat-transcript");
+    const gap = () => transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop);
+    // A bottom gap is also zero before the queued stream chunk renders.
+    // Establish the actual new tail before releasing following with input.
+    await expect(main.getByText("Current comparison detail 100 remains below the earlier response.", { exact: true })).toBeVisible();
+    await expect.poll(gap).toBeLessThanOrEqual(4);
+    await composer.fill("Keep this unsent next-message draft");
+    await transcript.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await transcript.hover();
+    await page.mouse.wheel(0, -100000);
+    await expect.poll(gap).toBeGreaterThan(600);
+    await expect(main.getByRole("button", { name: "Latest", exact: true })).toBeVisible();
+    const details = main.locator('[data-turn-id="answer"] [data-turn-run-details]');
+    const detailsSummary = details.locator(":scope > summary");
+    await detailsSummary.scrollIntoViewIfNeeded();
+    const originalSummary = await detailsSummary.elementHandle();
+    const position = () => detailsSummary.evaluate((node) => ({ top: node.getBoundingClientRect().top, scrollTop: node.closest(".cave-chat-transcript")!.scrollTop }));
+    const beforeDetails = await position();
+    await detailsSummary.press("Enter");
+    await expect(details).toHaveAttribute("open", "");
+    await transcript.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect((await position()).top).toBeCloseTo(beforeDetails.top, 0);
+    await detailsSummary.press("Escape");
+    await expect(detailsSummary).toBeFocused();
+    await expect(details).not.toHaveAttribute("open", "");
+    const beforeActivity = await position();
+    const trigger = main.getByRole("button", { name: "Agent activity", exact: true });
+    await trigger.press("Enter");
+    const panel = page.getByRole("dialog", { name: "Agent activity", exact: true });
+    await expect(panel).toBeVisible();
+    await emit(page, { kind: "tool_use", ...call, status: "error", output: "The current read failed safely", activity: activity(call.id, "error", 31) });
+    await emit(page, { kind: "tool_use", ...call, status: "error", output: "The current read failed safely", activity: activity(call.id, "error", 31) });
+    await emit(page, { kind: "assistant_chunk", text: "Unseen content arrived while the earlier response stayed in view.\n\n" });
+    // Existing summary semantics include the failed tool and its failed
+    // application-progress step. Replaying its frame still leaves one call.
+    await expect(trigger).toHaveAccessibleDescription(/2 issues/);
+    await expect(panel.locator(".cave-tool-group > summary")).toHaveAccessibleName(/1 call.*1 error/);
+    await expect(main.getByRole("button", { name: "New response content", exact: true })).toBeVisible();
+    await transcript.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const afterUpdate = await position();
+    expect(afterUpdate.top).toBeCloseTo(beforeActivity.top, 0);
+    expect(afterUpdate.scrollTop).toBeCloseTo(beforeActivity.scrollTop, 0);
+    expect(await detailsSummary.evaluate((node, original) => node === original, originalSummary)).toBe(true);
+    await page.screenshot({ path: info.outputPath("older-reading-activity.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect(trigger).toBeFocused();
+    expect((await position()).top).toBeCloseTo(beforeActivity.top, 0);
+    await expect(composer).toHaveValue("Keep this unsent next-message draft");
+    await emit(page, { kind: "done", sessionId: "activity-5765", responseMetadata: metadata });
+    await expect(main.getByRole("button", { name: "Last run summary", exact: true })).toBeVisible();
+    await expect(composer).toHaveValue("Keep this unsent next-message draft");
+    expect(await page.evaluate(() => (window as unknown as { activitySendCount: number }).activitySendCount)).toBe(1);
+    await info.attach("reading-position", { body: JSON.stringify({ beforeDetails, beforeActivity, afterUpdate }, null, 2), contentType: "application/json" });
   });
 }
 
