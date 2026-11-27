@@ -60,7 +60,7 @@ const EMPTY_CHAT = {
 
 type Log = { starts: number; sends: number; sendSessions: string[] };
 
-async function mockApp(page: Page, log: Log, baseURL: string | undefined, sessions: unknown[] = [], task: typeof RESERVED = RESERVED) {
+async function mockApp(page: Page, log: Log, baseURL: string | undefined, sessions: unknown[] = [], task: Record<string, unknown> = RESERVED) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -132,6 +132,47 @@ test.describe("Task work handoff (#6562)", () => {
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe("");
     await page.waitForTimeout(1_000);
     expect(log.sends, "the first prompt is sent exactly once").toBe(1);
+  });
+
+  // Unscoped cards keep the Board's direct path, except a session the board
+  // chat endpoint reserved itself: only the endpoint can hand back its prompt.
+  test("a reserved task with no project still reopens through the server and sends its prompt", async ({ page, baseURL }) => {
+    const log: Log = { starts: 0, sends: 0, sendSessions: [] };
+    const { projectId: _projectId, ...unscoped } = RESERVED;
+    await mockApp(page, log, baseURL, [], unscoped);
+    await page.goto(`/?mode=board#work-${RESERVED.id}`);
+    await page.waitForSelector(".task-work-cockpit .cave-chat-linear", { timeout: 60_000 });
+    await expect.poll(() => log.sends, { timeout: 30_000 }).toBe(1);
+    expect(log.starts, "the reopen asked the server").toBe(1);
+    expect(log.sendSessions).toEqual(["s-reserved"]);
+  });
+
+  test("a reserved task with no project still opens when the server refuses the reopen", async ({ page, baseURL }) => {
+    const log: Log = { starts: 0, sends: 0, sendSessions: [] };
+    const { projectId: _projectId, ...unscoped } = RESERVED;
+    await mockApp(page, log, baseURL, [], unscoped);
+    // Registered last, so it wins: the runtime changed since the reservation.
+    await page.route("**/api/board/*/chat", (route) => {
+      log.starts += 1;
+      return route.fulfill({ status: 409, json: { ok: false, error: "This familiar's runtime can't open task chats" } });
+    });
+    await page.goto(`/?mode=board#work-${RESERVED.id}`);
+    await expect(page.getByRole("heading", { name: RESERVED.title, level: 1 })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText("Task work", { exact: true })).toBeVisible();
+    expect(log.starts, "the reopen asked the server first").toBe(1);
+    await expect(page.getByText("can't open task chats")).toHaveCount(0);
+    expect(log.sends, "no prompt without the server's hand-back").toBe(0);
+  });
+
+  test("a legacy unscoped task without the reservation marker keeps the direct path", async ({ page, baseURL }) => {
+    const log: Log = { starts: 0, sends: 0, sendSessions: [] };
+    const { projectId: _projectId, nativeSessionId: _nativeSessionId, ...legacy } = RESERVED;
+    await mockApp(page, log, baseURL, [], legacy);
+    await page.goto(`/?mode=board#work-${RESERVED.id}`);
+    await expect(page.getByText("Task work", { exact: true })).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(1_500);
+    expect(log.starts, "no new server round-trip for a legacy card").toBe(0);
+    expect(log.sends).toBe(0);
   });
 
   test("Chat's start page sends a native task with an unsent prompt to the Board's work view", async ({ page, baseURL }) => {

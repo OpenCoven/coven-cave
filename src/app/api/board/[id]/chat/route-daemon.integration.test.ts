@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import fs from "node:fs";
 import { createServer } from "node:http";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -81,6 +83,7 @@ try {
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { saveConversation } = await import("@/lib/cave-conversations");
   const { resetFirstPromptClaimsForTest } = await import("@/lib/server/task-chat-reuse");
+  const { taskStartLockDirectory } = await import("@/lib/server/task-start-lock");
 
   const request = (url, body) =>
     new Request(url, {
@@ -254,6 +257,49 @@ try {
     assert.equal(second.json.sessionId, "d-race-1");
     assert.equal((await cardById(task.id)).sessionId, "d-race-1", "no orphaned session replaced the first");
     await daemon.stop();
+  });
+
+  await test("a start another process holds waits, then reuses the session that process recorded", async () => {
+    await daemon.stop();
+    const task = await newTask("Other process");
+    const lockModule = pathToFileURL(path.resolve("src/lib/server/process-intent-lock.ts")).href;
+    const boardFile = path.join(process.env.COVEN_CAVE_HOME, "board.json");
+    // A second Cave server: holds this task's start lock, records its own
+    // session on the card (atomic write, like saveBoard), then lets go.
+    const other = spawn(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "-e",
+        `
+          import { readFile, rename, writeFile } from "node:fs/promises";
+          const { acquireProcessIntentLock } = await import(${JSON.stringify(lockModule)});
+          const release = await acquireProcessIntentLock({ intentsDirectory: ${JSON.stringify(taskStartLockDirectory(task.id))}, label: "other server" });
+          process.stdout.write("held\\n");
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          const board = JSON.parse(await readFile(${JSON.stringify(boardFile)}, "utf8"));
+          const card = board.cards.find((entry) => entry.id === ${JSON.stringify(task.id)});
+          card.sessionId = "s-other-process";
+          card.nativeSessionId = "s-other-process";
+          await writeFile(${JSON.stringify(boardFile)} + ".tmp", JSON.stringify(board));
+          await rename(${JSON.stringify(boardFile)} + ".tmp", ${JSON.stringify(boardFile)});
+          await release();
+        `,
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
+    const exited = new Promise((resolve) => other.on("exit", resolve));
+    await new Promise((resolve, reject) => {
+      other.stdout.on("data", (chunk) => { if (String(chunk).includes("held")) resolve(undefined); });
+      other.on("exit", (code) => reject(new Error(`other server exited early (${code})`)));
+    });
+    const { status, json } = await start(task.id);
+    await exited;
+    assert.equal(status, 200, JSON.stringify(json));
+    assert.equal(json.reused, true, "the start waited for the other server instead of racing it");
+    assert.equal(json.sessionId, "s-other-process");
+    assert.equal((await cardById(task.id)).sessionId, "s-other-process", "no second session replaced it");
   });
 
   await test("an unconfirmed folder is refused and recorded on the task once", async () => {

@@ -267,6 +267,7 @@ import {
   stripConversationStubTurn,
   withConversationLock,
 } from "@/lib/cave-conversations";
+import { dispatchTaskOnFirstSend } from "@/lib/server/task-first-send";
 import { flowSessionReferenceFor, isUnstartedFlowDiscussion } from "@/lib/flow-session";
 import { loadFlowSessionState } from "@/lib/server/flow-store";
 import {
@@ -1372,11 +1373,17 @@ function openClawChatResponse(args: {
             ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
         }).then(async (created) => {
+          // The session's first prompt landed: start its task (#6562).
+          if (created) void dispatchTaskOnFirstSend(conversationId);
           if (created && ownsFirstExchangeTitle) {
             await setDefaultStubTitleAuto(conversationId, stubTitle);
           }
           return created;
-        }).catch(() => false);
+        }).catch(() => {
+          // A lost stub still saves the turn at stream close; don't strand the task.
+          void dispatchTaskOnFirstSend(conversationId);
+          return false;
+        });
         const abortGateway = (toolOutcome: string) => {
           settleOpenGatewayTools(toolOutcome);
           void gatewayDispatch.abort();
@@ -1698,11 +1705,17 @@ function openClawChatResponse(args: {
           ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
       }).then(async (created) => {
+        // The session's first prompt landed: start its task (#6562).
+        if (created) void dispatchTaskOnFirstSend(conversationId);
         if (created && ownsFirstExchangeTitle) {
           await setDefaultStubTitleAuto(conversationId, stubTitle);
         }
         return created;
-      }).catch(() => false);
+      }).catch(() => {
+        // A lost stub still saves the turn at stream close; don't strand the task.
+        void dispatchTaskOnFirstSend(conversationId);
+        return false;
+      });
 
       const failChild = (err: NodeJS.ErrnoException | ChatProjectLaunchError) => {
         if (terminal) return;
@@ -4517,6 +4530,8 @@ async function postAdmittedChat(
             ...persistedTurnControls(body, responseMetadata.retryModel),
           },
         }).then(async (created) => {
+          // The session's first prompt landed: start its task (#6562).
+          if (created) void dispatchTaskOnFirstSend(announcedId);
           if (created && ownsFirstExchangeTitle) {
             await setDefaultStubTitleAuto(
               announcedId,
@@ -4524,7 +4539,11 @@ async function postAdmittedChat(
             );
           }
           return created;
-        }).catch(() => undefined);
+        }).catch(() => {
+          // A lost stub still saves the turn at stream close; don't strand the task.
+          void dispatchTaskOnFirstSend(announcedId);
+          return undefined;
+        });
         push({ kind: "session", sessionId: announcedId });
       };
 

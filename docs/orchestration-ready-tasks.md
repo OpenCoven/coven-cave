@@ -124,9 +124,14 @@ Starting work dispatches a task only when it is `queued`, triaged (not in
 Inbox), ready, and has no next step awaiting approval. The check runs inside
 the board lock. A daemon session dispatches when it is created, because it
 starts with the task prompt. A native Chat task dispatches once its first
-prompt lands. Opening a waiting or untriaged task's chat to discuss it
-doesn't dispatch it. Starts for one task run one at a time, so a double press
-reuses the first session instead of creating a second.
+prompt lands, from whichever view sends it: the server dispatches when it
+writes the first message of a session the board chat route reserved for the
+task, so a send from plain Chat moves the card too. A chat that is only linked
+to a task never dispatches it. Opening a waiting or untriaged task's chat to
+discuss it doesn't dispatch it. Starts for one task run one at a time, across
+Cave server processes too, so a double press or a second Cave window reuses the
+first session instead of creating a second. A start that can't get its turn
+within a minute is refused with `task_start_busy` rather than run alongside.
 
 Reopening a native Chat task whose first prompt never landed hands the
 prompt back to the work view, so the chat doesn't open empty. That happens
@@ -136,7 +141,9 @@ edit can set), no run is in flight, no transcript exists, and no other view
 was handed the prompt in the last two minutes. A daemon session never gets
 its prompt back, even after the daemon prunes it. Chat's start page and the
 GitHub view send such a task to the Board's work view (`#work-<id>`), which
-sends the prompt once and dispatches the task (#6562).
+sends the prompt once and dispatches the task (#6562). The Board reopens such
+a session through the board chat route even when the task has no project; other
+unscoped legacy sessions keep opening directly.
 
 ### Runs that ended
 

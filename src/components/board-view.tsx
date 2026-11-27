@@ -1002,15 +1002,28 @@ export function BoardView({
     // a grant revoked after the session was created cannot be reopened from
     // the Board without a fresh authorization check. Unscoped legacy cards
     // have no project boundary to revalidate and can keep the direct path.
-    if (card.sessionId && !card.projectId) {
+    const openLinkedSessionDirectly = (sessionId: string) => {
       if (isMobile) {
-        const linkedSession = sessions.find((session) => session.id === card.sessionId);
-        onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
+        const linkedSession = sessions.find((session) => session.id === sessionId);
+        onJumpToSession?.(sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
         return;
       }
       setSelectedCardId(null);
       pendingWorkFocusIdRef.current = id;
       setWorkCardId(id);
+    };
+    const unscopedSession = card.sessionId && !card.projectId ? card.sessionId : null;
+    // A session the endpoint reserved itself (`nativeSessionId`) goes back
+    // through it, because only the endpoint can hand back a first prompt that
+    // never landed (#6562). If the endpoint refuses (a runtime that changed
+    // since, a busy start), the task opens directly, as it did before.
+    const reservedUnscoped = unscopedSession !== null && card.nativeSessionId === unscopedSession;
+    if (unscopedSession && !reservedUnscoped) {
+      openLinkedSessionDirectly(unscopedSession);
+      return;
+    }
+    if (unscopedSession && !card.cwd) {
+      openLinkedSessionDirectly(unscopedSession);
       return;
     }
 
@@ -1021,6 +1034,13 @@ export function BoardView({
     }
 
     const started = await startTaskChat(id, project?.root);
+    if (!started && unscopedSession) {
+      setChatLinkError(null);
+      setChatLinkErrorCardId(null);
+      setChatLinkFolderConfirm(null);
+      openLinkedSessionDirectly(unscopedSession);
+      return;
+    }
     if (!started) return;
     if (started.bridge === "native-chat" && started.initialPrompt) {
       setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt, initialModelOverride: started.initialModelOverride });
