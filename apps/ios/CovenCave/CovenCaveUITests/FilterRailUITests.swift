@@ -205,6 +205,26 @@ final class FilterRailUITests: XCTestCase {
     }
 
     @MainActor
+    func testStatusMenuAlwaysOffersNeedsYouEvenWithNoBlockedChats() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-design-closeout", "--ui-preview-chats-home"]
+        app.launch()
+        let status = app.buttons["Status filter menu"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        status.tap()
+        let needsYou = app.buttons["Needs you, 0"].firstMatch
+        XCTAssertTrue(needsYou.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Ready to archive, 0"].exists)
+        needsYou.tap()
+        XCTAssertEqual(status.value as? String, "Needs you, 0")
+        XCTAssertTrue(app.staticTexts["Nothing needs you"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["Chat row local:ui-preview-lyra-chat"].exists)
+        app.buttons["Show all chats"].firstMatch.tap()
+        XCTAssertEqual(status.value as? String, "All chats")
+        XCTAssertTrue(app.descendants(matching: .any)["Chat row local:ui-preview-lyra-chat"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testReaderRailCanOpenNewChatAfterDismissal() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()

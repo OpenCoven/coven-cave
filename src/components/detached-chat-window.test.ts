@@ -14,6 +14,7 @@ const css = await read("../styles/detached-chat-window.css");
 const page = await read("../app/quick-chat/page.tsx");
 const lib = await read("../lib/chat-window.ts");
 const sessionList = await read("../lib/use-chat-session-list.ts");
+const familiarRoster = await read("../lib/use-familiar-roster.ts");
 const openExternal = await read("../lib/open-external.ts");
 const globalsCss = await read("../app/globals.css");
 
@@ -45,7 +46,8 @@ assert.doesNotMatch(
   /@\/components\/workspace|@\/components\/shell\b|cave:active-familiar|useWorkspace/,
   "the window never reads workspace state",
 );
-assert.match(source, /function useFamiliarRoster\(\)[\s\S]{0,900}fetch\("\/api\/familiars"/, "it loads its own familiar roster");
+assert.match(source, /const roster = useFamiliarRoster\(\);/, "it owns its familiar roster instead of reading workspace state");
+assert.match(familiarRoster, /fetch\("\/api\/familiars"/, "the window roster reads familiars directly");
 assert.match(
   source,
   /const chats = useChatSessionList\(familiarId, \{ enabled: active \}\);/,

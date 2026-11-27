@@ -823,6 +823,7 @@ export const SUITES = {
     "src/components/new-card-modal.test.ts",
     "src/lib/active-familiar.test.ts",
     "src/lib/use-project-familiars.test.ts",
+    "src/lib/chat-loading-recovery.test.ts",
     "src/lib/project-scope.test.ts",
     "src/lib/use-projects.test.ts",
     "src/lib/use-projects-race.test.ts",
@@ -1488,6 +1489,12 @@ export const SUITES = {
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/lib/cave-board-orchestration.test.ts",
+    "src/lib/task-run-reconcile.test.ts",
+    "src/lib/server/task-run-liveness.test.ts",
+    "src/lib/server/task-chat-reuse.test.ts",
+    "src/lib/server/task-first-send.test.ts",
+    "src/lib/server/task-start-lock.test.ts",
+    "src/lib/task-work-handoff.test.ts",
     "src/lib/cave-board-schema-version.test.ts",
     "src/lib/enrich-steps-orchestration.test.ts",
     "src/lib/board-agentic-enhance.test.ts",
@@ -1549,6 +1556,10 @@ export const SUITES = {
     "src/app/api/chat/stream/status/route.test.ts",
     "src/lib/harness-failure.test.ts",
     "src/components/harness-fix-actions.test.ts",
+    "src/components/board-confirm-folder.test.ts",
+    "src/components/board-filter-hidden-sections.test.ts",
+    "src/lib/board-sections.test.ts",
+    "src/components/board-task-dispatch.test.ts",
     "src/components/board-inspector-debug.test.ts",
     "src/components/board-view-display.test.ts",
     "src/components/calendar-view-primitives.test.ts",
@@ -1645,6 +1656,7 @@ export const SUITES = {
     "src/lib/server/global-npm-install-lane.test.ts",
     "src/app/api/cave-home-migration/route.test.ts",
     "src/app/api/board/[id]/enhance/route.test.ts",
+    "src/app/api/board/[id]/lifecycle/route.test.ts",
     "src/app/api/queue/readiness/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/lib/server/voice-chat-create.test.ts",
@@ -1840,6 +1852,7 @@ export const SUITES = {
     "src/app/api/board/orchestration-route.test.ts",
     "src/app/api/board/board-list-lean-route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
+    "src/app/api/board/[id]/chat/route-daemon.integration.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
     "src/lib/server/sessions-list.test.ts",
@@ -2012,6 +2025,8 @@ export const SUITES = {
     "src/lib/voice/openai-realtime.test.ts",
     "src/lib/voice/openai-voices.test.ts",
     "src/lib/voice/start-voice-chat.test.ts",
+    "src/lib/project-folder-refusal.test.ts",
+    "src/lib/task-launch-blockers.test.ts",
     "src/lib/voice/dictation-controller.test.ts",
     "src/lib/voice/use-dictation.test.ts",
     "src/app/api/voice/session/route.test.ts",
@@ -2357,6 +2372,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/chat-loading-recovery.test.ts",
   "src/lib/signal-sweep-identity.test.ts",
   "src/app/api/chat/signal-sweeps/route.integration.test.ts",
   "src/app/api/chat/send/coven-write-scope-refresh.test.ts",
@@ -2512,6 +2528,11 @@ const ALIAS_LOADER = new Set([
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  // probe → verdict → board mutation; loads cave-board.ts through "@/lib/…" (#6562)
+  "src/lib/server/task-run-liveness.test.ts",
+  "src/lib/server/task-chat-reuse.test.ts",
+  "src/lib/server/task-first-send.test.ts",
+  "src/lib/server/task-start-lock.test.ts",
   "src/lib/cave-board-schema-version.test.ts",
   "src/lib/enrich-steps-orchestration.test.ts",
   "src/lib/board-agentic-enhance.test.ts",
@@ -2519,6 +2540,9 @@ const ALIAS_LOADER = new Set([
   // imports both board routes through the @/ alias (#5690)
   "src/app/api/board/board-list-lean-route.test.ts",
   "src/app/api/board/[id]/enhance/route.test.ts",
+  "src/app/api/board/[id]/lifecycle/route.test.ts",
+  // drives the real board chat route against a daemon double on a scratch socket (#6562)
+  "src/app/api/board/[id]/chat/route-daemon.integration.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint

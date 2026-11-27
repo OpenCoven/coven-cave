@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
-import { loadBoard, updateCard } from "@/lib/cave-board";
+import { loadBoard, readyToDispatch, recordLaunchBlocker, resolveLaunchBlockers, transitionCard, updateCard, type Card } from "@/lib/cave-board";
+import { projectFolderBlockerLabel, projectFolderBlockerRef, projectFolderConfirmedEvidence } from "@/lib/task-launch-blockers";
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
@@ -12,6 +13,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  chatProjectLaunchRefusalBody,
   projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { assertCurrentPinnedLaunchRoot } from "@/lib/server/project-root-pin";
@@ -23,6 +25,8 @@ import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-per
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { isLocalCodexHarness } from "@/lib/local-codex";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { claimFirstPromptHandoff, reservedFirstPromptPending, validReuseModelOverride } from "@/lib/server/task-chat-reuse";
+import { withTaskStartLock } from "@/lib/server/task-start-lock";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -32,6 +36,25 @@ import { isSshRuntime } from "@/lib/familiar-runtime";
 const UNSUPPORTED_HARNESS_RE = /not a supported harness/i;
 
 export const dynamic = "force-dynamic";
+
+// #6562: one start per task at a time, in this server process here and
+// across processes through withTaskStartLock below. Two quick
+// presses (or two surfaces) used to both see no session, both reserve or
+// create one, and the second write orphaned the first. Each start now runs
+// after the previous one for the same task settles, so the later one sees
+// the session the earlier one recorded and reuses it.
+const taskStarts = new Map<string, Promise<unknown>>();
+
+function serializeTaskStart<T>(cardId: string, start: () => Promise<T>): Promise<T> {
+  const previous = taskStarts.get(cardId) ?? Promise.resolve();
+  const run = previous.then(start, start);
+  const settled = run.then(() => undefined, () => undefined);
+  taskStarts.set(cardId, settled);
+  void settled.then(() => {
+    if (taskStarts.get(cardId) === settled) taskStarts.delete(cardId);
+  });
+  return run;
+}
 
 export async function POST(
   req: Request,
@@ -46,8 +69,27 @@ export async function POST(
     MAX_SESSION_JSON_BYTES,
   );
   if (!parsed.ok) return parsed.response;
-  const body = parsed.body;
+  return serializeTaskStart(id, async () => {
+    // And across processes: another Cave server sharing this board may be
+    // starting the same task (#6562).
+    const locked = await withTaskStartLock(id, () => startTaskChat(id, parsed.body));
+    if (locked.ok) return locked.value;
+    console.warn(`[board-chat] task ${id} start refused: ${locked.error}`);
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "task_start_busy",
+        error: "This task is already starting in another Cave window. Try again in a moment.",
+      },
+      { status: 409 },
+    );
+  });
+}
 
+async function startTaskChat(
+  id: string,
+  body: { familiarId?: string | null; projectRoot?: string | null },
+): Promise<Response> {
   const board = await loadBoard();
   const card = board.cards.find((candidate) => candidate.id === id);
   if (!card) {
@@ -92,6 +134,56 @@ export async function POST(
   // project for the task.
   let projectRoot: string | null = null;
   const projects = await loadProjects();
+
+  // #6562: a refusal only a person can clear is recorded on the task once,
+  // so the board says what it waits on: a folder never confirmed (#6215), or
+  // one that now resolves somewhere else. Both are cleared by confirming the
+  // folder, and a later successful launch check resolves the blocker too.
+  // Best-effort: never masks the refusal. Returns the updated card so the
+  // refusal can carry it to the Board without waiting for a reload.
+  const recordFolderBlocker = async (
+    error: ChatProjectLaunchError,
+    knownProjectId: string | null = null,
+  ): Promise<Card | null> => {
+    if (error.code !== "project_root_unconfirmed" && error.code !== "project_root_moved") return null;
+    // The refusal names its project; a card filed only by folder has none.
+    const refusedProjectId = error.projectId ?? knownProjectId ?? card.projectId;
+    if (!refusedProjectId) return null;
+    const name = projects.find((project) => project.id === refusedProjectId)?.name ?? "";
+    try {
+      return await recordLaunchBlocker(card.id, {
+        ref: projectFolderBlockerRef(refusedProjectId),
+        kind: "human",
+        label: projectFolderBlockerLabel(name, error.code === "project_root_moved"),
+      });
+    } catch (recordError) {
+      console.warn(`[board-chat] could not record the folder blocker on ${card.id}:`, recordError instanceof Error ? recordError.message : recordError);
+      return null;
+    }
+  };
+  const refusal = (error: ChatProjectLaunchError, recorded: Card | null) =>
+    NextResponse.json(
+      { ...chatProjectLaunchRefusalBody(error), ...(recorded ? { card: recorded } : {}) },
+      { status: error.status },
+    );
+
+  // #6562: a started daemon session dispatches a ready, queued, triaged task,
+  // so the board shows it under Running. The check runs inside the board
+  // lock. A native Chat reservation has not sent the prompt yet; the Board
+  // dispatches it once the first send lands (lifecycle `onlyIfReady`).
+  const markTaskStarted = async (started: Card, sessionId: string): Promise<Card> => {
+    try {
+      return (await transitionCard(started.id, {
+        to: "dispatched",
+        reason: `Task chat started (session ${sessionId})`,
+        onlyIf: readyToDispatch,
+      })) ?? started;
+    } catch (error) {
+      // The chat started; a lifecycle refusal must not undo that.
+      console.warn(`[board-chat] could not dispatch ${started.id}:`, error instanceof Error ? error.message : error);
+      return started;
+    }
+  };
 
   if (card.projectId) {
     const assignedProject = projectById(card.projectId, projects);
@@ -175,16 +267,24 @@ export async function POST(
     authorizedProjectId = authorized.projectId;
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: error.message,
-          code: error.code,
-        },
-        { status: error.status },
-      );
+      return refusal(error, await recordFolderBlocker(error));
     }
     throw error;
+  }
+
+  // #6562: the folder passed the pin check, so any task waiting on it to be
+  // confirmed waits no longer, however it was confirmed (the confirm button,
+  // a Touch ID root change, or settings). Idempotent and best-effort.
+  if (authorizedProjectId) {
+    const folderRef = projectFolderBlockerRef(authorizedProjectId);
+    if (card.dependencies?.some((dependency) => dependency?.ref === folderRef && dependency.state === "unresolved")) {
+      const name = projects.find((project) => project.id === authorizedProjectId)?.name ?? "";
+      try {
+        await resolveLaunchBlockers(folderRef, projectFolderConfirmedEvidence(name, new Date().toISOString()));
+      } catch (error) {
+        console.warn(`[board-chat] could not resolve ${folderRef}:`, error instanceof Error ? error.message : error);
+      }
+    }
   }
 
   const recheckProjectRoot = async (expectedRoot = projectRoot): Promise<Response | null> => {
@@ -195,10 +295,7 @@ export async function POST(
       return null;
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) {
-        return NextResponse.json(
-          { ok: false, error: error.message, code: error.code },
-          { status: error.status },
-        );
+        return refusal(error, await recordFolderBlocker(error, authorizedProjectId));
       }
       throw error;
     }
@@ -206,6 +303,22 @@ export async function POST(
 
   // A persisted card/session link can outlive deletion, permission changes, or
   // reassignment. Reuse it only after the same launch gate as a new session.
+  // #6562: a native Chat reservation whose first prompt never landed (the
+  // work view closed before the send, or the send failed) would reopen
+  // empty. Hand the prompt back so the work view sends it, exactly as a
+  // fresh reservation does. Never for a session that has a message, a run
+  // in flight, or a daemon record.
+  const pendingFirstPromptFields = async (reserved: Card) => {
+    if (!(await reservedFirstPromptPending(reserved))) return {};
+    const reuseModelOverride = validReuseModelOverride(card, binding.harness);
+    return {
+      projectRoot,
+      initialPrompt: buildInitialTaskChatPrompt(card),
+      ...(reuseModelOverride ? { initialModelOverride: reuseModelOverride } : {}),
+      bridge: "native-chat",
+    };
+  };
+
   if (card.sessionId) {
     const rootChanged = await recheckProjectRoot();
     if (rootChanged) return rootChanged;
@@ -216,6 +329,7 @@ export async function POST(
       card,
       sessionId: card.sessionId,
       familiarId,
+      ...(await pendingFirstPromptFields(card)),
     });
   }
 
@@ -337,6 +451,7 @@ export async function POST(
     const sessionId = crypto.randomUUID();
     const updated = await updateCard(card.id, {
       sessionId,
+      nativeSessionId: sessionId,
       familiarId,
       ...(worktree
         ? { cwd: sessionRoot }
@@ -349,6 +464,8 @@ export async function POST(
       recordSessionFamiliar(sessionId, familiarId),
       setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
     ]);
+    // This start hands out the first prompt; a reopen right after it must not.
+    claimFirstPromptHandoff(sessionId);
     return NextResponse.json({
       ok: true,
       reused: false,
@@ -460,6 +577,20 @@ export async function POST(
         { status: 409 },
       );
     }
+    // #6562: the local daemon's socket refused or is missing, so the POST
+    // provably never landed. A trusted runtime can start through native Chat
+    // on this computer instead. Never for an SSH familiar or a server hub
+    // (that would run the task on the wrong host), and never after a timeout,
+    // which may have created the session.
+    if (
+      res.status === 0 &&
+      res.error === "daemon offline" &&
+      !sshBound &&
+      !hubAuthority &&
+      isTrustedChatHarness(binding.harness)
+    ) {
+      return reserveNativeChatTask();
+    }
     return NextResponse.json(
       { ok: false, error: daemonMsg ?? res.error ?? `daemon http ${res.status}` },
       { status: 502 },
@@ -487,11 +618,12 @@ export async function POST(
     recordSessionFamiliar(sessionId, familiarId),
     setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
   ]);
+  const started = await markTaskStarted(updated, sessionId);
 
   return NextResponse.json({
     ok: true,
     reused: false,
-    card: updated,
+    card: started,
     sessionId,
     familiarId,
     worktree,

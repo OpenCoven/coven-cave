@@ -301,6 +301,20 @@ assert.match(src, /prune_sidecar_nonruntime_files\(\)/, "sidecar must prune non-
 assert.match(src, /node_modules\/playwright-core/, "sidecar must remove Playwright test runtime from the packaged app");
 assert.match(src, /node_modules\/@types/, "sidecar must remove TypeScript declaration packages from the packaged app");
 assert.match(src, /-name '\*\.map'/, "sidecar must remove source maps from the packaged app");
+// The closure drops @swc/helpers' `_/` resolver shims (#6403), so the bundle
+// must prove the helper subpaths Next requires still resolve through the
+// package's exports map, instead of only checking that a directory exists.
+assert.doesNotMatch(src, /node_modules\/@swc\/helpers\/_;/, "the bundle must not require the pruned `_/` shim directory");
+assert.match(
+  src,
+  /createRequire\(require\.resolve\("next\/package\.json"\)\)/,
+  "the bundle must resolve @swc/helpers from Next's own location",
+);
+assert.match(
+  src,
+  /import\(`@swc\/helpers\/_\/\$\{name\}`\)/,
+  "the bundle must also prove the ESM helper subpaths resolve",
+);
 
 // Sharp is a RUNTIME dependency: the familiar avatar route transcodes seeded
 // raster avatars with it at request time (#2010). It must survive bundling, so
