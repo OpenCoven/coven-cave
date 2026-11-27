@@ -285,7 +285,7 @@ test("Chat names the folder and grant behind a refused Full access turn, and ope
   expect(box && viewport && box.x >= 0 && box.x + box.width <= viewport.width + 1).toBe(true);
   // Retry stays for after the grant is narrowed. With Open projects there
   // are six buttons: every one stays on screen, down to Dismiss.
-  await expect(strip.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(strip.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
   for (const button of await strip.getByRole("button").all()) {
     const edge = await button.boundingBox();
     expect(edge && viewport && edge.x >= 0 && edge.x + edge.width <= viewport.width + 1, await button.innerText() || "Dismiss").toBe(true);
