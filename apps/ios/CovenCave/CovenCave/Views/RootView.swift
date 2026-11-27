@@ -147,8 +147,10 @@ struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsMounted = false
+    /// Derived presentation readout; ChatsHome retains selection/navigation.
+    @State private var visibleThreadId: String?
     var body: some View {
-        CaveNavigationHost {
+        CaveNavigationHost(currentThreadId: app.selectedTab == .chats ? visibleThreadId : nil) {
             shellContent
         }
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
@@ -208,7 +210,7 @@ struct MainShellView: View {
         ZStack {
             // Settings and access refreshes must not discard the active draft,
             // conversation selection, or scroll position.
-            ChatsHomeView()
+            ChatsHomeView(onVisibleThreadChange: { visibleThreadId = $0 })
                 .environment(\.cavePerformancePresentationActive, app.selectedTab != .settings)
                 .opacity(app.selectedTab == .settings ? 0 : 1)
                 .allowsHitTesting(app.selectedTab != .settings)

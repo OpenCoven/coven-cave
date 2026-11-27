@@ -10,6 +10,7 @@ struct CaveNavigationDrawer: View {
 
     @Binding var isOpen: Bool
     @Binding var recentsExpanded: Bool
+    var currentThreadId: String? = nil
     var openThread: (ChatThread) -> Void
     var newChat: () -> Void
     var openSearch: () -> Void
@@ -36,15 +37,27 @@ struct CaveNavigationDrawer: View {
     var body: some View {
         GeometryReader { geo in
             let width = min(max(geo.size.width * 0.70, 260), 304)
+            // CaveNavigationHost mounts this drawer only while open and owns
+            // its transition, so the drawer itself renders unconditionally.
             ZStack(alignment: .leading) {
                 Color.black.opacity(0.52)
                     .ignoresSafeArea()
-                    .onTapGesture(perform: close)
-                    .accessibilityLabel("Close menu")
-                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHidden(true)
+
+                // Keep the accessible dismissal target outside the panel.
+                // A full-screen target's center sits underneath the drawer
+                // on narrow displays and cannot receive its synthesized tap.
+                Button(action: close) {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(width: max(0, geo.size.width - width))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityLabel("Close menu")
 
                 panel(width: width)
             }
+            .accessibilityElement(children: .contain)
         }
         .allowsHitTesting(isOpen && !presentationActive)
         .accessibilityAddTraits(.isModal)
@@ -87,25 +100,38 @@ struct CaveNavigationDrawer: View {
 
                         if recentsExpanded {
                             ForEach(recentThreads) { thread in
+                                let isCurrent = thread.id == currentThreadId
                                 Button {
                                     close()
                                     openThread(thread)
                                 } label: {
                                     HStack(spacing: 10) {
-                                        Circle()
-                                            .fill(chrome.textMuted.opacity(0.58))
-                                            .frame(width: 4, height: 4)
+                                        Image(systemName: thread.pinned ? "pin" : "bubble.left")
+                                            .font(.caption)
+                                            .foregroundStyle(chrome.textMuted)
+                                            .frame(width: 18)
                                             .accessibilityHidden(true)
                                         Text(thread.title)
-                                            .foregroundStyle(chrome.textSecondary)
-                                            .lineLimit(1)
+                                            .foregroundStyle(isCurrent ? chrome.textPrimary : chrome.textSecondary)
+                                            .lineLimit(2)
                                         Spacer(minLength: 0)
+                                        if isCurrent {
+                                            Image(systemName: "checkmark")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(chrome.textPrimary)
+                                                .accessibilityHidden(true)
+                                        }
                                     }
                                     .padding(.horizontal, 14)
                                     .frame(minHeight: 44)
+                                    .background(isCurrent ? chrome.bgElevated : .clear,
+                                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.glassPress)
+                                .accessibilityLabel(thread.pinned ? "\(thread.title), pinned" : thread.title)
+                                .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+                                .accessibilityValue(isCurrent ? "Current conversation" : "")
                             }
                         }
                     }
@@ -118,14 +144,7 @@ struct CaveNavigationDrawer: View {
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background {
-            LinearGradient(
-                colors: [chrome.bgRaised, chrome.bgBase],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        }
+        .background(chrome.bgBase.ignoresSafeArea())
         .overlay(alignment: .trailing) {
             Rectangle().fill(chrome.border.opacity(0.7)).frame(width: 1).ignoresSafeArea()
         }
@@ -143,16 +162,10 @@ struct CaveNavigationDrawer: View {
                 .foregroundStyle(chrome.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
-            Button {
+            CircularIconButton(systemImage: "magnifyingglass", label: "Search chats") {
                 close()
                 openSearch()
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
             }
-            .buttonStyle(.glassPress)
-            .accessibilityLabel("Search chats")
         }
         .padding(.horizontal, 20)
     }
@@ -168,8 +181,7 @@ struct CaveNavigationDrawer: View {
                     .foregroundStyle(chrome.bgBase)
                     .frame(minHeight: 44)
                     .frame(maxWidth: .infinity)
-                    .background(chrome.textPrimary,
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(chrome.textPrimary, in: Capsule())
             }
             .buttonStyle(.glassPress)
             .accessibilityLabel("New chat")
@@ -177,10 +189,10 @@ struct CaveNavigationDrawer: View {
             Button { go(.settings) } label: {
                 Text(Theme.initials(app.operatorDisplayName))
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(chrome.accentForeground)
+                    .foregroundStyle(chrome.textPrimary)
                     .frame(width: 44, height: 44)
                     .background(
-                        chrome.accentGradient,
+                        chrome.bgElevated,
                         in: Circle()
                     )
             }
@@ -219,7 +231,7 @@ private struct DrawerNavRow: View {
                     .foregroundStyle(active ? AnyShapeStyle(chrome.textPrimary) : AnyShapeStyle(.secondary))
                     .frame(width: 26)
                 Text(label)
-                    .font(.system(size: 17, weight: active ? .semibold : .regular))
+                    .font(.body.weight(active ? .semibold : .regular))
                     .foregroundStyle(chrome.textPrimary)
                 Spacer()
             }
@@ -227,7 +239,7 @@ private struct DrawerNavRow: View {
             .frame(minHeight: 50)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(active ? chrome.bgElevated : .clear)
             )
         }
@@ -245,6 +257,9 @@ struct CaveNavigationHost<Content: View>: View {
     @Environment(\.caveNavigationAllowed) private var inheritedNavigationAllowed
     var navigate: (@escaping () -> Void) -> Void = { $0() }
     var navigationEnabled = true
+    /// Conversation the destination is showing, highlighted in the drawer's
+    /// recents. Presentation readout only; ChatsHome owns selection.
+    var currentThreadId: String? = nil
     @State private var exitBlocked = false
     @State private var presentedChild = false
     @State private var recentsExpanded = true
@@ -282,6 +297,7 @@ struct CaveNavigationHost<Content: View>: View {
                         CaveNavigationDrawer(
                             isOpen: Binding(get: { app.navigationDrawerOpen }, set: { app.navigationDrawerOpen = $0 }),
                             recentsExpanded: $recentsExpanded,
+                            currentThreadId: currentThreadId,
                             openThread: { thread in
                                 performNavigation { _ = app.requestOpen(thread) }
                             },

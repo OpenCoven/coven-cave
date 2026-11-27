@@ -28,6 +28,8 @@ enum ChatNewConversationContext {
 /// Global, resumable conversations. A chat owns its project binding; the
 /// sidebar's search, archive filter, and selection never change that binding.
 struct ChatsHomeView: View {
+    /// Readout from this view's existing navigation owner, for drawer styling.
+    var onVisibleThreadChange: (String?) -> Void = { _ in }
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -124,6 +126,9 @@ struct ChatsHomeView: View {
             ActivityView(items: [archive.url])
         }
         .onDisappear { cancelSearchMeasurement() }
+        .onChange(of: lastThreadId, initial: true) { _, id in
+            onVisibleThreadChange(id)
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { cancelSearchMeasurement() }
         }
@@ -478,7 +483,7 @@ struct ChatsHomeView: View {
                let detail = visibleConversationLabel(snapshot.entries.count) {
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(chrome.textSecondary)
+                    .foregroundStyle(chrome.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             filterRow(snapshot)
@@ -491,7 +496,7 @@ struct ChatsHomeView: View {
         .padding(.horizontal, 14)
         .padding(.top, 6)
         .padding(.bottom, 8)
-        .glassChrome(.top)
+        .background(chrome.bgBase.ignoresSafeArea(edges: [.top, .horizontal]))
     }
 
     /// Familiars offered by the filter: everyone with at least one conversation
@@ -600,7 +605,7 @@ struct ChatsHomeView: View {
         .padding(.horizontal, 12)
         .frame(minHeight: 44)
         .fixedSize(horizontal: true, vertical: false)
-        .glass(.control, in: Capsule())
+        .chatSurface(.control, in: Capsule(), active: active)
         .contentShape(Rectangle())
     }
 
@@ -715,8 +720,7 @@ struct ChatsHomeView: View {
             }
             .padding(.horizontal, 14)
             .frame(minHeight: dockControlSize)
-            .glass(.control, in: Capsule())
-            .accentGlow(active: searchFocused)
+            .chatSurface(.control, in: Capsule(), active: searchFocused)
 
             Button {
                 presentContextualNewChat()
@@ -735,7 +739,7 @@ struct ChatsHomeView: View {
         }
         .padding(verticalSizeClass == .compact ? 6 : 8)
         .frame(maxWidth: sizeClass == .regular ? 560 : .infinity)
-        .glass(.elevated, cornerRadius: verticalSizeClass == .compact ? 20 : 24)
+        .chatSurface(.elevated, cornerRadius: verticalSizeClass == .compact ? 20 : 24)
         .padding(.horizontal, sizeClass == .regular ? 24 : 12)
         .padding(.bottom, verticalSizeClass == .compact ? 4 : 8)
         .frame(maxWidth: .infinity)
@@ -845,18 +849,18 @@ struct ChatsHomeView: View {
         }
     }
 
-    /// Phones draw rows on the themed list background; iPad keeps the system
-    /// background so its selection highlight shows. Either way a chat that is
-    /// stopped on you gets its status field — except the selected iPad row,
-    /// whose highlight already says where you are.
+    /// Phones draw rows on the themed list floor. The selected regular-width
+    /// row pairs primary ink with a neutral raised floor; other stopped chats
+    /// retain their status field.
     private func rowBackground(for entry: ChatListSnapshot.Entry) -> AnyView? {
         let selected: Bool = switch entry.conversation {
         case .local(let thread): sizeClass == .regular && selection == .thread(thread)
         case .server: false
         }
+        if selected { return AnyView(chrome.bgElevated) }
         let flags = ChatStatusTint.rowField(entry.status, accent: chrome.accent) != nil
             || entry.status.lifecycle == .failed
-        guard flags, !selected else { return sizeClass == .compact ? AnyView(Color.clear) : nil }
+        guard flags else { return sizeClass == .compact ? AnyView(Color.clear) : nil }
         return AnyView(ChatStatusRowBackground(
             status: entry.status,
             plain: sizeClass == .compact ? .clear : Color(uiColor: .systemBackground)
@@ -1268,9 +1272,11 @@ struct ThreadRow: View {
     private var familiars: [Familiar] { thread.familiarIds.compactMap(app.familiar) }
     private var lastMessage: DisplayMessage? { thread.messages.last }
     private var activityDate: Date { max(activityAt ?? thread.updatedAt, thread.updatedAt) }
-    private var primaryColor: Color { isSelected ? chrome.accentForeground : chrome.textPrimary }
-    private var secondaryColor: Color { isSelected ? chrome.accentForeground : chrome.textSecondary }
-    private var accentColor: Color { isSelected ? chrome.accentForeground : chrome.accent }
+    // The native list uses a neutral selection floor, not an accent-filled
+    // surface. Its selected ink must follow that floor in light and dark.
+    private var primaryColor: Color { chrome.textPrimary }
+    private var secondaryColor: Color { chrome.textPrimary }
+    private var accentColor: Color { isSelected ? chrome.textPrimary : chrome.accent }
     private var hasUnread: Bool {
         guard let seen = app.seenBoundary(for: thread) else { return false }
         return activityDate > seen
@@ -1326,6 +1332,7 @@ struct ThreadRow: View {
         // Collapse title, status glyphs, time, and preview into one spoken element.
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// One spoken summary of the row: title, status, last activity, preview.
@@ -1358,6 +1365,11 @@ struct ThreadRow: View {
                 .foregroundStyle(primaryColor)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 .layoutPriority(1)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(primaryColor)
+                    .accessibilityHidden(true)
+            }
             if hasUnread {
                 Circle().fill(accentColor).frame(width: 8, height: 8)
             }
