@@ -8,7 +8,7 @@ assert.match(route, /export async function GET/);
 assert.match(route, /export async function PATCH/);
 assert.match(
   route,
-  /const claudeLocal = state\.harness === "claude" && localBinding;[\s\S]*?covenRunSupportsWriteScope\(\)\.catch\(\(\) => false\)[\s\S]*?covenRunSupportsPermission\(\)\.catch\(\(\) => false\)[\s\S]*?chatBuildAccessFor\(\{ harness: state\.harness, localBinding, writeScopeSupported, permissionForwarding \}\)[\s\S]*?access: \{ build: buildAccess \}/,
+  /const buildLocalBinding =\s*!isSshRuntime\(binding\.runtime\) && !state\.runtime\?\.startsWith\("ssh:"\);[\s\S]*?const claudeLocal = state\.harness === "claude" && buildLocalBinding;[\s\S]*?covenRunSupportsWriteScope\(\)\.catch\(\(\) => false\)[\s\S]*?covenRunSupportsPermission\(\)\.catch\(\(\) => false\)[\s\S]*?chatBuildAccessFor\(\{ harness: state\.harness, localBinding: buildLocalBinding, writeScopeSupported, permissionForwarding \}\)[\s\S]*?access: \{ build: buildAccess \}/,
   "model state reports Claude Build unavailable from the same write-scope probe the send route refuses on (#6445)",
 );
 assert.match(
