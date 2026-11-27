@@ -85,8 +85,6 @@ export const SEARCH_ENTITY_TYPES = [
   "file",
 ] as const;
 
-export type SearchEntityType = (typeof SEARCH_ENTITY_TYPES)[number];
-
 /**
  * User-facing entity type aliases. `chat` is the spec's name for the
  * session/chat family, but providers emit `session` as the canonical

@@ -51,8 +51,15 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   assertValidOrchestration,
   dependenciesOf,
+  deriveReadiness,
   validateOrchestration,
 } from "@/lib/task-orchestration";
+import { projectFolderBlockerRef } from "@/lib/task-launch-blockers";
+import {
+  ENDED_RUN_REVIEW_STEP_SUMMARY,
+  isRunningTaskLifecycle,
+  type EndedRunOutcome,
+} from "@/lib/task-run-reconcile";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -1523,6 +1530,15 @@ async function updateCardLocked(
   } else {
     delete next.predatesDependencies;
   }
+  // A task moved to another project no longer waits on the old project's
+  // folder (#6562). Only the Cave's own launch blocker is resolved.
+  if (current.projectId && next.projectId !== current.projectId) {
+    const staleRef = projectFolderBlockerRef(current.projectId);
+    next.dependencies = (next.dependencies ?? []).map((dependency) =>
+      dependency?.ref === staleRef && dependency.origin === "system" && dependency.state === "unresolved"
+        ? { ...dependency, state: "resolved", resolvedAt: now, resolvedBy: "system", evidence: `Task moved to another project at ${now}` }
+        : dependency);
+  }
   const promotion = promoteResolvedPrimary(current, next, patch, now, options);
   if (statusChanged) next.needsHuman = next.status === "blocked";
   if (next.nextStep?.requiresApproval) next.needsHuman = true;
@@ -1597,7 +1613,27 @@ export type TransitionInput = {
   to: CardLifecycle;
   reason?: string;
   retry?: boolean;
+  /**
+   * Checked inside the board lock against the latest card. When it returns
+   * false the card is returned unchanged, so a guard can never race a
+   * concurrent write the way a check before the call can (#6562).
+   */
+  onlyIf?: (card: Card, cards: readonly Card[]) => boolean;
 };
+
+/**
+ * Whether starting a task's work may dispatch it: queued and triaged (not
+ * Inbox), no next step waiting on approval, and nothing it waits on (#6562).
+ * Opening a waiting or untriaged task's chat to discuss it is not dispatching.
+ */
+export function readyToDispatch(card: Card, cards: readonly Card[]): boolean {
+  return (
+    card.lifecycle === "queued" &&
+    card.status !== "inbox" &&
+    !card.nextStep?.requiresApproval &&
+    deriveReadiness(card, [...cards]) === "ready"
+  );
+}
 
 function executionDependency(
   to: "failed" | "cancelled",
@@ -1615,9 +1651,11 @@ function executionDependency(
   };
 }
 
+const FAILURE_NEXT_STEP_SUMMARY = "Review the failed run and choose retry or repair";
+
 function failureNextStep(now: string): TaskNextStep {
   return {
-    summary: "Review the failed run and choose retry or repair",
+    summary: FAILURE_NEXT_STEP_SUMMARY,
     requiresApproval: true,
     origin: "system",
     updatedAt: now,
@@ -1655,15 +1693,48 @@ function applyExecutionBlocker(
   next.needsHuman = true;
 }
 
+/**
+ * "Someone retries or repairs" clears a failure blocker
+ * (docs/orchestration-ready-tasks.md, #6562). Resolve only the execution
+ * dependencies the Cave synthesized, with evidence, and drop the system's
+ * review-the-failure step. Human-written blockers and next steps stay.
+ */
+function clearExecutionBlockers(next: Card, evidence: string, now: string): void {
+  const dependencies = Array.isArray(next.dependencies) ? next.dependencies : [];
+  const cleared = new Set<string>();
+  next.dependencies = dependencies.map((dependency) => {
+    if (!dependency || dependency.origin !== "system" || dependency.kind !== "execution" || dependency.state !== "unresolved") {
+      return dependency;
+    }
+    cleared.add(dependency.id);
+    return { ...dependency, state: "resolved", resolvedAt: now, resolvedBy: "system", evidence };
+  });
+  if (next.primaryBlockerId && cleared.has(next.primaryBlockerId)) {
+    const remaining = next.dependencies.find((dependency) => dependency?.state === "unresolved");
+    next.primaryBlockerId = remaining?.id ?? null;
+    next.primaryBlockerPinned = false;
+  }
+  // Drop only the failure's own step. A failure replaced any system step
+  // derived from a blocker, so if one is still open, restore its step.
+  if (next.nextStep?.origin === "system" && next.nextStep.summary === FAILURE_NEXT_STEP_SUMMARY) {
+    next.nextStep = null;
+  }
+  const primary = next.dependencies.find(
+    (dependency) => dependency?.id === next.primaryBlockerId && dependency.state === "unresolved",
+  );
+  if (!next.nextStep && primary) next.nextStep = nextStepForDependency(primary, now);
+}
+
 export async function transitionCard(
   id: string,
-  { to, reason, retry }: TransitionInput,
+  { to, reason, retry, onlyIf }: TransitionInput,
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
   const current = board.cards[idx];
+  if (onlyIf && !onlyIf(current, board.cards)) return current;
   if (!VALID_NEXT[current.lifecycle]?.includes(to)) {
     throw new Error(`invalid transition: ${current.lifecycle} → ${to}`);
   }
@@ -1692,6 +1763,10 @@ export async function transitionCard(
   } else if (to === "completed") {
     next.status = "done";
     next.needsHuman = false;
+    // Completing is the review an ended run asked for (#6562).
+    if (next.nextStep?.origin === "system" && next.nextStep.summary === ENDED_RUN_REVIEW_STEP_SUMMARY) {
+      next.nextStep = null;
+    }
   } else if (to === "failed") {
     const blocker = executionDependency(to, reason, now);
     applyExecutionBlocker(current, next, blocker, now);
@@ -1699,8 +1774,10 @@ export async function transitionCard(
     if (retry) {
       next.retryCount = current.retryCount + 1;
     }
+    clearExecutionBlockers(next, `${retry ? "Retried" : "Re-queued"} at ${now}`, now);
     next.status = "backlog";
-    next.needsHuman = false;
+    // Still needs a person only if a remaining step waits on their approval.
+    next.needsHuman = Boolean(next.nextStep?.requiresApproval);
   } else if (to === "cancelled") {
     const blocker = executionDependency(to, reason, now);
     applyExecutionBlocker(current, next, blocker, now);
@@ -1715,6 +1792,187 @@ export async function transitionCard(
   board.cards[idx] = next;
   await saveBoard(board, [next.id]);
   return next;
+  });
+}
+
+/**
+ * Record a launch refusal that only a person can clear (for example an
+ * unconfirmed project folder, #6215) as one system dependency on the card,
+ * keyed by `ref` so a repeated refusal is not duplicated (#6562). The
+ * lifecycle and column don't change: the task is simply waiting.
+ */
+export async function recordLaunchBlocker(
+  id: string,
+  blocker: { ref: string; kind: TaskDependency["kind"]; label: string },
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const idx = board.cards.findIndex((card) => card.id === id);
+    if (idx < 0) return null;
+    const current = board.cards[idx];
+    const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+    if (dependencies.some((dependency) => dependency?.ref === blocker.ref && dependency.state === "unresolved")) {
+      return current;
+    }
+    const now = new Date().toISOString();
+    const next: Card = {
+      ...current,
+      dependencies: [...dependencies, {
+        id: crypto.randomUUID(),
+        kind: blocker.kind,
+        label: blocker.label,
+        ref: blocker.ref,
+        state: "unresolved",
+        origin: "system",
+        createdAt: now,
+      }],
+      updatedAt: now,
+    };
+    delete next.predatesDependencies;
+    // A Blocked card must name an open primary blocker and a next step. One
+    // whose blockers were all settled has neither, so the new one becomes it.
+    const added = next.dependencies![next.dependencies!.length - 1];
+    const hasOpenPrimary = dependencies.some(
+      (dependency) => dependency?.id === current.primaryBlockerId && dependency.state === "unresolved",
+    );
+    if (current.status === "blocked" && !hasOpenPrimary) {
+      next.primaryBlockerId = added.id;
+      next.primaryBlockerPinned = false;
+      if (next.nextStep?.origin !== "human") next.nextStep = nextStepForDependency(added, now);
+      if (next.nextStep?.requiresApproval) next.needsHuman = true;
+    }
+    assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true });
+    board.cards[idx] = next;
+    await saveBoard(board, [next.id]);
+    return next;
+  });
+}
+
+/**
+ * Resolve every unresolved system launch blocker with this `ref`, with
+ * evidence, across the board. Returns the ids of the cards it changed.
+ */
+export async function resolveLaunchBlockers(ref: string, evidence: string): Promise<string[]> {
+  const isOpenLaunchBlocker = (dependency: TaskDependency | null | undefined): dependency is TaskDependency =>
+    !!dependency && dependency.ref === ref && dependency.origin === "system" && dependency.state === "unresolved";
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const now = new Date().toISOString();
+    const changed: Card[] = [];
+    board.cards = board.cards.map((current) => {
+      const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+      if (!dependencies.some(isOpenLaunchBlocker)) {
+        return current;
+      }
+      const next: Card = {
+        ...current,
+        dependencies: dependencies.map((dependency) =>
+          isOpenLaunchBlocker(dependency)
+            ? { ...dependency, state: "resolved", resolvedAt: now, resolvedBy: "system", evidence }
+            : dependency),
+        updatedAt: now,
+      };
+      if (next.primaryBlockerId && !next.dependencies!.some((dependency) => dependency?.id === next.primaryBlockerId && dependency.state === "unresolved")) {
+        next.primaryBlockerId = next.dependencies!.find((dependency) => dependency?.state === "unresolved")?.id ?? null;
+        next.primaryBlockerPinned = false;
+      }
+      try {
+        assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true, allowReadyBlocked: true });
+      } catch (error) {
+        // Leave a card the contract would reject untouched, but say so.
+        console.warn(`[cave-board] left launch blocker ${ref} open on ${current.id}:`, error instanceof Error ? error.message : error);
+        return current;
+      }
+      changed.push(next);
+      return next;
+    });
+    if (changed.length) await saveBoard(board, changed.map((card) => card.id));
+    return changed.map((card) => card.id);
+  });
+}
+
+/** One probed verdict, bound to the card state the probe saw. */
+export type EndedTaskRunSettlement = {
+  id: string;
+  /** The session the probe inspected. */
+  sessionId: string;
+  /** The card's `lifecycleAt` when it was probed. */
+  lifecycleAt: string;
+  outcome: EndedRunOutcome;
+  evidence: string;
+};
+
+function endedRunReviewStep(now: string): TaskNextStep {
+  return {
+    summary: ENDED_RUN_REVIEW_STEP_SUMMARY,
+    requiresApproval: true,
+    origin: "system",
+    updatedAt: now,
+  };
+}
+
+/**
+ * Settle running tasks whose session provably ended (#6562 slice 2), under
+ * the board lock. Each settlement applies only if the card is still in the
+ * running state the probe saw (same lifecycle stamp and session), so a
+ * transition that landed meanwhile always wins. A run that ended cleanly goes
+ * to Review with a system next step; a failed or cancelled one gets the same
+ * execution blocker as a reported failure. Nothing is marked completed, and
+ * human-written dependencies and next steps are kept. Idempotent: a settled
+ * card is no longer running, so a repeat call changes nothing. Returns the
+ * cards it changed.
+ */
+export async function settleEndedTaskRuns(
+  settlements: readonly EndedTaskRunSettlement[],
+): Promise<Card[]> {
+  if (settlements.length === 0) return [];
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const now = new Date().toISOString();
+    const changed: Card[] = [];
+    for (const settlement of settlements) {
+      const idx = board.cards.findIndex((card) => card.id === settlement.id);
+      if (idx < 0) continue;
+      const current = board.cards[idx];
+      if (
+        !isRunningTaskLifecycle(current) ||
+        current.sessionId !== settlement.sessionId ||
+        current.lifecycleAt !== settlement.lifecycleAt
+      ) {
+        continue;
+      }
+      // A dispatched task that ended cleanly did run: it settles straight to
+      // Review rather than through a Running stop it was never observed in.
+      const to: CardLifecycle = settlement.outcome;
+      const next: Card = {
+        ...current,
+        lifecycle: to,
+        lifecycleAt: now,
+        lifecycleReason: settlement.evidence,
+        updatedAt: now,
+      };
+      delete next.runningSince;
+      if (to === "review") {
+        next.status = "review";
+        next.needsHuman = true;
+        // Only an empty slot takes the review step. Any existing step, a
+        // person's, Enhance's or one derived from an open blocker, stays.
+        if (!next.nextStep) next.nextStep = endedRunReviewStep(now);
+      } else {
+        applyExecutionBlocker(current, next, executionDependency(to, settlement.evidence, now), now);
+      }
+      if (next.nextStep?.requiresApproval) next.needsHuman = true;
+      try {
+        assertValidOrchestration(next, { cards: board.cards, previous: current, automated: true });
+      } catch (error) {
+        console.warn(`[cave-board] left ended run on ${current.id} unsettled:`, error instanceof Error ? error.message : error);
+        continue;
+      }
+      board.cards[idx] = next;
+      changed.push(next);
+    }
+    if (changed.length) await saveBoard(board, changed.map((card) => card.id));
+    return changed;
   });
 }
 

@@ -23,7 +23,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /stubWrite = createConversationStub\(\{\s*sessionId: announcedId,[\s\S]*?\}\)\.catch\(\(\) => undefined\);\s*push\(\{ kind: "session", sessionId: announcedId \}\);/,
+  /stubWrite = createConversationStub\(\{\s*sessionId: announcedId,[\s\S]*?\}\)\.catch\(\(\) => \{[^{}]*?return undefined;\s*\}\);\s*push\(\{ kind: "session", sessionId: announcedId \}\);/,
   "announceSession must start the stub write before pushing the session frame, keyed to the stable announced id",
 );
 
@@ -69,7 +69,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /createConversationStub\(\{[\s\S]*?sessionId: announcedId,[\s\S]*?\}\)\.then\(async \(created\) => \{\s*if \(created && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\([\s\S]*?\);\s*\}\s*return created;\s*\}\)\.catch/,
+  /createConversationStub\(\{[\s\S]*?sessionId: announcedId,[\s\S]*?\}\)\.then\(async \(created\) => \{\s*(?:\/\/[^\n]*\n\s*if \(created\) void dispatchTaskOnFirstSend\(announcedId\);\s*)?if \(created && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\([\s\S]*?\);\s*\}\s*return created;\s*\}\)\.catch/,
   "generic stub title initialization runs only when this request owns the first exchange",
 );
 
@@ -101,7 +101,7 @@ assert.match(
 
 const openClawStubWrites = [
   ...chatRoute.matchAll(
-    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
+    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => \{[^{}]*?return false;\s*\}\);/g,
   ),
 ];
 assert.equal(

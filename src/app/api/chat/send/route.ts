@@ -213,6 +213,7 @@ import {
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  chatProjectLaunchRefusalBody,
   projectlessGenerationLaunch,
   projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
@@ -266,6 +267,7 @@ import {
   stripConversationStubTurn,
   withConversationLock,
 } from "@/lib/cave-conversations";
+import { dispatchTaskOnFirstSend } from "@/lib/server/task-first-send";
 import { flowSessionReferenceFor, isUnstartedFlowDiscussion } from "@/lib/flow-session";
 import { loadFlowSessionState } from "@/lib/server/flow-store";
 import {
@@ -1371,11 +1373,17 @@ function openClawChatResponse(args: {
             ...persistedTurnControls(args.body, responseMetadata.retryModel),
           },
         }).then(async (created) => {
+          // The session's first prompt landed: start its task (#6562).
+          if (created) void dispatchTaskOnFirstSend(conversationId);
           if (created && ownsFirstExchangeTitle) {
             await setDefaultStubTitleAuto(conversationId, stubTitle);
           }
           return created;
-        }).catch(() => false);
+        }).catch(() => {
+          // A lost stub still saves the turn at stream close; don't strand the task.
+          void dispatchTaskOnFirstSend(conversationId);
+          return false;
+        });
         const abortGateway = (toolOutcome: string) => {
           settleOpenGatewayTools(toolOutcome);
           void gatewayDispatch.abort();
@@ -1697,11 +1705,17 @@ function openClawChatResponse(args: {
           ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
       }).then(async (created) => {
+        // The session's first prompt landed: start its task (#6562).
+        if (created) void dispatchTaskOnFirstSend(conversationId);
         if (created && ownsFirstExchangeTitle) {
           await setDefaultStubTitleAuto(conversationId, stubTitle);
         }
         return created;
-      }).catch(() => false);
+      }).catch(() => {
+        // A lost stub still saves the turn at stream close; don't strand the task.
+        void dispatchTaskOnFirstSend(conversationId);
+        return false;
+      });
 
       const failChild = (err: NodeJS.ErrnoException | ChatProjectLaunchError) => {
         if (terminal) return;
@@ -2727,11 +2741,7 @@ async function postAdmittedChat(
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
       return new Response(
-        JSON.stringify({
-          ok: false,
-          error: error.message,
-          code: error.code,
-        }),
+        JSON.stringify(chatProjectLaunchRefusalBody(error)),
         { status: error.status, headers: { "content-type": "application/json" } },
       );
     }
@@ -2768,7 +2778,7 @@ async function postAdmittedChat(
     assertProjectFoldersUnchanged(await loadProjects());
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
-      return Response.json({ ok: false, code: error.code, error: error.message }, { status: error.status });
+      return Response.json(chatProjectLaunchRefusalBody(error), { status: error.status });
     }
     throw error;
   }
@@ -3473,7 +3483,7 @@ async function postAdmittedChat(
       await assertLaunchFoldersUnchanged();
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) return Response.json(
-        { ok: false, code: error.code, error: error.message }, { status: error.status });
+        chatProjectLaunchRefusalBody(error), { status: error.status });
       throw error;
     }
     return openClawChatResponse({
@@ -4520,6 +4530,8 @@ async function postAdmittedChat(
             ...persistedTurnControls(body, responseMetadata.retryModel),
           },
         }).then(async (created) => {
+          // The session's first prompt landed: start its task (#6562).
+          if (created) void dispatchTaskOnFirstSend(announcedId);
           if (created && ownsFirstExchangeTitle) {
             await setDefaultStubTitleAuto(
               announcedId,
@@ -4527,7 +4539,11 @@ async function postAdmittedChat(
             );
           }
           return created;
-        }).catch(() => undefined);
+        }).catch(() => {
+          // A lost stub still saves the turn at stream close; don't strand the task.
+          void dispatchTaskOnFirstSend(announcedId);
+          return undefined;
+        });
         push({ kind: "session", sessionId: announcedId });
       };
 

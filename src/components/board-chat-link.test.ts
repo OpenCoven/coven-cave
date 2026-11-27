@@ -41,8 +41,13 @@ assert.match(
 );
 assert.match(
   boardView,
-  /if \(card\.sessionId && !card\.projectId\)/,
-  "project-backed task sessions must revisit the board endpoint for current authorization before opening",
+  /const unscopedSession = card\.sessionId && !card\.projectId \? card\.sessionId : null;[\s\S]*?const reservedUnscoped = unscopedSession !== null && card\.nativeSessionId === unscopedSession;[\s\S]*?if \(unscopedSession && !reservedUnscoped\) \{\s*openLinkedSessionDirectly\(unscopedSession\);\s*return;/,
+  "project-backed task sessions, and sessions the endpoint reserved itself, must revisit the board endpoint before opening (#6562)",
+);
+assert.match(
+  boardView,
+  /const started = await startTaskChat\(id, project\?\.root\);\s*if \(!started && unscopedSession\) \{[\s\S]*?openLinkedSessionDirectly\(unscopedSession\);\s*return;\s*\}/,
+  "a reserved unscoped session the endpoint refuses still opens directly, as before (#6562)",
 );
 assert.match(
   boardView,

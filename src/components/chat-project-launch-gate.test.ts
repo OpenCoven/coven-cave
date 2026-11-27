@@ -63,9 +63,45 @@ assert.ok(initialReadyIndex < initialLatchIndex, "waiting for a project must not
 
 assert.match(
   chat,
-  /res\.status === 409 &&\s*\(refusal\?\.code === "project_root_unconfirmed" \|\| refusal\?\.code === "project_root_moved"\)\s*\)\s*\{\s*setProjectsFixNeeded\(true\);\s*surfacedMessage = refusal\.code === "project_root_moved"/,
-  "an unconfirmed or moved project folder offers Projects with code-selected safe copy (#6215)",
+  /res\.status === 409 &&\s*\(refusal\?\.code === "project_root_unconfirmed" \|\| refusal\?\.code === "project_root_moved"\)\s*\)\s*\{\s*const folderProjectId = refusedUnconfirmedProjectId\(refusal\);\s*setProjectsFixNeeded\(!folderProjectId\);\s*surfacedMessage = refusal\.code === "project_root_moved"[\s\S]{0,500}setFolderConfirm\(folderProjectId \? \{ projectId: folderProjectId, message: surfacedMessage \} : null\);/,
+  "a moved folder, or an unconfirmed one the server did not name, offers Projects with code-selected safe copy (#6215)",
 );
+// #6560: an unconfirmed folder the server named is confirmed in place, through
+// useProjects().confirmRoot (the settings route and its Touch ID ceremony),
+// and only a successful confirmation retries the refused message.
+const confirmIndex = chat.indexOf("const confirmFolderAndRetry = async");
+assert.ok(confirmIndex > 0, "Chat should have an in-place Confirm folder handler");
+const confirmBody = chat.slice(confirmIndex, chat.indexOf("\n  };\n", confirmIndex));
+assert.match(confirmBody, /await confirmRoot\(target\.projectId\)/, "Confirm folder should reuse the settings confirmation");
+assert.match(confirmBody, /target\.message !== error/, "a different, later error never inherits the action");
+assert.match(confirmBody, /setFolderConfirm\(\{ projectId: target\.projectId, message: result\.error \}\);/, "a declined prompt can be tried again beside its own message");
+assert.match(
+  confirmBody,
+  /if \(!result\.ok\) \{[\s\S]*setError\(result\.error\);[\s\S]*return;[\s\S]*\}[\s\S]*retryFailedSend\(\)/,
+  "a declined or unavailable confirmation shows the server's message and never retries",
+);
+assert.match(
+  chat,
+  /onConfirmFolder=\{\s*folderConfirm && error === folderConfirm\.message\s*\? \(\) => void confirmFolderAndRetry\(\)\s*: undefined\s*\}/,
+  "the error strip offers Confirm folder only beside its own folder message, never a later unrelated error",
+);
+assert.match(
+  chat,
+  /\{onConfirmFolder \? \([\s\S]{0,400}onClick=\{onConfirmFolder\}[\s\S]{0,100}disabled=\{confirmingFolder \|\| busy\}[\s\S]{0,700}"Confirm folder"/,
+  "the strip's Confirm folder disables while the prompt is open or a send is running",
+);
+// The Touch ID prompt can stay open while the person keeps working: the
+// retry resends only the message that was failing, in the same chat, with no
+// newer send in between (#6560 review).
+assert.match(confirmBody, /const generation = sendGenerationRef\.current;\s*const chatSession = currentSessionRef\.current;\s*const pending = lastFailedSend;/);
+assert.match(
+  confirmBody,
+  /pending !== null &&\s*sendGenerationRef\.current === generation &&\s*currentSessionRef\.current === chatSession &&\s*lastFailedSendRef\.current === pending;\s*if \(!stillPending\) \{[\s\S]*?return;\s*\}[\s\S]*retryFailedSend\(\)/,
+  "a stale confirmation never resends",
+);
+assert.match(chat, /const projectRootForRequest = requestedProjectRoot;\s*sendGenerationRef\.current \+= 1;\s*setBusy\(true\);/, "every send bumps the generation");
+const resets = chat.match(/setProjectsFixNeeded\(false\);\s*setFolderConfirm\(null\);/g) ?? [];
+assert.ok(resets.length >= 2, "a new send and Dismiss should both clear the confirm target");
 assert.doesNotMatch(
   chat,
   /\ballowNoProject\b/,

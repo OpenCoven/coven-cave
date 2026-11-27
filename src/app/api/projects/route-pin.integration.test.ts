@@ -33,7 +33,7 @@ const nativeMock = registerHooks({
 try {
   const { loadProjects } = await import("@/lib/cave-projects");
   const { POST } = await import("./route.ts");
-  const { PUT, PATCH } = await import("./[id]/route.ts");
+  const { PUT, PATCH, DELETE } = await import("./[id]/route.ts");
   const { authorizeChatProjectLaunch, projectRootPinIn } = await import("@/lib/server/chat-project-launch");
   const { validateCaveProjectRoot } = await import("@/lib/server/project-paths");
   const { assertProjectAccess, grantProjectToFamiliar, revokeProjectFromFamiliar, ProjectAccessDeniedError } = await import("@/lib/project-permissions");
@@ -91,11 +91,27 @@ try {
     await writeFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, JSON.stringify(file, null, 2));
     assert.equal((await stored(created.id)).rootRealpath, undefined);
     await grantProjectToFamiliar({ familiarId: "folder-pin-holder", projectId: created.id, source: "human", access: "write" });
-    await assert.rejects(() => launch(created.id), { code: "project_root_unconfirmed", status: 409 });
+    // #6560: the refusal names this project, so Chat can confirm it in place.
+    await assert.rejects(() => launch(created.id), { code: "project_root_unconfirmed", status: 409, projectId: created.id });
     assert.equal((await stored(created.id)).rootRealpath, undefined, "launch never confirms implicitly");
+
+    // #6562: a task refused for this folder waits on it, and only a person's
+    // confirmation (not a declined prompt) clears that wait.
+    const board = await import("@/lib/cave-board");
+    const { projectFolderBlockerRef } = await import("@/lib/task-launch-blockers");
+    const task = await board.createCard({ title: "Task in the legacy project" });
+    await board.recordLaunchBlocker(task.id, { ref: projectFolderBlockerRef(created.id), kind: "human", label: "Confirm Legacy’s folder so this task can start" });
+    const folderBlocker = async () => (await board.loadBoard()).cards.find((card) => card.id === task.id)
+      .dependencies.find((dependency) => dependency.ref === projectFolderBlockerRef(created.id));
+    globalThis.__folderNativeApprove = false;
+    assert.equal((await put(created.id, { confirmRoot: true })).status, 403);
+    globalThis.__folderNativeApprove = undefined;
+    assert.equal((await folderBlocker()).state, "unresolved", "a declined prompt resolves nothing");
 
     const confirmed = await put(created.id, { confirmRoot: true });
     assert.equal(confirmed.status, 200, JSON.stringify(await confirmed.clone().json()));
+    assert.equal((await folderBlocker()).state, "resolved", "confirming the folder resolves the task's wait on it");
+    assert.match((await folderBlocker()).evidence, /^Legacy’s folder was confirmed at /);
     assert.equal((await confirmed.json()).project.rootRealpath, fs.realpathSync.native(legacyRoot));
     assert.equal((await launch(created.id)).root, fs.realpathSync.native(legacyRoot), "one confirmation admits the granted project");
     await assert.rejects(() => launch(created.id, "no-grant"), { code: "project_access_denied", status: 403 });
@@ -122,11 +138,28 @@ try {
     const { project: created } = await (await register({ name: "Mover", root: source })).json();
     const moved = path.join(base, "moved");
     fs.mkdirSync(moved);
+    // #6562: a task waiting on this project's folder stops waiting once a
+    // person confirms the new root, not only through the confirm button.
+    const board = await import("@/lib/cave-board");
+    const { projectFolderBlockerRef } = await import("@/lib/task-launch-blockers");
+    const ref = projectFolderBlockerRef(created.id);
+    const task = await board.createCard({ title: "Task in the moving project" });
+    await board.recordLaunchBlocker(task.id, { ref, kind: "human", label: "Confirm where Mover’s folder moved so this task can start" });
     const response = await PATCH(request(`http://localhost/api/projects/${created.id}`, "PATCH", { root: moved }), {
       params: Promise.resolve({ id: created.id }),
     });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).project.rootRealpath, fs.realpathSync.native(moved));
+    const blockerState = async (id) => (await board.loadBoard()).cards.find((card) => card.id === id)
+      .dependencies.find((dependency) => dependency.ref === ref)?.state;
+    assert.equal(await blockerState(task.id), "resolved", "a confirmed root change settles the folder blocker");
+
+    // Removing a project settles what its tasks waited on: it can never be confirmed.
+    const other = await board.createCard({ title: "Another task in it" });
+    await board.recordLaunchBlocker(other.id, { ref, kind: "human", label: "Confirm Mover’s folder so this task can start" });
+    const removed = await DELETE(request(`http://localhost/api/projects/${created.id}`, "DELETE"), { params: Promise.resolve({ id: created.id }) });
+    assert.equal(removed.status, 200);
+    assert.equal(await blockerState(other.id), "resolved", "deleting the project settles its folder blocker");
   });
 
   await test("confirming a missing folder fails and keeps the previous pin", async () => {

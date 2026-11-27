@@ -438,20 +438,8 @@ export function toggleNodeDisabled(doc: FlowDoc, id: string): FlowDoc {
   });
 }
 
-export function updateSticky(doc: FlowDoc, id: string, patch: Partial<FlowStickyData>): FlowDoc {
-  return mapNode(doc, id, (node) =>
-    node.sticky ? { ...node, sticky: { ...node.sticky, ...patch } } : node,
-  );
-}
-
 export function setActive(doc: FlowDoc, active: boolean): FlowDoc {
   return doc.active === active ? doc : { ...doc, active };
-}
-
-export function renameFlow(doc: FlowDoc, name: string): FlowDoc {
-  const trimmed = name.trim();
-  if (!trimmed || trimmed === doc.name) return doc;
-  return { ...doc, name: trimmed };
 }
 
 export function edgeId(source: string, sourceHandle: string, target: string, targetHandle: string): string {

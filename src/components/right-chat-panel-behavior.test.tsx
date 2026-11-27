@@ -172,6 +172,27 @@ describe("authorized fix-thread handoffs", () => {
     });
   }
 
+  test("a slow first roster opens the chat despite a polling tick", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const reads = [];
+    vi.mocked(fetch).mockImplementation(() => {
+      const read = deferred();
+      reads.push(read);
+      return read.promise;
+    });
+    let renderer;
+    try {
+      renderer = await renderPanel(launchProps());
+      await act(async () => { vi.advanceTimersByTime(4_000); });
+      await act(async () => reads[0].settle({ ok: true, status: 200, headers: new Headers(), json: async () => ({ ok: true, sessions: [] }) }));
+      expect(router.calls.newChat).toHaveLength(1);
+      expect(reads).toHaveLength(1);
+    } finally {
+      await act(async () => renderer?.unmount());
+      vi.useRealTimers();
+    }
+  });
+
   test("pins the authorized actor without changing the main familiar and primes once through refresh/reopen", async () => {
     const props = launchProps();
     const renderer = await renderPanel(props);

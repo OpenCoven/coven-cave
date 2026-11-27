@@ -19,20 +19,3 @@ export function resolveBackspaces(input: string): string {
   }
   return out.join("");
 }
-
-const PROMPT_PATTERNS: RegExp[] = [
-  /\?\s*$/,
-  /\?\s*\([^)]*\)\s*$/,
-  /press\s+enter\b/i,
-  /\[y\/n\]\s*$/i,
-  /\(y\/n\)\s*$/i,
-  /›\s*$/,
-  />\s*$/,
-  /:\s*$/,
-];
-
-export function needsResponse(stripped: string): boolean {
-  const tail = stripped.replace(/\s+$/, "").slice(-400);
-  if (!tail) return false;
-  return PROMPT_PATTERNS.some((re) => re.test(tail));
-}

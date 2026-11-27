@@ -13,6 +13,7 @@ assert.equal(
 const {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  chatProjectLaunchRefusalBody,
   isProjectlessGenerationOrigin,
   projectlessGenerationLaunch,
   projectRootPinIn,
@@ -232,6 +233,44 @@ test("a project whose folder no one has confirmed is refused until a person conf
   );
   assert.deepEqual(calls.access, [["milo", "project-1", "chat"]]);
   assert.deepEqual(calls.pin, ["project-1"]);
+});
+
+// #6560: the refusal names the exact project the server refused, so Chat and
+// Board can offer Confirm folder for that one project instead of a detour.
+test("an unconfirmed-folder refusal names the project the server refused", async () => {
+  const { deps } = harness({
+    projectRootPin: () => ({ name: "Nova", pin: null, root: "/repo" }),
+  });
+  const error = await authorizeChatProjectLaunch(deps, {
+    familiarId: "nova",
+    projectRoot: "/repo",
+    surface: "chat",
+  }).then(() => null, (caught) => caught);
+  assert.ok(error instanceof ChatProjectLaunchError);
+  assert.equal(error.code, "project_root_unconfirmed");
+  assert.equal(error.projectId, "project-1");
+  assert.deepEqual(chatProjectLaunchRefusalBody(error), {
+    ok: false,
+    error: error.message,
+    code: "project_root_unconfirmed",
+    projectId: "project-1",
+  });
+});
+
+test("other launch refusals keep their body without a project id", () => {
+  const moved = new ChatProjectLaunchError("project_root_moved", 409, "moved", "project-1");
+  assert.deepEqual(chatProjectLaunchRefusalBody(moved), {
+    ok: false,
+    error: "moved",
+    code: "project_root_moved",
+  });
+  const denied = new ChatProjectLaunchError("project_access_denied", 403, "denied");
+  assert.equal(denied.projectId, undefined);
+  assert.deepEqual(chatProjectLaunchRefusalBody(denied), {
+    ok: false,
+    error: "denied",
+    code: "project_access_denied",
+  });
 });
 
 test("a familiar without a grant is denied before the folder pin is consulted", async () => {

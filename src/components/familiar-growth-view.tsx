@@ -10,8 +10,8 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import {
-  ACTIVITY_DAYS,
   buildFamiliarCardStats,
+  emptyStats,
   type MemoryAvailability,
   type FamiliarFileMemoryStat,
   type FamiliarCardStats,
@@ -94,23 +94,6 @@ type RosterRow = {
   retro: RetroFamiliarState | null;
   report: GrowthReportModel;
 };
-
-function emptyStats(
-  memoryAvailability: MemoryAvailability = "unavailable",
-): FamiliarCardStats {
-  return {
-    memoryCount: 0,
-    memoryAvailability,
-    latestMemory: null,
-    lastSessionAt: null,
-    sessionsTotal: 0,
-    sessionsLast7d: 0,
-    sessionsLast90d: 0,
-    hasActiveSession: false,
-    streakDays: 0,
-    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
-  };
-}
 
 async function getJson<T extends { ok: boolean; error?: string }>(
   url: string,

@@ -21,6 +21,21 @@ assert.match(
   /taskModelOverride \? \{ initialModelOverride: taskModelOverride \} : \{\}/,
   "native OpenClaw and local Copilot task handoffs retain the validated card model for their first Chat send",
 );
+assert.match(
+  source,
+  /const pendingFirstPromptFields = async \(reserved: Card\) => \{[\s\S]*?reservedFirstPromptPending\(reserved\)[\s\S]*?initialPrompt: buildInitialTaskChatPrompt\(card\)[\s\S]*?bridge: "native-chat"[\s\S]*?if \(card\.sessionId\) \{[\s\S]*?recheckProjectRoot\(\)[\s\S]*?\.\.\.\(await pendingFirstPromptFields\(card\)\)/,
+  "a reused native reservation whose first prompt never landed hands the prompt back, after the same root recheck (#6562)",
+);
+assert.match(
+  source,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]*?sessionId,\s*nativeSessionId: sessionId,[\s\S]*?claimFirstPromptHandoff\(sessionId\);[\s\S]*?initialPrompt: buildInitialTaskChatPrompt\(card\)/,
+  "only a native reservation marks its session as Cave's own, and its start claims the first prompt (#6562)",
+);
+assert.match(
+  source,
+  /return serializeTaskStart\(id, async \(\) => \{[\s\S]*?const locked = await withTaskStartLock\(id, \(\) => startTaskChat\(id, parsed\.body\)\);[\s\S]*?if \(locked\.ok\) return locked\.value;[\s\S]*?code: "task_start_busy"[\s\S]*?status: 409/,
+  "every start holds the task's cross-process lock, and a busy lock refuses instead of starting unlocked (#6562)",
+);
 assert.match(source, /binding\.harness === "openclaw"[\s\S]*?return reserveNativeChatTask\(\)/, "OpenClaw uses the override-preserving native handoff");
 assert.match(source, /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]*?return reserveNativeChatTask\(\)/, "local Copilot uses the override-preserving native handoff");
 assert.match(
@@ -179,6 +194,50 @@ assert.match(
   source,
   /if \(binding\.hasInvalidHermesProfileBinding\)[\s\S]*?Hermes profile binding is invalid/,
   "a malformed persisted Hermes profile binding blocks task launch instead of degrading to sticky Hermes",
+);
+
+// #6562: a folder refusal a person must clear (unconfirmed, or moved) is
+// recorded on the task once, keyed by the project the refusal names, on both
+// the admission and the pre-launch recheck paths. The refusal carries the
+// updated card, and recording never changes its status or code.
+const recordBlock = source.slice(source.indexOf("const recordFolderBlocker = async"), source.indexOf("const refusal = ("));
+assert.match(recordBlock, /if \(error\.code !== "project_root_unconfirmed" && error\.code !== "project_root_moved"\) return null;/, "only folder refusals a person clears are recorded");
+assert.match(recordBlock, /const refusedProjectId = error\.projectId \?\? knownProjectId \?\? card\.projectId;/, "the blocker names the refused project");
+assert.match(recordBlock, /recordLaunchBlocker\(card\.id, \{\s*ref: projectFolderBlockerRef\(refusedProjectId\),\s*kind: "human",\s*label: projectFolderBlockerLabel\(name, error\.code === "project_root_moved"\),/);
+assert.match(recordBlock, /console\.warn\(/, "a failed write is logged, not silently dropped");
+assert.match(source, /const refusal = \(error: ChatProjectLaunchError, recorded: Card \| null\) =>\s*NextResponse\.json\(\s*\{ \.\.\.chatProjectLaunchRefusalBody\(error\), \.\.\.\(recorded \? \{ card: recorded \} : \{\}\) \},\s*\{ status: error\.status \},/, "the refusal keeps its body and status and adds the updated card");
+assert.match(source, /return refusal\(error, await recordFolderBlocker\(error\)\);/, "admission records the refusal");
+assert.match(source, /return refusal\(error, await recordFolderBlocker\(error, authorizedProjectId\)\);/, "the pre-launch recheck records the refusal");
+
+// #6562: a launch that passes the pin check resolves the task's wait on that
+// folder however it was confirmed. It runs only after authorization.
+const resolveIndex = source.indexOf("await resolveLaunchBlockers(folderRef");
+assert.ok(resolveIndex > source.indexOf("authorizedProjectId = authorized.projectId;"), "resolution follows a passing launch check");
+assert.ok(resolveIndex < source.indexOf("const recheckProjectRoot"), "resolution happens before any launch work");
+
+// #6562: only a started daemon session dispatches here, and only a ready,
+// triaged task, decided inside the board lock. A native Chat reservation has
+// not sent the prompt; the Board dispatches it once the first send lands.
+const markStart = source.slice(source.indexOf("const markTaskStarted = async"), source.indexOf("const reserveNativeChatTask"));
+assert.match(markStart, /transitionCard\(started\.id, \{\s*to: "dispatched",\s*reason: `Task chat started \(session \$\{sessionId\}\)`,\s*onlyIf: readyToDispatch,/, "dispatch goes through the guarded state machine");
+assert.doesNotMatch(markStart, /loadBoard\(\)/, "no readiness check outside the lock");
+assert.match(markStart, /\} catch \(error\) \{[\s\S]*?return started;/, "a lifecycle refusal never undoes a started chat");
+assert.equal((source.match(/const started = await markTaskStarted\(updated, sessionId\);/g) ?? []).length, 1, "only the daemon path dispatches at start");
+const reserve = source.slice(source.indexOf("const reserveNativeChatTask"), source.indexOf("// OpenClaw has no daemon adapter"));
+assert.doesNotMatch(reserve, /markTaskStarted/, "a native reservation never dispatches before its prompt is sent");
+
+// #6562: daemon offline is the only daemon failure that falls back, and only
+// on this computer for a trusted runtime. A timeout may have created the
+// session, so it is never resent.
+assert.match(
+  source,
+  /res\.status === 0 &&\s*res\.error === "daemon offline" &&\s*!sshBound &&\s*!hubAuthority &&\s*isTrustedChatHarness\(binding\.harness\)\s*\) \{\s*return reserveNativeChatTask\(\);/,
+  "a provably unsent daemon request falls back to native Chat on this computer",
+);
+assert.doesNotMatch(source, /"daemon timeout"/, "a daemon timeout never triggers a fallback");
+assert.ok(
+  source.indexOf('res.error === "daemon offline"') < source.indexOf("{ status: 502 }"),
+  "the fallback is tried before the 502",
 );
 
 console.log("board chat route.test.ts: ok");

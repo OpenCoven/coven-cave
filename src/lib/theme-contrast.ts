@@ -371,13 +371,3 @@ export function flattenOnto(fg: Rgba, backdrop: Rgba): Rgba {
     alpha: 1,
   };
 }
-
-/** Effective WCAG contrast of a foreground token over a background token,
- *  flattening translucency onto the background first (how it renders). */
-export function effectiveContrast(tokens: TokenMap, fgToken: string, bgToken: string): number | null {
-  const fg = resolveThemeColor(tokens, fgToken);
-  const bgRaw = resolveThemeColor(tokens, bgToken);
-  if (!fg || !bgRaw) return null;
-  const bg = bgRaw.alpha < 1 ? flattenOnto(bgRaw, { r: 0, g: 0, b: 0, alpha: 1 }) : bgRaw;
-  return contrastRatio(flattenOnto(fg, bg), bg);
-}

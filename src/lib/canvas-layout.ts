@@ -24,15 +24,6 @@ export const CANVAS_BANDS: CardStatus[] = [
   "done",
 ];
 
-export const BAND_LABELS: Record<CardStatus, string> = {
-  inbox: "Inbox",
-  backlog: "Backlog",
-  running: "Running",
-  review: "Review",
-  blocked: "Blocked",
-  done: "Done",
-};
-
 // World-space (pre-zoom) dimensions, in px.
 export const CANVAS_NODE_WIDTH = 264;
 export const CANVAS_NODE_HEIGHT = 132;

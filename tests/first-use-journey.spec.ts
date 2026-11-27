@@ -1,6 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { advanceFirstUse, createFirstUseState, createQuickStartState, type FirstUseState } from "../src/lib/first-use";
+import { NO_CHAT_ATTENTION } from "../src/lib/chat-attention";
+import type { SessionRow } from "../src/lib/types";
 import { openChatFilter } from "./fixtures/chat-filter";
 import { chatComposerDraftKey } from "../src/lib/use-composer-draft";
 
@@ -205,7 +207,20 @@ for (const destination of ["project", "session"] as const) {
     const state = advanceFirstUse(selected, { kind: "finish-setup", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read" });
     await fixture(page, state);
     const other = { ...PROJECT, id: "other-project", name: "Other project", root: "/synthetic/other" };
-    const session = { id: "starter-bound", title: "Existing other chat", familiarId: "nova", project_root: other.root, harness: "codex", status: "completed", hasLocalConversation: true, created_at: "2026-11-11T00:00:00.000Z", updated_at: "2026-11-11T00:00:00.000Z" };
+    const session = {
+      id: "starter-bound",
+      title: "Existing other chat",
+      familiarId: "nova",
+      project_root: other.root,
+      harness: "codex",
+      status: "completed",
+      exit_code: 0,
+      archived_at: null,
+      attention: NO_CHAT_ATTENTION,
+      hasLocalConversation: true,
+      created_at: "2026-11-11T00:00:00.000Z",
+      updated_at: "2026-11-11T00:00:00.000Z",
+    } satisfies SessionRow;
     await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [PROJECT, other] } }));
     await page.route("**/api/project-grants**", (route) => route.fulfill({ json: { ok: true, grants: [PROJECT, other].map((project) => ({ familiarId: "nova", projectId: project.id, access: "read" })), accessGroups: [], supremeFamiliarId: null } }));
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [session] } }));
