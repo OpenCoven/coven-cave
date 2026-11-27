@@ -164,7 +164,7 @@ export function ChatAccessBar({
           ) : null}
           {!explore && grantUndo ? (
             <>
-              <Button ref={undoRef} size="sm" variant="secondary" leadingIcon="ph:arrow-counter-clockwise" loading={accessBusy} disabled={busy} onClick={onUndoGrant}>
+              <Button ref={undoRef} size="sm" variant="secondary" leadingIcon="ph:arrow-counter-clockwise" loading={accessBusy} disabled={accessBusy} onClick={onUndoGrant}>
                 Undo write access
               </Button>
               <Button size="sm" variant="ghost" aria-label="Dismiss access change" disabled={accessBusy} onClick={onDismissUndo}>

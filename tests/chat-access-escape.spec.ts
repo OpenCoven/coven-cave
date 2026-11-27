@@ -328,12 +328,18 @@ test("a read-only project on a runtime that cannot apply Build offers Explore, n
 });
 
 test("the write-access grant works from the keyboard and keeps focus in the chat", async ({ page }) => {
+  let finishRetry!: () => void;
+  const retryPending = new Promise<void>((resolve) => { finishRetry = resolve; });
   const { chat, sends, grantWrites } = await setup(page, {
     projectAccess: "read",
-    send: (route, count) => count === 1
-      ? route.fulfill({ status: 403, json: { ok: false, code: "project_write_access_required",
-        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." } })
-      : ok(route),
+    send: async (route, count) => {
+      if (count === 1) {
+        return route.fulfill({ status: 403, json: { ok: false, code: "project_write_access_required",
+          error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." } });
+      }
+      await retryPending;
+      return ok(route);
+    },
   });
   await send(chat, "Rename the helper.");
   const grant = chat.getByRole("button", { name: "Give Nova write access to Coven Cave and retry" });
@@ -352,14 +358,20 @@ test("the write-access grant works from the keyboard and keeps focus in the chat
   await page.keyboard.press("Enter");
   await expect.poll(() => grantWrites.length).toBe(1);
   await expect.poll(() => sends.length).toBe(2);
-  const undo = chat.getByRole("button", { name: "Undo write access" });
-  await expect(undo).toBeFocused();
-  await expect(chat.getByRole("region", { name: "Chat access" }).getByRole("status")).toHaveText("Nova can now change files in Coven Cave.");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => grantWrites.length).toBe(2);
-  expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read", expectedAccess: "write" } });
-  await expect(undo).toHaveCount(0);
-  await expect(chat.locator(".cave-composer-input")).toBeFocused();
+  try {
+    await expect(chat.locator(".cave-composer-input")).toHaveAttribute("placeholder", /Streaming/);
+    const undo = chat.getByRole("button", { name: "Undo write access" });
+    await expect(undo).toBeEnabled();
+    await expect(undo).toBeFocused();
+    await expect(chat.getByRole("region", { name: "Chat access" }).getByRole("status")).toHaveText("Nova can now change files in Coven Cave.");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => grantWrites.length).toBe(2);
+    expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read", expectedAccess: "write" } });
+    await expect(undo).toHaveCount(0);
+    await expect(chat.locator(".cave-composer-input")).toBeFocused();
+  } finally {
+    finishRetry();
+  }
 });
 
 test("an Undo made stale by another change is refused and says so", async ({ page }) => {
