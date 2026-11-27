@@ -263,6 +263,8 @@ locally, say so. A plan or an unmerged implementation does not close the issue.
 Close after merge or the issue's explicit completion criteria, not after
 writing a proposal.
 
+For Cave MVP work, check the [MVP plan](https://github.com/OpenCoven/coven-cave/issues/6396) for dependencies and the [closeout ledger](https://github.com/OpenCoven/coven-cave/issues/6405) for issue-level disposition and acceptance evidence.
+
 ## Preserve before retirement
 
 Issue completion and local deletion are separate decisions. Record the
