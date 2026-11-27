@@ -439,15 +439,23 @@ final class PerformanceBaselineUITests: XCTestCase {
         // trigger costly XCTest failure diagnostics between observations.
         let drawerWidth = min(max(windowFrame.width * 0.70, 260), 304)
         let expectedTrailingEdge = windowFrame.minX + drawerWidth - 12
+        // The drawer sizes itself from the safe-area width, which XCUITest
+        // cannot read. A device with a horizontal inset in portrait (iPhone
+        // Duo, #5748) settles narrower than the window-width formula. There,
+        // arrival is the same in-range trailing edge on two successive polls:
+        // the 0.24 s slide cannot hold still across polls while moving.
+        let trailingRange = (windowFrame.minX + 260 - 12)...(windowFrame.minX + 304 - 12)
         var lastFrame: CGRect?
         let settled = NSPredicate { _, _ in
             let frame = settings.frame
-            lastFrame = frame
-            return !frame.isEmpty && windowFrame.contains(frame)
-                && abs(frame.maxX - expectedTrailingEdge) < 1
+            defer { lastFrame = frame }
+            guard !frame.isEmpty && windowFrame.contains(frame) else { return false }
+            if abs(frame.maxX - expectedTrailingEdge) < 1 { return true }
+            guard trailingRange.contains(frame.maxX), let previous = lastFrame else { return false }
+            return abs(previous.minX - frame.minX) < 0.5 && abs(previous.maxX - frame.maxX) < 0.5
         }
         let ready = XCTNSPredicateExpectation(predicate: settled, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed,
-                       "The drawer control must reach its visible position; last frame: \(String(describing: lastFrame))")
+                       "The drawer control must reach its visible position; last frame: \(String(describing: lastFrame)); window: \(windowFrame)")
     }
 }
