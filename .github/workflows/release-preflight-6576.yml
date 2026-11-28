@@ -1,0 +1,22 @@
+# TEMPORARY (#6576): run the whole release validation on this PR head.
+# It lives outside ci.yml so ci.yml's job inventory, which the merge-tree
+# freshness test pins, stays exactly main's. Removed before this PR merges.
+name: Release preflight (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-preflight:
+    name: Release preflight
+    uses: ./.github/workflows/full-validation.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
