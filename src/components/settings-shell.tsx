@@ -33,6 +33,7 @@ import { formatHostWorkspaceText, parseHostWorkspaceText } from "./settings-mult
 import { showSettingsSavedAfterPreferencesFlush, showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 import { SettingsPage, SettingsRow } from "./settings-layout";
+import { ReviewsSettingsGroup } from "./settings-reviews";
 import { SetupStatusRow } from "./settings-setup";
 import { GeneralSettingsDataProvider, useGeneralSettingsData, type BackupSyncOverview } from "./settings-general-data";
 const AppearanceSection = dynamic(() => import("./settings-appearance").then((m) => m.AppearanceSection), { loading: SettingsSectionFallback });
@@ -388,6 +389,7 @@ function GeneralSection() {
           <CelebrationsToggle />
         </div>
       </SettingsGroup>
+      <ReviewsSettingsGroup />
       <SettingsGroup label="Setup" variant="ruled" panel={false}>
         <SetupStatusRow />
         <Link className="ui-btn ui-btn--secondary focus-ring" href="/?firstUse=1">Open assistant and project setup</Link>

@@ -142,6 +142,11 @@ export type CavePreferences = {
      * restricts the surface to just those orgs.
      */
     orgScope: string[];
+    /**
+     * Offer your own open pull requests in the new-session launcher's Reviews
+     * group (#5930). Default ON, normalized with `!== false`.
+     */
+    reviewOwnPrs: boolean;
   };
   voice: CaveVoicePreferences;
   /**
@@ -292,7 +297,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
     },
     general: { stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true, quickChatShortcut: false },
     phone: { mobileMode: true },
-    github: { orgScope: [] },
+    github: { orgScope: [], reviewOwnPrs: true },
     voice: { defaultProvider: "", defaultModel: "", defaultVoice: "" },
     daemon: DEFAULT_DAEMON_AUTOMATION,
   };
@@ -579,7 +584,10 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
       quickChatShortcut: general.quickChatShortcut === true,
     },
     phone: { mobileMode: phone.mobileMode !== false },
-    github: { orgScope: normalizeOrgScope(github.orgScope) },
+    github: {
+      orgScope: normalizeOrgScope(github.orgScope),
+      reviewOwnPrs: github.reviewOwnPrs !== false,
+    },
     voice: normalizeVoicePreferences(voice),
     daemon: normalizeDaemonAutomation(daemon),
   };
@@ -854,12 +862,16 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
   }
   if (Object.hasOwn(input, "github")) {
     const github = strictRecord(input.github, "github");
-    assertAllowedKeys(github, ["orgScope"], "github");
+    assertAllowedKeys(github, ["orgScope", "reviewOwnPrs"], "github");
     const githubPatch: NonNullable<CavePreferencesPatch["github"]> = {};
     if (Object.hasOwn(github, "orgScope")) {
       if (!Array.isArray(github.orgScope)) fail("github.orgScope", "must be an array of strings");
       githubPatch.orgScope = normalizeOrgScope(github.orgScope);
     }
+    if (Object.hasOwn(github, "reviewOwnPrs")) {
+      githubPatch.reviewOwnPrs = strictBoolean(github.reviewOwnPrs, "github.reviewOwnPrs");
+    }
+
     patch.github = githubPatch;
   }
   if (Object.hasOwn(input, "voice")) {

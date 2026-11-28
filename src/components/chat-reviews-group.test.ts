@@ -93,3 +93,19 @@ test("starting a review opens the work in place", () => {
     "the zero-turn page fills its own composer",
   );
 });
+
+// #5930: your own pull requests join the group while "Include my pull
+// requests in Reviews" is on (default on).
+test("the snapshot reads the include preference and passes it to the model", () => {
+  assert.match(hook, /const includeOwn = useAppPreferences\(\)\.github\.reviewOwnPrs;/);
+  assert.match(hook, /reviewRequests\(items, \{ includeOwn \}\)/, "own PRs follow the include preference");
+  // Automatic review is not built (#5930 part 2), so no draft may claim a
+  // familiar will review it when ready.
+  assert.doesNotMatch(hook, /autoReview/, "drafts never read \"reviews when ready\" without the watcher");
+});
+
+test("both launchers mark your own rows on the second line", () => {
+  for (const [name, source] of [["zero-turn page", emptyState], ["new-chat dashboard", dashboard]]) {
+    assert.match(source, /sub: startFromSub\(reviewRequestSub\(row\)\)/, `${name} renders the shared second line`);
+  }
+});

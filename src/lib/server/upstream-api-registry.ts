@@ -95,6 +95,7 @@ export const UPSTREAM_APIS: readonly UpstreamApiEntry[] = [
       "src/lib/secret-validators.ts",
       "src/lib/server/github-merged.ts",
       "src/lib/server/github-review-revision.ts",
+      "src/lib/server/github-viewer.ts",
       "src/lib/server/pin-sources.ts",
       "src/lib/server/runtime-compatibility-registry.ts",
     ],

@@ -44,6 +44,8 @@ type PullDetail = {
   baseRef: string | null;
   commits: number | null;
   reviews: { approved: number; changesRequested: number; commented: number } | null;
+  /** The token's login wrote this PR (#5930); null when unknown. */
+  viewerIsAuthor?: boolean | null;
 };
 
 type ItemDetail = {

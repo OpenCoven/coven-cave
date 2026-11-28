@@ -12,12 +12,20 @@
  * tier — agents propose, humans dispose. Tier-2 kinds additionally show a
  * danger-tinted Run button so the weight of merge/review/rerun/dispatch is
  * legible; there is no auto-fire path in this component at all.
+ *
+ * A proposed Approve or Request changes on a pull request you wrote is never
+ * runnable (#5930): GitHub refuses both from a PR's author, and every other
+ * review surface offers Comment only. The card asks the item route whether the
+ * token's login wrote the PR, keeps the verdict's Run disabled until it knows,
+ * then offers the proposal's text as a comment instead, with the same one-line
+ * reason. An unknown answer keeps the verdict, as everywhere else.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { readGitHubWriteAnswer, isUncertainGitHubWrite, UNREADABLE_GITHUB_WRITE_ANSWER } from "@/lib/github-write-answer";
 import { Icon } from "@/lib/icon";
 import { classifyGitHubAction, type GitHubActionDescriptor } from "@/lib/github-blocks";
+import { OWN_PR_REVIEW_NOTE, reviewEventsFor } from "@/lib/own-pr-review";
 
 type Phase = "proposed" | "firing" | "done" | "error" | "dismissed";
 
@@ -148,13 +156,91 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<GitHu
   }
 }
 
-export function GitHubActionCard({ action }: { action: GitHubActionDescriptor }) {
+/** A proposal that carries a review verdict (Approve or Request changes). */
+export function isReviewVerdict(a: GitHubActionDescriptor): boolean {
+  return a.kind === "review" && (a.event === "APPROVE" || a.event === "REQUEST_CHANGES");
+}
+
+/** How long the card waits for authorship before treating it as unknown. */
+export const VIEWER_AUTHOR_LOOKUP_MS = 5_000;
+/** Cards on one PR share an answer this long (the item route holds it 30 s). */
+const VIEWER_AUTHOR_SHARE_MS = 30_000;
+const viewerAuthorAnswers = new Map<string, { at: number; answer: Promise<boolean | null> }>();
+
+/** Test seam. */
+export function clearViewerAuthorAnswers(): void {
+  viewerAuthorAnswers.clear();
+}
+
+/**
+ * Whether the token's login wrote this pull request, from the item route's
+ * `pull.viewerIsAuthor`. A failure or a slow answer is `null` (unknown), which
+ * keeps the verdict, as everywhere else. Cards on the same PR share one
+ * request. Exported for tests.
+ */
+export function loadViewerIsAuthor(repo: string, number: number): Promise<boolean | null> {
+  const key = `${repo}#${number}`;
+  const shared = viewerAuthorAnswers.get(key);
+  if (shared && Date.now() - shared.at < VIEWER_AUTHOR_SHARE_MS) return shared.answer;
+  const answer = (async () => {
+    try {
+      const params = new URLSearchParams({ repo, number: String(number), pull: "1" });
+      const res = await fetch(`/api/github/item?${params}`, { signal: AbortSignal.timeout(VIEWER_AUTHOR_LOOKUP_MS) });
+      const data = (await res.json().catch(() => null)) as { pull?: { viewerIsAuthor?: unknown } | null } | null;
+      const value = data?.pull?.viewerIsAuthor;
+      return typeof value === "boolean" ? value : null;
+    } catch {
+      return null;
+    }
+  })();
+  viewerAuthorAnswers.set(key, { at: Date.now(), answer });
+  // Only a known answer is shared: an unknown one is asked again next time.
+  void answer.then((value) => {
+    if (value === null && viewerAuthorAnswers.get(key)?.answer === answer) viewerAuthorAnswers.delete(key);
+  });
+  return answer;
+}
+
+/**
+ * Authorship for a verdict proposal: `undefined` while it is being checked.
+ * The answer is kept with the proposal it belongs to, so a card React reuses
+ * for a different proposal is checking again at once, never running the new
+ * verdict on the old answer.
+ */
+function useOwnPrVerdict(action: GitHubActionDescriptor): boolean | null | undefined {
+  const verdict = isReviewVerdict(action) && Boolean(action.number);
+  const key = verdict ? `${action.repo}#${action.number}#${action.event}` : null;
+  const [answer, setAnswer] = useState<{ key: string; value: boolean | null } | null>(null);
+  useEffect(() => {
+    if (!key || !action.number) return;
+    let live = true;
+    void loadViewerIsAuthor(action.repo, action.number).then((value) => {
+      if (live) setAnswer({ key, value });
+    });
+    return () => {
+      live = false;
+    };
+  }, [key, action.repo, action.number]);
+  if (!key) return null;
+  return answer?.key === key ? answer.value : undefined;
+}
+
+export function GitHubActionCard({ action: proposed }: { action: GitHubActionDescriptor }) {
   const [phase, setPhase] = useState<Phase>("proposed");
   const [error, setError] = useState<GitHubActionFailure | null>(null);
+  const viewerIsAuthor = useOwnPrVerdict(proposed);
+  const checkingAuthor = viewerIsAuthor === undefined;
+  // Your own PR (#5930): the verdict is not offered. Its text, if any, can go
+  // as a review comment instead; with no text there is nothing to run.
+  const ownVerdict = isReviewVerdict(proposed) && !reviewEventsFor(viewerIsAuthor).includes("APPROVE");
+  const action: GitHubActionDescriptor = ownVerdict ? { ...proposed, event: "COMMENT" } : proposed;
+  const noCommentText = ownVerdict && !action.body?.trim();
+  const runnable = !checkingAuthor && !noCommentText;
   const tier = classifyGitHubAction(action.kind);
   const summary = describeGitHubAction(action);
 
   const run = async () => {
+    if (!runnable) return;
     setPhase("firing");
     setError(null);
     const err = await fireGitHubAction(action);
@@ -169,7 +255,7 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
   if (phase === "dismissed") {
     return (
       <div className="cave-gh-action text-[length:var(--text-xs)] text-[var(--text-secondary)]" data-gh-action-phase="dismissed">
-        Proposal dismissed: {summary}
+        Proposal dismissed: {describeGitHubAction(proposed)}
       </div>
     );
   }
@@ -189,8 +275,14 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
       <div className="min-w-0 flex-1">
         <div className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           {phase === "done" ? "Done: " : "Proposed: "}
-          {summary}
+          {ownVerdict && phase !== "done" ? describeGitHubAction(proposed) : summary}
         </div>
+        {ownVerdict ? (
+          <div className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]" data-gh-action-own-pr>
+            {OWN_PR_REVIEW_NOTE}
+            {noCommentText ? " This proposal has no text to send as a comment." : null}
+          </div>
+        ) : null}
         {action.note ? <div className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]">{action.note}</div> : null}
         {action.body && (action.kind === "comment" || action.kind === "reply" || action.kind === "review") ? (
           <div className="mt-1 line-clamp-3 rounded border border-[var(--border-hairline)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
@@ -227,11 +319,13 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
                   : "border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               }`}
               onClick={run}
-              disabled={phase === "firing"}
+              disabled={phase === "firing" || !runnable}
               aria-label={
                 phase === "error" && error?.uncertain
                   ? `Send again anyway, after checking GitHub: ${summary}`
-                  : `Run proposed action: ${summary}`
+                  : ownVerdict
+                    ? `Comment instead: ${summary}`
+                    : `Run proposed action: ${summary}`
               }
             >
               {phase === "firing"
@@ -240,7 +334,11 @@ export function GitHubActionCard({ action }: { action: GitHubActionDescriptor })
                   ? error?.uncertain
                     ? "Send again anyway"
                     : "Retry"
-                  : "Run"}
+                  : ownVerdict
+                    ? "Comment instead"
+                    : checkingAuthor
+                      ? "Checking…"
+                      : "Run"}
             </button>
             <button
               type="button"

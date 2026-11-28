@@ -59,6 +59,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Chat", keywords: "chat stop phrases cancel halt abort interrupt running task quick chat global shortcut hotkey keyboard" },
   { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
+  { section: "general", group: "Reviews", keywords: "reviews pull requests own my self-review github launcher" },
   { section: "general", group: "Setup", keywords: "setup first run onboarding local components node npm coven cli defaults local service resume retry" },
   { section: "general", group: "Installed capabilities", keywords: "installed capabilities marketplace skills tools connectors plugins health compatibility uninstall permissions" },
   { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
