@@ -131,6 +131,28 @@ try {
   await write(projectRoot, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(dependencyRoot, "@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(projectRoot, "node_modules/foo/node_modules/evil/index.js", "must not be copied\n");
+  // #6403: files Node never loads from a dynamic package, beside the files it
+  // does. The licence and notice files must always survive.
+  const swcHelpers = path.join(dependencyRoot, "@swc", "helpers");
+  for (const [relativePath, contents] of Object.entries({
+    "cjs/_interop_require_default.cjs": "exports._ = (value) => value;\n",
+    "esm/_interop_require_default.js": "export function _(value) { return value; }\n",
+    "_/_interop_require_default/package.json": '{"main":"../../cjs/_interop_require_default.cjs"}\n',
+    "src/_interop_require_default.mjs": "export function _(value) { return value; }\n",
+    "scripts/build.js": "build tooling\n",
+    "LICENSE": "Apache-2.0\n",
+    "NOTICE": "notice\n",
+    "README.md": "# helpers\n",
+    "CHANGELOG.md": "# changes\n",
+  })) {
+    await write(swcHelpers, relativePath, contents);
+  }
+  await write(dependencyRoot, "ws/README.md", "# ws\n");
+  await write(dependencyRoot, "ws/LICENSE", "MIT\n");
+  await write(dependencyRoot, "ws/lib/readme.js", "module.exports = 'runtime code named like a readme';\n");
+  await write(dependencyRoot, "sharp/dist/index.d.mts", "export {};\n");
+  await write(dependencyRoot, "sharp/dist/index.d.cts", "export {};\n");
+  await write(dependencyRoot, "sharp/dist/index.cjs", "module.exports = {};\n");
 
   const tracePath = path.join(projectRoot, ".next", "server", "route.js.nft.json");
   const traceEntries = ["foo", "next", "react", "react-dom"].map(
@@ -176,10 +198,18 @@ try {
     reviewedHpke.packages,
     "the reviewed HPKE package set must remain in the explicit dynamic closure",
   );
+  // The reviewed delta predates the documentation prune (#6403), which drops
+  // exactly one README from each HPKE package and nothing else.
+  const hpkeReadmes = reviewedHpke.packages.map((packageName) =>
+    path.join(destination, "node_modules", ...packageName.split("/"), "README.md"),
+  );
+  for (const readme of hpkeReadmes) {
+    assert.ok(await missing(readme), `${path.relative(destination, readme)} must be pruned`);
+  }
   assert.equal(
     hpkeMetrics.fileCount,
-    reviewedHpke.fileCount,
-    "the assembled HPKE subtree must match the reviewed feature-only file delta",
+    reviewedHpke.fileCount - hpkeReadmes.length,
+    "the assembled HPKE subtree must match the reviewed feature-only file delta, less its pruned READMEs",
   );
   assert.equal(
     hpkeMetrics.directoryCount + 1,
@@ -271,6 +301,29 @@ try {
   }
   assert.ok(await missing(path.join(destination, "node_modules/foo/node_modules/evil/index.js")));
   assert.ok(await missing(path.join(destination, ".next/server/route.js.map")));
+  const packagedSwcHelpers = path.join(destination, "node_modules", "@swc", "helpers");
+  for (const kept of [
+    "package.json",
+    "cjs/_interop_require_default.cjs",
+    "esm/_interop_require_default.js",
+    "LICENSE",
+    "NOTICE",
+  ]) {
+    assert.ok(!(await missing(path.join(packagedSwcHelpers, kept))), `@swc/helpers/${kept} must ship`);
+  }
+  for (const pruned of ["_", "src", "scripts", "README.md", "CHANGELOG.md"]) {
+    assert.ok(await missing(path.join(packagedSwcHelpers, pruned)), `@swc/helpers/${pruned} must not ship`);
+  }
+  assert.ok(await missing(path.join(destination, "node_modules/ws/README.md")), "package READMEs must not ship");
+  assert.ok(!(await missing(path.join(destination, "node_modules/ws/LICENSE"))), "package licences must ship");
+  assert.ok(
+    !(await missing(path.join(destination, "node_modules/ws/lib/readme.js"))),
+    "runtime code is not mistaken for documentation",
+  );
+  for (const declaration of ["index.d.mts", "index.d.cts"]) {
+    assert.ok(await missing(path.join(destination, "node_modules/sharp/dist", declaration)), `${declaration} must not ship`);
+  }
+  assert.ok(!(await missing(path.join(destination, "node_modules/sharp/dist/index.cjs"))));
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     assert.ok(await missing(path.join(destination, forbiddenRoot)), `${forbiddenRoot} must be excluded`);
   }

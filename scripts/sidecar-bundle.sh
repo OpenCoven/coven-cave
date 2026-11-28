@@ -593,12 +593,33 @@ prune_sidecar_nonruntime_files "$DEST"
 node "$ROOT/scripts/sidecar-runtime-closure.mjs" --verify "$DEST"
 
 # Sanity check
-for must in node_modules/@next/env node_modules/@swc/helpers/_; do
+for must in node_modules/@next/env node_modules/@swc/helpers/package.json; do
   if [ ! -e "$DEST/$must" ]; then
     echo "==> ! bundle still missing $must — sidecar will not boot" >&2
     exit 1
   fi
 done
+
+# Next's compiled output requires these helper subpaths. The closure drops the
+# package's `_/` resolver shims (#6403), so prove that Node resolves them
+# through the package's exports map from Next's own location, the way the
+# packaged server does, in both module flavours.
+if ! (cd "$DEST" && node -e '
+  const { createRequire } = require("node:module");
+  const fromNext = createRequire(require.resolve("next/package.json"));
+  const helpers = ["_interop_require_default", "_interop_require_wildcard"];
+  for (const name of helpers) {
+    const helper = fromNext(`@swc/helpers/_/${name}`);
+    if (typeof (helper._ ?? helper.default ?? helper) !== "function") throw new Error(`${name} did not load`);
+  }
+  Promise.all(helpers.map((name) => import(`@swc/helpers/_/${name}`))).catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+') >&2 2>&1; then
+  echo "==> ! @swc/helpers subpaths do not resolve from the sidecar bundle — Next will not boot" >&2
+  exit 1
+fi
 
 # Sharp must actually load from the bundle, or familiar raster avatars 404 in
 # the packaged app (#2010). The prune keeps only the build-host-arch native

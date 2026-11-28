@@ -38,6 +38,7 @@ import { reviewRequestLabel, reviewRequestSub } from "@/lib/chat-review-requests
 import { useReviewRequests } from "@/lib/use-review-requests";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { openTaskWorkOnBoard, taskWorkHandoffFrom } from "@/lib/task-work-handoff";
 import { relativeTime } from "@/lib/relative-time";
 import { greetingForHour } from "@/lib/home-greeting";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -263,6 +264,13 @@ export function ChatEmptyState({
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? "failed to open task chat");
       announce(`Opening '${card.title}'.`);
+      // A native task chat still owes its first prompt; only the Board's work
+      // view sends it once and dispatches the task (#6562).
+      const handoff = taskWorkHandoffFrom(card.id, json);
+      if (handoff) {
+        openTaskWorkOnBoard(handoff);
+        return;
+      }
       openSession(json.sessionId, json.familiarId ?? card.familiarId ?? familiar.id);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "failed to open task chat");

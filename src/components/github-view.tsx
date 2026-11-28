@@ -28,6 +28,7 @@ import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useAppPreferences } from "@/lib/app-preferences";
 import { Icon, type IconName } from "@/lib/icon";
+import { openTaskWorkOnBoard, taskWorkHandoffFrom } from "@/lib/task-work-handoff";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import {
   activityCollectionsComplete,
@@ -422,6 +423,13 @@ function OpenChatAction({
         return;
       }
       onAfterLink();
+      // A native task chat still owes its first prompt; only the Board's work
+      // view sends it once and dispatches the task (#6562).
+      const handoff = taskWorkHandoffFrom(cardId, json);
+      if (handoff) {
+        openTaskWorkOnBoard(handoff);
+        return;
+      }
       onJumpToSession?.(json.sessionId as string, json.familiarId as string | null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");

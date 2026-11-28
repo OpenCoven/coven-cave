@@ -4,6 +4,8 @@ import { confirmProjectFolderWithHuman } from "@/lib/server/project-folder-confi
 import { NextResponse } from "next/server";
 
 import { deleteProject, loadProjects, patchProject } from "@/lib/cave-projects";
+import { resolveLaunchBlockers } from "@/lib/cave-board";
+import { projectFolderBlockerRef, projectFolderConfirmedEvidence } from "@/lib/task-launch-blockers";
 import {
   CavePrivateStateGrantError,
   privateStateRootChangeGuard,
@@ -19,6 +21,15 @@ import {
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
+
+/** Resolve this project's folder blockers on every task. Best-effort. */
+async function resolveFolderBlockers(projectId: string, evidence: string): Promise<void> {
+  try {
+    await resolveLaunchBlockers(projectFolderBlockerRef(projectId), evidence);
+  } catch (error) {
+    console.warn(`[projects] could not resolve folder blockers for ${projectId}:`, error instanceof Error ? error.message : error);
+  }
+}
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = rejectNonLocalRequest(req);
@@ -50,6 +61,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
     const confirmed = await confirmProjectFolderWithHuman(id);
     if (!confirmed.ok) return NextResponse.json(confirmed, { status: confirmed.status });
+    // #6562: tasks refused for this unconfirmed folder now wait on nothing
+    // from it. Best-effort: the confirmation itself already succeeded, and a
+    // later successful task launch resolves anything a failed write left.
+    await resolveFolderBlockers(id, projectFolderConfirmedEvidence(confirmed.project.name, new Date().toISOString()));
     return NextResponse.json({ ok: true, project: confirmed.project });
   }
 
@@ -155,6 +170,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!project && confirmedChange) return NextResponse.json({ ok: false, code: "project_root_moved",
       error: "The folder changed during confirmation. Review the folder and retry." }, { status: 409 });
     if (!project) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    // A person-confirmed root change pins the new folder, which settles a
+    // moved or unconfirmed folder for every task in this project (#6562).
+    if (confirmedChange && project.rootRealpath) {
+      await resolveFolderBlockers(id, projectFolderConfirmedEvidence(project.name, new Date().toISOString()));
+    }
     return NextResponse.json({ ok: true, project });
   } catch (error) {
     if (error instanceof CavePrivateStateGrantError) {
@@ -183,6 +203,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   // residue existed — so a repeat delete is idempotent and residue is cleanable.
   const deleted = await deleteProject(id);
   const cleaned = await revokeAllGrantsForProject(id);
+  // A removed project can never be confirmed, so its tasks stop waiting on it.
+  if (deleted) await resolveFolderBlockers(id, `The project was removed at ${new Date().toISOString()}`);
   if (
     !deleted &&
     cleaned.grants === 0 &&
