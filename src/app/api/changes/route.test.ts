@@ -261,7 +261,7 @@ assert.match(
 // A commit can name the list it was reviewed against (#5745). Under the
 // repository lock, before anything is staged, the tree's current stamps are
 // compared with it and a mismatch is a 409, so nothing is committed unseen.
-assert.match(source, /async function changeSnapshot\(repoRoot: string\)[\s\S]{0,400}stampChangedFiles\(files[\s\S]{0,300}\.sort\(\)/, "the precondition reads the same stamps the status list carries");
+assert.match(source, /async function changeSnapshot\(repoRoot: TrustedRepoRoot\)[\s\S]{0,400}stampChangedFiles\(files[\s\S]{0,300}\.sort\(\)/, "the precondition reads the same stamps the status list carries");
 assert.match(
   source,
   /const expectedChanges = expectedChangeKeys\(body\.expectedChanges\);[\s\S]*?withRepositoryMutation\(root\.repoRoot[\s\S]*?if \(expectedChanges && !targetedPaths\) \{\s*const snapshot = await changeSnapshot\(root\.repoRoot\);\s*if \(!sameChangeKeys\(snapshot\.keys, expectedChanges\)\) return staleCommit\(\);/,
