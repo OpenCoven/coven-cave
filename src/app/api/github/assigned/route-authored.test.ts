@@ -36,13 +36,17 @@ const ASSIGNED_ISSUE = {
 const REQUESTED_DRAFT = pr({ id: 20, number: 20, draft: true, html_url: "https://github.com/OpenCoven/terminal-ui/pull/20" });
 const MY_DRAFT = pr({ id: 30, number: 30, draft: true, html_url: "https://github.com/OpenCoven/coven-cave/pull/30" });
 const MY_READY = pr({ id: 31, number: 31, draft: false, html_url: "https://github.com/OpenCoven/coven-cave/pull/31" });
+// Assigned to me AND my draft: the issues API copy omits `draft`, the
+// author:@me search says `draft: true` (#5930 review, 20 Nov).
+const ASSIGNED_MY_DRAFT = pr({ id: 40, number: 40, html_url: "https://github.com/OpenCoven/coven-cave/pull/40" });
+const ASSIGNED_MY_DRAFT_SEARCH = { ...ASSIGNED_MY_DRAFT, draft: true };
 
 globalThis.fetch = async (url) => {
   const href = String(url);
   let body;
-  if (href.includes("/issues?filter=assigned")) body = [ASSIGNED_AND_MINE, ASSIGNED_ISSUE];
+  if (href.includes("/issues?filter=assigned")) body = [ASSIGNED_AND_MINE, ASSIGNED_ISSUE, ASSIGNED_MY_DRAFT];
   else if (href.includes("review-requested")) body = { total_count: 1, items: [REQUESTED_DRAFT] };
-  else if (href.includes("author:@me")) body = { total_count: 3, items: [MY_DRAFT, MY_READY, ASSIGNED_AND_MINE] };
+  else if (href.includes("author:@me")) body = { total_count: 4, items: [MY_DRAFT, MY_READY, ASSIGNED_AND_MINE, ASSIGNED_MY_DRAFT_SEARCH] };
   else throw new Error(`unexpected fetch ${href}`);
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 };
@@ -68,6 +72,13 @@ assert.notEqual(byNumber.get(20).authored, true, "a review request is someone el
 assert.equal(json.items.filter((item) => item.number === 10).length, 1, "deduped by URL");
 assert.equal(byNumber.get(10).kind, "pr");
 assert.equal(byNumber.get(10).authored, true, "the first copy gains the authored flag from the later copy");
+
+// An assigned copy that omits `draft` keeps the authored search's draft flag,
+// so the launcher never offers a self-review on a draft.
+assert.equal(json.items.filter((item) => item.number === 40).length, 1, "deduped by URL");
+assert.equal(byNumber.get(40).authored, true);
+assert.equal(byNumber.get(40).draft, true, "the first copy gains the draft flag from the authored copy");
+assert.equal(byNumber.get(10).draft, false, "a ready PR stays ready when no copy says draft");
 
 // An assigned issue is never marked authored.
 assert.notEqual(byNumber.get(11).authored, true);

@@ -1,4 +1,5 @@
 import { githubTokenIdentity } from "./github-item-cache.ts";
+import { UPSTREAM_COOLDOWN_HEADER, UpstreamCooldownError, upstreamFetch } from "./upstream-fetch.ts";
 
 /**
  * The GitHub login a token belongs to (#5930).
@@ -11,6 +12,11 @@ import { githubTokenIdentity } from "./github-item-cache.ts";
  *
  * A failure answers `null` ("unknown", which keeps every review verb) and is
  * held for a short backoff so a dead network is not asked on every card.
+ *
+ * The read goes through `upstreamFetch` like the item route's other GitHub
+ * calls, so it carries their deadline and counts in the shared GitHub health
+ * ledger (#6359). It is not retried inside the call: the failure backoff above
+ * is its retry, and a second attempt would double its cost during an outage.
  */
 
 const SUCCESS_MS = 6 * 60 * 60_000;
@@ -41,7 +47,6 @@ export async function githubViewerLogin(
 ): Promise<string | null> {
   if (!token) return null;
   const now = options.now ?? Date.now;
-  const fetchImpl = options.fetchImpl ?? fetch;
   const { entries, inflight } = store();
   const key = githubTokenIdentity(token);
   const hit = entries.get(key);
@@ -51,20 +56,32 @@ export async function githubViewerLogin(
 
   const request = (async () => {
     let login: string | null = null;
+    // A shared GitHub cooldown answers without asking GitHub, often for a few
+    // seconds. That says nothing about the login, so it is not held for the
+    // failure backoff: the next card asks again once the host is back.
+    let cooling = false;
     try {
-      const res = await fetchImpl("https://api.github.com/user", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
+      const res = await upstreamFetch(
+        "github",
+        "https://api.github.com/user",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          cache: "no-store",
         },
-        cache: "no-store",
-      });
+        { fetchImpl: options.fetchImpl, retries: 0 },
+      );
+      cooling = res.headers.has(UPSTREAM_COOLDOWN_HEADER);
       const data = (await res.json().catch(() => null)) as { login?: unknown } | null;
       if (res.ok && typeof data?.login === "string" && data.login.trim()) login = data.login.trim();
-    } catch {
+    } catch (error) {
+      cooling = error instanceof UpstreamCooldownError;
       login = null;
     }
+    if (cooling) return null;
     entries.delete(key);
     entries.set(key, { at: now(), ttl: login ? SUCCESS_MS : FAILURE_MS, login });
     while (entries.size > MAX_ENTRIES) {

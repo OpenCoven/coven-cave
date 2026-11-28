@@ -7,7 +7,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  OWN_PR_POLL_MAX_MS,
   OWN_PR_POLL_MIN_MS,
+  OWN_PR_RETRY_AFTER_MAX_MS,
   emptyOwnPrWatchState,
   nextOwnPrPollDelayMs,
   planOwnPrAutoReviews,
@@ -209,4 +211,62 @@ test("a reset already in the past falls back to the floor, not zero", () => {
     consecutiveFailures: 1,
   });
   assert.equal(delay, OWN_PR_POLL_MIN_MS);
+});
+
+test("a Retry-After longer than the fallback cap is honoured in full", () => {
+  // Two hours: polling after the one-hour fallback cap would hit GitHub while
+  // it still refuses (#5932 review, 16 Nov).
+  assert.equal(
+    nextOwnPrPollDelayMs({ status: 429, retryAfterSec: 7200, nowMs: NOW_MS, consecutiveFailures: 1 }),
+    2 * 60 * 60_000,
+  );
+});
+
+test("a bogus Retry-After is held to a day, never past what a timer can hold", () => {
+  assert.equal(OWN_PR_RETRY_AFTER_MAX_MS, 24 * 60 * 60_000);
+  const delay = nextOwnPrPollDelayMs({ status: 429, retryAfterSec: 3_000_000, nowMs: NOW_MS, consecutiveFailures: 1 });
+  assert.equal(delay, OWN_PR_RETRY_AFTER_MAX_MS);
+  assert.ok(delay < 2 ** 31 - 1, "setTimeout fires at once past 2^31-1 ms");
+});
+
+test("a rate-limit reset beyond the hour means a skewed clock, so it waits the hour", () => {
+  // The local clock is five hours slow: the reset (absolute, in server time)
+  // looks 5h20m away though it is 20 minutes away.
+  const resetSec = Math.floor(NOW_MS / 1000) + (5 * 60 + 20) * 60;
+  assert.equal(
+    nextOwnPrPollDelayMs({ status: 403, rateLimitRemaining: 0, rateLimitResetSec: resetSec, nowMs: NOW_MS, consecutiveFailures: 1 }),
+    OWN_PR_POLL_MAX_MS,
+  );
+});
+
+test("an unusable Retry-After falls back to the capped backoff", () => {
+  for (const retryAfterSec of [Number.NaN, Number.POSITIVE_INFINITY, -30]) {
+    assert.equal(
+      nextOwnPrPollDelayMs({ status: 503, retryAfterSec, nowMs: NOW_MS, consecutiveFailures: 1 }),
+      6 * 60_000,
+      `retry-after ${retryAfterSec} is ignored`,
+    );
+  }
+  assert.equal(
+    nextOwnPrPollDelayMs({
+      status: 403,
+      rateLimitRemaining: 0,
+      rateLimitResetSec: Number.NaN,
+      nowMs: NOW_MS,
+      consecutiveFailures: 10,
+    }),
+    OWN_PR_POLL_MAX_MS,
+    "a non-finite reset never produces a NaN or unbounded delay",
+  );
+});
+
+test("the first healthy poll after a long wait returns to the floor", () => {
+  assert.equal(
+    nextOwnPrPollDelayMs({ status: 429, retryAfterSec: 7200, nowMs: NOW_MS, consecutiveFailures: 3 }),
+    2 * 60 * 60_000,
+  );
+  assert.equal(
+    nextOwnPrPollDelayMs({ status: 200, nowMs: NOW_MS + 2 * 60 * 60_000, consecutiveFailures: 0 }),
+    OWN_PR_POLL_MIN_MS,
+  );
 });

@@ -70,7 +70,7 @@ function itemPayload(merged: boolean, viewerIsAuthor = false) {
 
 async function boot(
   page: Page,
-  opts: { mergedRef: { merged: boolean }; mergeCalls: unknown[]; viewerIsAuthor?: boolean },
+  opts: { mergedRef: { merged: boolean }; mergeCalls: unknown[]; viewerIsAuthor?: boolean; proposal?: string },
 ) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
@@ -96,7 +96,9 @@ async function boot(
             {
               id: "t2",
               role: "assistant",
-              text: 'Looking good.\n<coven:github-action kind="merge" repo="acme/rocket" number="7" note="checks are green" />',
+              text:
+                opts.proposal ??
+                'Looking good.\n<coven:github-action kind="merge" repo="acme/rocket" number="7" note="checks are green" />',
               createdAt: ISO,
             },
           ],
@@ -283,7 +285,7 @@ test.describe("github chat cards", () => {
   // #5930: GitHub rejects APPROVE and REQUEST_CHANGES from a PR's author, so
   // on your own PR the composer offers Comment (and Merge) only, says why, and
   // its palette cannot reach the refused verbs.
-  test("your own PR offers Comment only and says why", async ({ page }) => {
+  test("your own PR offers Comment only and says why", async ({ page }, testInfo) => {
     const mergedRef = { merged: false };
     const mergeCalls: unknown[] = [];
     await boot(page, { mergedRef, mergeCalls, viewerIsAuthor: true });
@@ -300,6 +302,17 @@ test.describe("github chat cards", () => {
     await expect(prCard.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
     await expect(prCard.getByRole("button", { name: "Request changes", exact: true })).toHaveCount(0);
     await expect(prCard).toContainText("GitHub doesn't let its author approve or request changes");
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "light"]]) {
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, { theme, mode });
+      const note = prCard.locator(".ghc-own-note");
+      await note.scrollIntoViewIfNeeded();
+      await expect(note).toBeVisible();
+      // The note and the footer's actions, which sit together at the sheet's foot.
+      await note.locator("xpath=..").screenshot({ animations: "disabled", path: testInfo.outputPath(`own-pr-composer-${theme}-${mode}.png`) });
+    }
 
     const input = prCard.getByLabel("Reply to acme/rocket#7");
     await input.fill("/review ");
@@ -308,5 +321,65 @@ test.describe("github chat cards", () => {
     await expect(prCard).not.toContainText("request-changes");
     await expect(prCard).not.toContainText("approve with no changes requested");
     expect(mergeCalls.length).toBe(0);
+  });
+
+  // #5930 (20 Nov finding): the PR card already said "You wrote this pull
+  // request" while an agent's proposal card on the same PR offered a runnable
+  // Approve and sent it. The proposal now offers only its text as a comment.
+  test("an agent's Approve proposal on your own PR can only be sent as a comment", async ({ page }, testInfo) => {
+    const reviews: Record<string, unknown>[] = [];
+    await boot(page, {
+      mergedRef: { merged: false },
+      mergeCalls: [],
+      viewerIsAuthor: true,
+      proposal:
+        'Ready to go.\n<coven:github-action kind="review" repo="acme/rocket" number="7" event="APPROVE" body="Ship it." />',
+    });
+    await page.route("**/api/github/review", async (route) => {
+      reviews.push(route.request().postDataJSON());
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.locator(".chat-sidebar").getByText("Ship the thing", { exact: false }).first().click();
+    const proposal = page.locator('[data-gh-action-kind="review"]');
+    await expect(proposal).toBeVisible({ timeout: 30_000 });
+    await expect(proposal).toContainText("Approve acme/rocket#7");
+    await expect(proposal).toContainText("GitHub doesn't let its author approve or request changes");
+    await expect(proposal.getByRole("button", { name: /Run proposed action/ })).toHaveCount(0);
+    const instead = proposal.getByRole("button", { name: /Comment instead/ });
+    await expect(instead).toBeEnabled();
+    // Light, dark and a non-default theme: the reason stays readable and the
+    // card keeps only the comment action in each.
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "light"]]) {
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, { theme, mode });
+      await expect(proposal.locator("[data-gh-action-own-pr]")).toBeVisible();
+      await expect(proposal.getByRole("button", { name: /Run proposed action/ })).toHaveCount(0);
+      await proposal.screenshot({ animations: "disabled", path: testInfo.outputPath(`own-pr-approve-proposal-${theme}-${mode}.png`) });
+    }
+    await instead.click();
+    await expect(proposal).toContainText("Done: Review-comment on acme/rocket#7");
+    expect(reviews).toEqual([{ repo: "acme/rocket", number: 7, event: "COMMENT", body: "Ship it." }]);
+  });
+
+  test("someone else's PR keeps the agent's Approve proposal", async ({ page }) => {
+    const reviews: Record<string, unknown>[] = [];
+    await boot(page, {
+      mergedRef: { merged: false },
+      mergeCalls: [],
+      proposal: '<coven:github-action kind="review" repo="acme/rocket" number="7" event="APPROVE" body="Ship it." />',
+    });
+    await page.route("**/api/github/review", async (route) => {
+      reviews.push(route.request().postDataJSON());
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.locator(".chat-sidebar").getByText("Ship the thing", { exact: false }).first().click();
+    const proposal = page.locator('[data-gh-action-kind="review"]');
+    const run = proposal.getByRole("button", { name: /Run proposed action: Approve acme\/rocket#7/ });
+    await expect(run).toBeEnabled({ timeout: 30_000 });
+    await run.click();
+    await expect.poll(() => reviews.length).toBe(1);
+    expect(reviews[0].event).toBe("APPROVE");
   });
 });

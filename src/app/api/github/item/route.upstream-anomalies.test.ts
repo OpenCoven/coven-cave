@@ -1,7 +1,8 @@
 // GET /api/github/item under every upstream anomaly (#6359).
 //
-// Up to three upstream calls per answer: the issue, and with `?pull=1` the
-// pull head and its reviews. Good answers are held for 30 s (#5615), so the
+// Up to four upstream calls per answer: the issue, and with `?pull=1` the
+// pull head, its reviews and, once per token, the viewer's own login (#5930,
+// held for hours once known). Good answers are held for 30 s (#5615), so the
 // clock is stubbed and stepped past the window before every call; the matrix
 // then proves a failure is never the thing that gets held. The two extras are
 // fault-isolated by design: a pull-head outage empties the `pull` block and a
@@ -19,6 +20,7 @@ import {
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 import { resetUpstreamHealth, setUpstreamClockForTests } from "@/lib/server/upstream-fetch";
+import { clearGitHubViewerCache } from "@/lib/server/github-viewer";
 
 const home = isolateCaveHome("github-item-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_item_0123456789";
@@ -45,7 +47,12 @@ test.after(() => {
   home.cleanup();
 });
 // A forced outage in one test must not leave the host cooling for the next.
-test.beforeEach(() => resetUpstreamHealth("github"));
+// The viewer's login is held per token for hours (or a failure for minutes):
+// start every test cold so its call counts are its own.
+test.beforeEach(() => {
+  resetUpstreamHealth("github");
+  clearGitHubViewerCache();
+});
 
 const HEAD = "a".repeat(40);
 const BASE = "b".repeat(40);
@@ -95,6 +102,7 @@ const github = (failing: { path: string; status: number } | null = null): Upstre
       { user: { login: "carol" }, state: "DISMISSED" },
     ]);
   }
+  if (url.pathname === "/user") return Response.json({ login: "someone-else" });
   return Response.json({ message: "Not Found" }, { status: 404 });
 };
 harness.healthy("github", github());
@@ -177,7 +185,7 @@ test("a failure is never held: the next call after GitHub heals is live, no cloc
   harness.heal("github");
   harness.reset();
   assert.equal((await read()).status, 200);
-  assert.equal(harness.calls("github").length, 3, "the healed call made all three GitHub calls at once");
+  assert.equal(harness.calls("github").length, 4, "the healed call made all four GitHub calls at once, the viewer's login included");
 
   harness.reset();
   assert.equal((await read()).status, 200);
@@ -186,7 +194,7 @@ test("a failure is never held: the next call after GitHub heals is live, no cloc
   stepPastCache();
   harness.reset();
   await read();
-  assert.equal(harness.calls("github").length, 3, "past the window the item is read live again");
+  assert.equal(harness.calls("github").length, 3, "past the window the item is read live again; the known login is not asked again");
 });
 
 test("a pull-head outage empties the pull block without losing the item", async () => {
@@ -206,6 +214,25 @@ test("a reviews outage zeroes the tally without losing the pull block", async ()
   assert.equal(body.ok, true);
   assert.equal(body.pull?.headRef, "feat/suite");
   assert.deepEqual(body.pull?.reviews, { approved: 0, changesRequested: 0, commented: 0 });
+  harness.healthy("github", github());
+});
+
+test("a viewer lookup outage keeps every review verb without losing the pull block", async () => {
+  stepPastCache();
+  harness.healthy("github", github({ path: "/user", status: 500 }));
+  const body = (await (await read()).json()) as Detail & { pull?: { viewerIsAuthor?: boolean | null } };
+  assert.equal(body.ok, true);
+  assert.equal(body.pull?.headRef, "feat/suite");
+  assert.equal(body.pull?.viewerIsAuthor, null, "an unknown viewer is null, which keeps Approve and Request changes");
+  harness.healthy("github", github());
+});
+
+test("the viewer's login decides viewerIsAuthor", async () => {
+  stepPastCache();
+  harness.healthy("github", (request, call) =>
+    new URL(request.url).pathname === "/user" ? Response.json({ login: "bunsdev" }) : github()(request, call));
+  const body = (await (await read()).json()) as Detail & { pull?: { viewerIsAuthor?: boolean | null } };
+  assert.equal(body.pull?.viewerIsAuthor, true, "the PR's author (BunsDev) is the token's login, case-insensitively");
   harness.healthy("github", github());
 });
 

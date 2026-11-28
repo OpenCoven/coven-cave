@@ -376,7 +376,9 @@ General › Reviews, `github.reviewOwnPrs`, default on).
 - `/api/github/assigned` marks every row from its `author:@me` search
   `authored: true`, and both searches keep GitHub's `draft` flag. The
   dedupe-by-URL loop keeps the first copy it sees, so it merges `authored`
-  onto an assigned copy of a PR you also wrote.
+  onto an assigned copy of a PR you also wrote, and `draft` too: the assigned
+  (issues API) copy usually omits it, and a draft must never read as ready for
+  self-review.
 - `reviewRequests(items, { includeOwn })` in `src/lib/chat-review-requests.ts`
   admits open `kind: "pr"` items with `authored: true`. An assigned PR someone
   else wrote still does not qualify.
@@ -390,13 +392,20 @@ request"). The surfaces offer only what GitHub accepts:
 
 - `/api/github/item?pull=1` and `/api/github/checks` report `viewerIsAuthor`.
   The token's login comes from one cached REST `/user` read per token
-  (`src/lib/server/github-viewer.ts`). The routes never use GraphQL, whose budget
-  is shared by every agent signed in as the user. `null` means unknown, and an
-  unknown viewer keeps every verb.
+  (`src/lib/server/github-viewer.ts`), made through `upstreamFetch` so it has
+  the shared deadline and GitHub health ledger. A failure is held for five
+  minutes; a shared cooldown is not held at all. The routes never use GraphQL,
+  whose budget is shared by every agent signed in as the user. `null` means
+  unknown, and an unknown viewer keeps every verb.
 - The card composer drops Approve and Request changes on your own PR, and so
   does its `/review` palette group, so `parseCommand` cannot decode them either.
   The Code PR panel drops Approve. Merge stays, because GitHub lets the author
   merge. Each surface shows the one-line reason from `src/lib/own-pr-review.ts`.
+- An agent's proposal card for Approve or Request changes asks the item route
+  who wrote the PR (one shared lookup per PR, 5-second limit). Until it knows,
+  the verdict cannot run. On your own PR the verdict is never offered: the card
+  gives the reason and offers the proposal's text as a review comment instead.
+  An unknown answer keeps the verdict.
 
 **Automatic review when marked ready is not built yet.** The trigger rules are
 pinned as a pure function, `planOwnPrAutoReviews` in
@@ -408,8 +417,10 @@ pinned as a pure function, `planOwnPrAutoReviews` in
 - Each PR fires once. Pushes and a second draft-to-ready do not re-fire it.
 - Closed and merged PRs drop out of state. A capped search page prunes
   nothing, because an absent PR may only be past the first page.
-- Polls run at most every 3 minutes, wait out an exhausted rate limit, and
-  back off on other failures (`nextOwnPrPollDelayMs`).
+- Polls run at most every 3 minutes (`nextOwnPrPollDelayMs`). An explicit
+  `retry-after` is honoured in full, up to a day. An exhausted rate limit
+  waits for its reset, up to an hour, since a reset further out means a skewed
+  clock. Other failures back off exponentially, capped at an hour.
 
 The watcher, its preferences and its Settings controls wait on a supported
 way to start a read-only background familiar session from the Cave server.

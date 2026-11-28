@@ -123,8 +123,22 @@ export function planOwnPrAutoReviews(
 
 /** The 3-minute floor between REST polls. */
 export const OWN_PR_POLL_MIN_MS = 3 * 60_000;
-/** The longest a failing poll ever waits before trying again. */
+/**
+ * The longest the exponential fallback, or an exhausted rate limit's reset,
+ * waits. GitHub's rate-limit window is an hour, so a reset further out than
+ * that means the local clock is behind (the reset is an absolute time) and is
+ * not trusted past it.
+ */
 export const OWN_PR_POLL_MAX_MS = 60 * 60_000;
+
+/**
+ * The longest an explicit `retry-after` is honoured. It is relative, so clock
+ * skew can't stretch it, and it is honoured past the hour (polling before it
+ * only hits GitHub while it still refuses). This ceiling keeps a bogus value
+ * from producing a delay no timer can hold: past 2^31-1 ms a `setTimeout`
+ * fires at once.
+ */
+export const OWN_PR_RETRY_AFTER_MAX_MS = 24 * 60 * 60_000;
 
 export type OwnPrPollOutcome = {
   status: number;
@@ -141,20 +155,25 @@ export type OwnPrPollOutcome = {
 
 /**
  * How long to wait before the next poll. Never less than the 3-minute floor.
- * An exhausted rate limit waits for its reset; `retry-after` is honoured; any
- * other failure backs off exponentially from the floor, capped at an hour.
+ * `retry-after` is honoured in full, up to a day. An exhausted rate limit
+ * waits for its reset, up to an hour. Any other failure backs off
+ * exponentially from the floor, capped at an hour. A missing, negative or
+ * non-finite header is ignored rather than trusted.
  */
 export function nextOwnPrPollDelayMs(outcome: OwnPrPollOutcome): number {
-  const clamp = (ms: number) => Math.min(OWN_PR_POLL_MAX_MS, Math.max(OWN_PR_POLL_MIN_MS, ms));
+  const between = (ms: number, max: number) => Math.min(max, Math.max(OWN_PR_POLL_MIN_MS, ms));
   const ok = outcome.status >= 200 && outcome.status < 300;
   if (ok) return OWN_PR_POLL_MIN_MS;
 
-    return Math.max(OWN_PR_POLL_MIN_MS, outcome.retryAfterSec * 1000);
+  const usable = (value: number | null | undefined): value is number =>
+    value != null && Number.isFinite(value) && value >= 0;
+  if (usable(outcome.retryAfterSec)) {
+    return between(outcome.retryAfterSec * 1000, OWN_PR_RETRY_AFTER_MAX_MS);
   }
   const limited = outcome.status === 403 || outcome.status === 429;
-  if (limited && outcome.rateLimitRemaining === 0 && outcome.rateLimitResetSec != null) {
-    return clamp(outcome.rateLimitResetSec * 1000 - outcome.nowMs);
+  if (limited && outcome.rateLimitRemaining === 0 && usable(outcome.rateLimitResetSec)) {
+    return between(outcome.rateLimitResetSec * 1000 - outcome.nowMs, OWN_PR_POLL_MAX_MS);
   }
   const failures = Math.max(1, outcome.consecutiveFailures);
-  return clamp(OWN_PR_POLL_MIN_MS * 2 ** failures);
+  return between(OWN_PR_POLL_MIN_MS * 2 ** failures, OWN_PR_POLL_MAX_MS);
 }

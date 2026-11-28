@@ -215,6 +215,9 @@ async function loadAssigned(token: string): Promise<Response> {
   // De-duplicate by url (keep first occurrence), then sort by updatedAt desc.
   // The first copy wins, so an assigned PR you also wrote would lose the
   // author:@me search's `authored` flag (#5930): merge it onto that copy.
+  // Its draft status too: the assigned (issues API) copy usually omits
+  // `draft`, which maps to false, and a self-review must not be offered on a
+  // draft because the first copy said nothing.
   const seen = new Map<string, GitHubItem>();
   const all: GitHubItem[] = [];
   for (const item of [...assigned.items, ...review.items, ...created.items]) {
@@ -223,8 +226,9 @@ async function loadAssigned(token: string): Promise<Response> {
       const copy = { ...item };
       seen.set(item.url, copy);
       all.push(copy);
-    } else if (item.authored) {
-      first.authored = true;
+    } else {
+      if (item.authored) first.authored = true;
+      if (item.draft) first.draft = true;
     }
   }
   all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
