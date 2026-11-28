@@ -808,3 +808,28 @@ console.log("sidecar-runtime-closure.test.mjs: ok");
     await rm(aliasFixture, { recursive: true, force: true });
   }
 }
+
+// The Windows extractor refuses an archive missing any REQUIRED_RUNTIME_PATHS
+// entry. Each one must be a file the JS verifier also requires, or the bundler
+// can prune a path the packaged app then demands at launch. #6575 pruned
+// `@swc/helpers/_` while the extractor still required it, and only the
+// Windows built-archive cargo test caught it.
+{
+  const extractorSource = await readFile(new URL("../src-tauri/src/sidecar_archive.rs", import.meta.url), "utf8");
+  const extractorList = extractorSource.match(/const REQUIRED_RUNTIME_PATHS: \[&str; (\d+)\] = \[([\s\S]*?)\];/);
+  assert.ok(extractorList, "src-tauri/src/sidecar_archive.rs must declare REQUIRED_RUNTIME_PATHS");
+  const extractorRequired = [...extractorList[2].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(extractorRequired.length, Number(extractorList[1]));
+
+  const closureSource = await readFile(new URL("./sidecar-runtime-closure.mjs", import.meta.url), "utf8");
+  const verifierList = closureSource.match(/export async function verifySidecarRuntime\(root\) \{[\s\S]*?const required = \[([\s\S]*?)\];/);
+  assert.ok(verifierList, "verifySidecarRuntime must keep its literal required list");
+  const verifierRequired = new Set([...verifierList[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]));
+
+  for (const relativePath of extractorRequired) {
+    assert.ok(
+      verifierRequired.has(relativePath),
+      `the Windows extractor requires ${relativePath}, so verifySidecarRuntime must require it as a regular file too`,
+    );
+  }
+}
