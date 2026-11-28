@@ -23,7 +23,7 @@ export function pinnedProjectRoot(project: PinnedProject): string | null {
 export function assertPinnedLaunchRoot(project: PinnedProject, expectedCwd: string): void {
   if (!project.rootRealpath) {
     throw new ChatProjectLaunchError("project_root_unconfirmed", 409,
-      `Confirm ${project.name}’s folder in project settings before starting chat.`);
+      `Confirm ${project.name}’s folder in project settings before starting chat.`, project.id);
   }
   let cwd: string | null = null;
   try {

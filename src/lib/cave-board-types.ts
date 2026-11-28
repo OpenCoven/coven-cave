@@ -280,6 +280,13 @@ export type Card = {
   /** Canonical harness that supplied modelOverride. An override only applies to this runtime. */
   modelOverrideHarness?: string | null;
   sessionId: string | null;
+  /**
+   * The session the board chat route reserved as native Chat (#6562). Set
+   * only by that route, never by a card edit. While it equals `sessionId`,
+   * the session is known to be Cave's own, so a reopen may hand back a first
+   * prompt that never landed; a daemon session never carries it.
+   */
+  nativeSessionId?: string;
   cwd: string | null;
   /** Stable project ID from cave-projects.json. Preferred over cwd. */
   projectId?: string | null;

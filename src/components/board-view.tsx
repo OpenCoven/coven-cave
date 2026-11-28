@@ -13,6 +13,7 @@ import { noteCaveEventPollAvoided } from "@/lib/cave-event-plane-client";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
+import { boardProjectKey, boardProjectLabel, compareBoardProjectSections, defaultNewTaskStatus } from "@/lib/board-sections";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
@@ -40,6 +41,7 @@ import { TaskWorkCockpit } from "@/components/task-work-cockpit";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
+import { confirmFolderInPlaceMessage, refusedUnconfirmedProjectId } from "@/lib/project-folder-refusal";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
@@ -48,6 +50,7 @@ import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, invalidateSurfaceResourcesFor, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { takeTaskWorkHandoff, taskWorkCardIdFromHash } from "@/lib/task-work-handoff";
 
 
 type Props = {
@@ -162,17 +165,43 @@ export function BoardView({
   // The card whose chat start failed — the harness fix row needs it to know
   // which familiar to rebind and which task chat to re-run.
   const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
-  const { projects } = useProjects();
+  // A task chat refused because its project's folder is unconfirmed, with the
+  // project the server named. It belongs to that exact error message, so a
+  // later, different error never inherits the Confirm folder action (#6560).
+  const [chatLinkFolderConfirm, setChatLinkFolderConfirm] = useState<{ message: string; projectId: string } | null>(null);
+  const [confirmingTaskFolder, setConfirmingTaskFolder] = useState(false);
+  // Bumped by every task-chat start; see confirmTaskFolderAndRetry.
+  const taskChatAttemptRef = useRef(0);
+  const { projects, confirmRoot } = useProjects();
   const firstUse = useFirstUse();
 
   // The OpenClaw bridge reserves its conversation id before the first streamed
   // turn. Once the normal chat path persists that local conversation, stop
   // treating this as a first-launch handoff so reopening the task never sends
   // the task prompt twice.
+  //
+  // That same moment is when the task's work has actually started, so a
+  // ready task moves to dispatched (Running) now, not when its chat was only
+  // reserved (#6562). The server re-checks readiness under the board lock and
+  // returns a waiting or untriaged task unchanged.
   useEffect(() => {
-    if (pendingBridgeStart && sessions.some((session) => session.id === pendingBridgeStart.sessionId)) {
-      setPendingBridgeStart(null);
-    }
+    if (!pendingBridgeStart || !sessions.some((session) => session.id === pendingBridgeStart.sessionId)) return;
+    const { cardId, sessionId } = pendingBridgeStart;
+    setPendingBridgeStart(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/board/${encodeURIComponent(cardId)}/lifecycle`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ to: "dispatched", onlyIfReady: true, reason: `Task chat started (session ${sessionId})` }),
+        });
+        const json = await res.json().catch(() => null) as { ok?: boolean; card?: Card } | null;
+        const card = json?.ok ? json.card : undefined;
+        if (card) setCards((prev) => prev.map((candidate) => candidate.id === card.id ? card : candidate));
+      } catch {
+        /* the chat is running either way; the next board load shows the card */
+      }
+    })();
   }, [pendingBridgeStart, sessions]);
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
@@ -368,17 +397,6 @@ export function BoardView({
   }, [cards]);
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  // Stable project label for a card — the key the project filter/grouping keys
-  // on. Mirrors the board's project grouping: named project → its name, else a
-  // cwd basename, else the "No project" bucket.
-  const projectLabelOf = useCallback((c: Card): string => {
-    if (c.projectId) {
-      const p = chatProjectById(c.projectId, projects);
-      if (p?.name) return p.name;
-    }
-    if (c.cwd) return c.cwd.split("/").filter(Boolean).pop() ?? c.cwd;
-    return "No project";
-  }, [projects]);
   const filtered = useMemo(() => {
     // Hide cards whose delete is pending in the undo window (restored on Undo).
     const hidden = new Set((deletePending?.item ?? []).map((c) => c.id));
@@ -389,10 +407,12 @@ export function BoardView({
           ? familiarInScope(scopeFamiliarIds, c.familiarId)
           : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
         !excludedStatus.has(c.status) &&
-        !excludedProject.has(projectLabelOf(c)) &&
+        // The same key the project lanes and table groups use, so an
+        // unchecked project section disappears entirely (#6561).
+        !excludedProject.has(boardProjectKey(c)) &&
         cardMatchesBoardSearch(c, searchQuery, familiarsById),
     );
-  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject, projectLabelOf]);
+  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject]);
 
   // Done cards in the CURRENT scope (the filtered set the user is viewing) —
   // the exact set "Clear done" operates on.
@@ -413,11 +433,18 @@ export function BoardView({
         : activeFamiliarId === null || c.familiarId === activeFamiliarId),
     [cards, scopeFamiliarIds, activeFamiliarId],
   );
-  const projectFilterLabels = useMemo(
-    () => [...new Set(scopedCards.map(projectLabelOf))].sort((a, b) =>
-      a === "No project" ? -1 : b === "No project" ? 1 : a.localeCompare(b)),
-    [scopedCards, projectLabelOf],
+  const projectFilterSections = useMemo(
+    () => [...new Set(scopedCards.map(boardProjectKey))]
+      .map((key) => ({ key, label: boardProjectLabel(key, projects) }))
+      .sort(compareBoardProjectSections),
+    [scopedCards, projects],
   );
+  const filterCount = excludedStatus.size + excludedProject.size;
+  const clearFilters = useCallback(() => {
+    setExcludedStatus(new Set());
+    setExcludedProject(new Set());
+  }, []);
+  const newTaskStatus = defaultNewTaskStatus(STATUSES, excludedStatus);
   const toggleStatusFilter = useCallback((id: CardStatus) => {
     setExcludedStatus((prev) => {
       const next = new Set(prev);
@@ -878,6 +905,7 @@ export function BoardView({
     bridge?: string;
   } | null> => {
     if (!firstUse.ensureIntroduction()) return null;
+    taskChatAttemptRef.current += 1;
     const card = cards.find((candidate) => candidate.id === id);
     // Project-backed tasks must retain an explicit familiar chosen from the
     // project's authorized roster. Falling back to the active/default
@@ -923,6 +951,8 @@ export function BoardView({
       const json = await res.json() as {
         ok?: boolean;
         error?: string;
+        code?: string;
+        projectId?: string;
         card?: Card;
         sessionId?: string;
         familiarId?: string | null;
@@ -931,7 +961,18 @@ export function BoardView({
         bridge?: string;
       };
       if (!res.ok || !json.ok || !json.sessionId) {
-        throw new Error(json.error ?? "failed to open task work");
+        const folderProjectId = refusedUnconfirmedProjectId(json);
+        // Beside the in-place button, say what it does rather than echoing
+        // the server's "in project settings" copy.
+        const message = folderProjectId
+          ? confirmFolderInPlaceMessage(chatProjectById(folderProjectId, projects)?.name)
+          : json.error ?? "failed to open task work";
+        setChatLinkFolderConfirm(folderProjectId ? { message, projectId: folderProjectId } : null);
+        // A refusal can record what the task now waits on (#6562); show it
+        // without waiting for a board reload, which the open drawer defers.
+        const refusedCard = json.card;
+        if (refusedCard) setCards((prev) => prev.map((candidate) => candidate.id === id ? refusedCard : candidate));
+        throw new Error(message);
       }
       const updatedCard = json.card;
       if (updatedCard) {
@@ -961,15 +1002,28 @@ export function BoardView({
     // a grant revoked after the session was created cannot be reopened from
     // the Board without a fresh authorization check. Unscoped legacy cards
     // have no project boundary to revalidate and can keep the direct path.
-    if (card.sessionId && !card.projectId) {
+    const openLinkedSessionDirectly = (sessionId: string) => {
       if (isMobile) {
-        const linkedSession = sessions.find((session) => session.id === card.sessionId);
-        onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
+        const linkedSession = sessions.find((session) => session.id === sessionId);
+        onJumpToSession?.(sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
         return;
       }
       setSelectedCardId(null);
       pendingWorkFocusIdRef.current = id;
       setWorkCardId(id);
+    };
+    const unscopedSession = card.sessionId && !card.projectId ? card.sessionId : null;
+    // A session the endpoint reserved itself (`nativeSessionId`) goes back
+    // through it, because only the endpoint can hand back a first prompt that
+    // never landed (#6562). If the endpoint refuses (a runtime that changed
+    // since, a busy start), the task opens directly, as it did before.
+    const reservedUnscoped = unscopedSession !== null && card.nativeSessionId === unscopedSession;
+    if (unscopedSession && !reservedUnscoped) {
+      openLinkedSessionDirectly(unscopedSession);
+      return;
+    }
+    if (unscopedSession && !card.cwd) {
+      openLinkedSessionDirectly(unscopedSession);
       return;
     }
 
@@ -980,6 +1034,13 @@ export function BoardView({
     }
 
     const started = await startTaskChat(id, project?.root);
+    if (!started && unscopedSession) {
+      setChatLinkError(null);
+      setChatLinkErrorCardId(null);
+      setChatLinkFolderConfirm(null);
+      openLinkedSessionDirectly(unscopedSession);
+      return;
+    }
     if (!started) return;
     if (started.bridge === "native-chat" && started.initialPrompt) {
       setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt, initialModelOverride: started.initialModelOverride });
@@ -995,6 +1056,49 @@ export function BoardView({
     pendingWorkFocusIdRef.current = id;
     setWorkCardId(id);
   };
+
+  // Honour `#work-<id>`: Chat's start page and the GitHub view send a native
+  // task chat that still owes its first prompt here, because this work view
+  // is what sends it once and dispatches the task (#6562). A parked prompt for
+  // the card's current session opens directly; otherwise the normal start
+  // runs, and the server hands the prompt back if it is still unsent.
+  const openTaskWorkRef = useRef(openTaskWork);
+  openTaskWorkRef.current = openTaskWork;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const apply = () => {
+      const id = taskWorkCardIdFromHash(window.location.hash);
+      if (!id) return;
+      const snapshot = cards.find((candidate) => candidate.id === id);
+      if (!snapshot) return;
+      replaceHistoryUrl(window.location.pathname + window.location.search);
+      const handoff = takeTaskWorkHandoff(id);
+      // A board snapshot from before the start doesn't show the reserved
+      // session yet; the card the start returned does.
+      const card = handoff?.card && snapshot.sessionId !== handoff.sessionId
+        ? { ...snapshot, ...(handoff.card as Partial<Card>) }
+        : snapshot;
+      if (card !== snapshot) {
+        setCards((prev) => prev.map((candidate) => candidate.id === id ? card : candidate));
+      }
+      if (handoff && card.sessionId === handoff.sessionId) {
+        setPendingBridgeStart({
+          cardId: id,
+          sessionId: handoff.sessionId,
+          initialPrompt: handoff.initialPrompt,
+          initialModelOverride: handoff.initialModelOverride,
+        });
+        setSelectedCardId(null);
+        pendingWorkFocusIdRef.current = id;
+        setWorkCardId(id);
+        return;
+      }
+      void openTaskWorkRef.current(id);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, [cards]);
 
   // Recovery for a harness/runtime failure while starting a task chat: rebind
   // the card's familiar to the chosen adapter via /api/config, then re-run the
@@ -1036,7 +1140,37 @@ export function BoardView({
       setChatLinkError("Could not switch harness.");
     }
   };
+  // Confirm the refused project's folder in place (#6560): the same settings
+  // route and Touch ID prompt. Only a confirmed folder re-runs the task chat.
+  const confirmTaskFolderAndRetry = async () => {
+    const id = chatLinkErrorCardId;
+    const target = chatLinkFolderConfirm;
+    if (!id || !target || target.message !== chatLinkError || chatLinkingId !== null || confirmingTaskFolder) return;
+    // A newer task owns its error, actions and retry while this prompt is open.
+    const attempt = taskChatAttemptRef.current;
+    setConfirmingTaskFolder(true);
+    try {
+      const result = await confirmRoot(target.projectId);
+      if (taskChatAttemptRef.current !== attempt) {
+        return;
+      }
+      if (!result.ok) {
+        // The banner is an alert region, so setting the error announces it.
+        setChatLinkFolderConfirm({ message: result.error, projectId: target.projectId });
+        setChatLinkError(result.error);
+        return;
+      }
+      setChatLinkFolderConfirm(null);
+      announce("Folder confirmed. Starting the task chat.", "polite");
+      await openTaskWork(id);
+    } finally {
+      setConfirmingTaskFolder(false);
+    }
+  };
   const chatLinkFailure = chatLinkError ? parseHarnessFailure(chatLinkError) : null;
+  const chatLinkConfirmsFolder = Boolean(
+    chatLinkError && chatLinkErrorCardId && chatLinkFolderConfirm?.message === chatLinkError,
+  );
   const workSession = workCard?.sessionId
     ? sessions.find((session) => session.id === workCard.sessionId) ?? null
     : null;
@@ -1203,18 +1337,18 @@ export function BoardView({
             </button>
           </div>
 
-          {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
+          {/* Filter dropdown. Status sections are always listed, since every
+              Kanban and phone layout draws status columns. Project sections
+              are listed while grouped by project, or while one is hidden, so
+              a hidden section can always be brought back (#6561). */}
           <BoardFilterMenu
-            dimension={effectiveGroupBy === "project" ? "project" : "status"}
+            showProjects={(!isMobile && effectiveGroupBy === "project") || excludedProject.size > 0}
             statusOptions={STATUSES.map((st) => ({ id: st, label: STATUS_TOOLBAR_LABELS[st], checked: !excludedStatus.has(st) }))}
-            projectOptions={projectFilterLabels.map((p) => ({ id: p, label: p, checked: !excludedProject.has(p) }))}
+            projectOptions={projectFilterSections.map((p) => ({ id: p.key, label: p.label, checked: !excludedProject.has(p.key) }))}
             onToggleStatus={toggleStatusFilter}
             onToggleProject={toggleProjectFilter}
-            onSelectAll={() => { setExcludedStatus(new Set()); setExcludedProject(new Set()); }}
-            activeCount={effectiveGroupBy === "project"
-              ? projectFilterLabels.filter((p) => !excludedProject.has(p)).length
-              : STATUSES.length - excludedStatus.size}
-            totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
+            onSelectAll={clearFilters}
+            hiddenCount={filterCount}
           />
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
@@ -1258,7 +1392,7 @@ export function BoardView({
             label: "New task",
             placement: "primary",
             icon: "ph:plus",
-            onSelect: () => { setModalDefaultStatus("backlog"); setModalOpen(true); },
+            onSelect: () => { setModalDefaultStatus(newTaskStatus); setModalOpen(true); },
           },
           ...(!isMobile && (viewMode === "kanban" || viewMode === "table") ? [{
             id: "select-tasks",
@@ -1336,6 +1470,18 @@ export function BoardView({
         >
           <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{chatLinkError}</span>
+          {chatLinkConfirmsFolder ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              leadingIcon="ph:seal-check"
+              loading={confirmingTaskFolder}
+              disabled={chatLinkingId !== null}
+              onClick={() => void confirmTaskFolderAndRetry()}
+            >
+              Confirm folder
+            </Button>
+          ) : null}
           {chatLinkFailure && chatLinkErrorCardId ? (
             <HarnessFixActions
               failure={chatLinkFailure}
@@ -1522,7 +1668,27 @@ export function BoardView({
           // Every view mode lands here so the kanban no longer silently shows
           // empty columns when nothing matches.
           <div className="flex h-full items-center justify-center p-6">
-            {searchQuery.trim() ? (
+            {filterCount > 0 ? (
+              <EmptyState
+                icon="ph:funnel"
+                headline="No tasks match your filters"
+                subtitle={searchQuery.trim()
+                  ? `Nothing in the sections you’re showing matches “${searchQuery.trim()}”.`
+                  : "The Filter menu is hiding every section that has tasks in it."}
+                actions={
+                  <>
+                    <Button leadingIcon="ph:funnel" onClick={clearFilters}>
+                      Show all sections
+                    </Button>
+                    {searchQuery.trim() ? (
+                      <Button variant="ghost" leadingIcon="ph:x" onClick={() => setSearchQuery("")}>
+                        Clear search
+                      </Button>
+                    ) : null}
+                  </>
+                }
+              />
+            ) : searchQuery.trim() ? (
               <EmptyState
                 icon="ph:magnifying-glass"
                 headline="No tasks match your search"
@@ -1551,6 +1717,7 @@ export function BoardView({
           </div>
         ) : isMobile ? (
           <BoardCardStack cards={filtered} familiars={familiars} sessions={sessions}
+            hiddenStatuses={excludedStatus}
             selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
             onMoveStatus={moveCardToStatus}
@@ -1560,6 +1727,7 @@ export function BoardView({
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
+            hiddenStatuses={excludedStatus}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
@@ -1611,6 +1779,12 @@ export function BoardView({
           onOpenUrl={onOpenUrl}
           chatLinking={chatLinkingId === selectedCard.id}
           chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}
+          onConfirmFolder={
+            chatLinkConfirmsFolder && chatLinkErrorCardId === selectedCard.id
+              ? confirmTaskFolderAndRetry
+              : undefined
+          }
+          confirmingFolder={confirmingTaskFolder}
           onUseHarnessFix={
             chatLinkErrorCardId === selectedCard.id ? useHarnessForTaskChat : undefined
           }

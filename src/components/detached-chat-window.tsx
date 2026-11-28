@@ -61,6 +61,7 @@ import { sessionRailTitle } from "@/lib/session-rail-title";
 import { WorkspaceSurfacePreferencesProvider } from "@/lib/surface-preferences";
 import { isTauri } from "@/lib/tauri-platform";
 import { useChatSessionList } from "@/lib/use-chat-session-list";
+import { useFamiliarRoster } from "@/lib/use-familiar-roster";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -152,52 +153,6 @@ function adoptPoppedOutDraft(familiarId: string, sessionId: string): void {
     familiarId,
     sessionId,
   );
-}
-
-type FamiliarRoster = {
-  familiars: Familiar[];
-  loaded: boolean;
-  error: string | null;
-  reload: () => Promise<void>;
-};
-
-/** This window's own read of the familiar roster. A failed load keeps the
- *  last good roster (a failure means "can't see them", not "there are none")
- *  and retries quietly until it clears. */
-function useFamiliarRoster(): FamiliarRoster {
-  const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const generationRef = useRef(0);
-
-  const reload = useCallback(async () => {
-    const generation = ++generationRef.current;
-    try {
-      const response = await fetch("/api/familiars", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-      const json = (await response.json()) as { ok?: boolean; error?: string; familiars?: Familiar[] };
-      if (generation !== generationRef.current) return;
-      if (!json.ok) {
-        setError(json.error ?? "The Coven daemon is not reachable.");
-        return;
-      }
-      setError(null);
-      setFamiliars(json.familiars ?? []);
-    } catch (cause) {
-      if (generation !== generationRef.current) return;
-      setError(cause instanceof Error ? cause.message : "The request failed.");
-    } finally {
-      if (generation === generationRef.current) setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-  usePausablePoll(reload, 4_000, { enabled: error !== null, serialize: true });
-  // A roster changes rarely; a slow refresh picks up a newly summoned familiar.
-  usePausablePoll(reload, 60_000, { enabled: error === null, serialize: true });
-
-  return { familiars, loaded, error, reload };
 }
 
 /** Whether the daemon is running, for the chat's offline state. Unknown reads
@@ -379,7 +334,8 @@ function DetachedChatWindowSurface() {
   // and which have a chat waiting on the person.
   const everyone = useChatSessionList(null, { enabled: true, intervalMs: 8_000 });
   const activity = useMemo(() => summarizeChatWindowActivity(everyone.sessions), [everyone.sessions]);
-  const refreshActivity = everyone.refresh;
+  const refreshEveryone = everyone.refresh;
+  const refreshActivity = useCallback(() => refreshEveryone({ fresh: true }), [refreshEveryone]);
 
   // The conversation list: docked beside the chat when there is room (the
   // choice persists), a drawer over it when there is not.
@@ -695,7 +651,7 @@ function FamiliarChatPane({
 
   const refreshChats = chats.refresh;
   const refresh = useCallback(() => {
-    void refreshChats();
+    void refreshChats({ fresh: true });
     void onActivityChanged();
   }, [onActivityChanged, refreshChats]);
   const removeChats = chats.removeSessions;

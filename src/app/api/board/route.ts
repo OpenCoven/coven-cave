@@ -17,6 +17,7 @@ import type {
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 import { toBoardListCard } from "@/lib/board-list-card";
+import { reconcileStaleTaskRunsBriefly } from "@/lib/server/task-run-liveness";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,11 @@ const STATUS_VALUES = new Set<CardStatus>(STATUSES);
 const PRIORITY_VALUES = new Set<CardPriority>(PRIORITIES);
 
 export async function GET() {
+  // Settle running tasks whose session provably ended before listing, so the
+  // Board never shows a finished run as Running (#6562). Throttled and
+  // fail-open: an unreachable daemon leaves every card as it is, and a slow
+  // sweep holds the list for at most a couple of seconds.
+  await reconcileStaleTaskRunsBriefly();
   const board = await loadBoard();
   // Lean list: Enhance proposal history is loaded per card by the inspector
   // from GET /api/board/<id> (#5690).

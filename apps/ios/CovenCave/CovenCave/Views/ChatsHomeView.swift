@@ -539,7 +539,10 @@ struct ChatsHomeView: View {
                         Text("All chats").tag(ChatStatusFilter?.none)
                         ForEach(ChatStatusFilter.allCases) { filter in
                             let count = snapshot.statusCounts[filter] ?? 0
-                            if count > 0 || statusFilter == filter {
+                            // Needs you always stays listed so "nothing needs
+                            // you" is one tap to confirm; the other statuses
+                            // appear only while they have chats.
+                            if filter == .needsYou || count > 0 || statusFilter == filter {
                                 Text("\(filter.label), \(count)").tag(Optional(filter))
                             }
                         }

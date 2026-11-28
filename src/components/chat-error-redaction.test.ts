@@ -47,7 +47,7 @@ assert.doesNotMatch(errorStrip, /<pre className=\{pre\}>\{p\.(?:detail|label)\}<
 // instead of claiming withheld detail. Only that one step changes.
 assert.match(
   source,
-  /const refusal = res\.status === 409[\s\S]{0,300}?\{ blockingRunId\?: unknown; code\?: unknown \}[\s\S]*?\.\.\.\(isLocalCodexRefusalCode\(refusal\?\.code\) \? \{ localRefusal: refusal\.code \} : \{\}\)/,
+  /const refusal = res\.status === 409[\s\S]{0,300}?\{ blockingRunId\?: unknown; code\?: unknown(?:; projectId\?: unknown)? \}[\s\S]*?\.\.\.\(isLocalCodexRefusalCode\(refusal\?\.code\) \? \{ localRefusal: refusal\.code \} : \{\}\)/,
   "the refusal code comes from the 409 body and only a listed local code is passed on",
 );
 assert.match(

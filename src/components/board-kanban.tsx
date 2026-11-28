@@ -8,6 +8,7 @@ import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { CaveProject } from "@/lib/cave-projects";
+import { NO_PROJECT_KEY, boardProjectKey, boardProjectLabel, compareBoardProjectSections, visibleStatusSections } from "@/lib/board-sections";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
@@ -66,9 +67,10 @@ type Props = {
   /** Card that just completed — plays the one-shot reward flare (celebrations
       on; reduced-motion collapses it in CSS). Cleared by the owner. */
   rewardCardId?: string | null;
+  /** Statuses the toolbar Filter excludes: their columns are not drawn at all,
+      in any swimlane, and keyboard moves skip them (#6561). */
+  hiddenStatuses?: ReadonlySet<CardStatus>;
 };
-
-const NO_PROJECT_KEY = "__noproject__";
 
 function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: CaveProject[]): { key: string; label: string; cards: Card[] }[] {
   // Status grouping is the single full-height board (status → columns).
@@ -76,7 +78,7 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
   // familiar / project grouping → one swimlane per group.
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : (c.projectId ?? NO_PROJECT_KEY);
+    const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : boardProjectKey(c);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
@@ -84,16 +86,12 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
     key,
     label: by === "familiar"
       ? (key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key))
-      : (key === NO_PROJECT_KEY ? "No project" : (projects.find((p) => p.id === key)?.name ?? key)),
+      : boardProjectLabel(key, projects),
     cards: grpCards,
   }));
   if (by === "project") {
     // Named projects alphabetically; the "No project" lane always last.
-    entries.sort((a, b) => {
-      if (a.key === NO_PROJECT_KEY) return 1;
-      if (b.key === NO_PROJECT_KEY) return -1;
-      return a.label.localeCompare(b.label);
-    });
+    entries.sort(compareBoardProjectSections);
   }
   return entries;
 }
@@ -167,7 +165,7 @@ function WipBadge({
   );
 }
 
-export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, wipLimits, onSetWipLimit, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId, rewardCardId }: Props) {
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, wipLimits, onSetWipLimit, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId, rewardCardId, hiddenStatuses }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -190,9 +188,13 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   // app-wide, even with focus in the sidebar or another surface).
   const rootRef = useRef<HTMLDivElement | null>(null);
 
+  const visibleColumns = useMemo(
+    () => visibleStatusSections(COLUMNS, hiddenStatuses),
+    [hiddenStatuses],
+  );
   const columnIndex = useCallback(
-    (id: string) => COLUMNS.findIndex((c) => c.id === id),
-    [],
+    (id: string) => visibleColumns.findIndex((c) => c.id === id),
+    [visibleColumns],
   );
 
   useEffect(() => {
@@ -280,13 +282,13 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
         const delta = e.key === "ArrowRight" ? 1 : -1;
         const nextIdx = Math.max(
           0,
-          Math.min(COLUMNS.length - 1, currentIdx + delta),
+          Math.min(visibleColumns.length - 1, currentIdx + delta),
         );
         if (nextIdx === currentIdx) {
           e.preventDefault();
           return;
         }
-        const nextCol = COLUMNS[nextIdx];
+        const nextCol = visibleColumns[nextIdx];
         const colEl = document.querySelector<HTMLElement>(
           `[data-kanban-column="${nextCol.id}"]`,
         );
@@ -298,7 +300,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [grabbedCardId, cards, columnIndex, onMoveStatus, announce]);
+  }, [grabbedCardId, cards, columnIndex, visibleColumns, onMoveStatus, announce]);
 
   const groups = useMemo(() => getGroups(cards, groupBy, familiars, projects), [cards, groupBy, familiars, projects]);
   // O(1) per-card lookups — replaces familiars.find()/sessions.find() inside every KanbanCard.
@@ -549,7 +551,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                 ref={(el) => { if (el) railRefs.current.set(key, el); }}
                 onPointerDown={handleRailPointerDown}>
                 <div className="board-kanban-rail" style={isMultiSwimlane ? { height: 320 } : { height: "100%" }}>
-                  {COLUMNS.map((col) => {
+                  {visibleColumns.map((col) => {
                     const rows = grpGrouped.get(col.id) ?? [];
                     const isDrop = dropTarget === col.id;
                     // WIP limits only apply in status mode, where rows.length is

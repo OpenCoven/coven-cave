@@ -45,8 +45,13 @@ assert.match(view, /<BoardTable[\s\S]{0,200}projects=\{projects\}/, "table gets 
 
 // ── Grouping logic in both surfaces understands "project" ──────────────────
 for (const [name, src] of [["board-table.tsx", table], ["board-kanban.tsx", kanban]]) {
-  assert.match(src, /c\.projectId \?\? NO_PROJECT_KEY/, `${name} buckets cards by projectId with a No-project fallback`);
-  assert.match(src, /No project/, `${name} labels the unassigned-project bucket "No project"`);
+  // The key and label live in one shared helper, so the Filter menu can
+  // never disagree with the lanes about which section a card is in (#6561).
+  assert.match(src, /boardProjectKey\(c\)/, `${name} buckets cards by projectId with a No-project fallback`);
+  assert.match(src, /boardProjectLabel\(key, projects\)/, `${name} labels groups through the shared helper`);
 }
+const sections = readFileSync(new URL("../lib/board-sections.ts", import.meta.url), "utf8");
+assert.match(sections, /return card\.projectId \|\| NO_PROJECT_KEY;/, "the shared key buckets by projectId with a No-project fallback");
+assert.match(sections, /"No project"/, 'the shared label names the unassigned-project bucket "No project"');
 
 console.log("board-grouping.test.ts OK");

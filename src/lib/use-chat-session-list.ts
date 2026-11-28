@@ -10,7 +10,7 @@ export type ChatSessionList = {
   loaded: boolean;
   /** The last load failed; `sessions` keeps the last good list. */
   error: boolean;
-  refresh: () => Promise<void>;
+  refresh: (options?: { fresh?: boolean }) => Promise<void>;
   /** Drop rows the caller just deleted, ahead of the next poll. */
   removeSessions: (sessionIds: readonly string[]) => void;
 };
@@ -41,45 +41,56 @@ export function useChatSessionList(
   });
   const generationRef = useRef(0);
   const cacheRef = useRef<CachedList | null>(null);
+  const inFlightRef = useRef<{ scope: string; generation: number; promise: Promise<void> } | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback((refreshOptions?: { fresh?: boolean }) => {
+    const pending = inFlightRef.current;
+    // Mount, Retry and focus refreshes share the timer's request too. A
+    // retired generation (scope change or deletion) must start a fresh read.
+    if (!refreshOptions?.fresh && pending?.scope === scope && pending.generation === generationRef.current) return pending.promise;
     const generation = ++generationRef.current;
-    try {
-      const params = new URLSearchParams({ classifyFamiliarWorkspace: "1" });
-      if (familiarId) params.set("familiarId", familiarId);
-      const cached = cacheRef.current?.scope === scope ? cacheRef.current : null;
-      const response = await fetch(`/api/sessions/list?${params}`, {
-        cache: "no-store",
-        signal: AbortSignal.timeout(15_000),
-        ...(cached ? { headers: { "If-None-Match": cached.etag } } : {}),
-      });
-      let sessions: SessionRow[];
-      if (response.status === 304 && cached) {
-        sessions = cached.sessions;
-      } else {
-        const json = (await response.json()) as { ok?: boolean; sessions?: unknown };
-        if (!response.ok || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
-        sessions = json.sessions as SessionRow[];
-        // Cached only while still current: a body read before a removal must
-        // not become the baseline the next 304 replays.
-        const etag = response.headers.get("ETag");
-        if (etag && generation === generationRef.current) cacheRef.current = { scope, etag, sessions };
+    const promise = (async () => {
+      try {
+        const params = new URLSearchParams({ classifyFamiliarWorkspace: "1" });
+        if (familiarId) params.set("familiarId", familiarId);
+        const cached = cacheRef.current?.scope === scope ? cacheRef.current : null;
+        const response = await fetch(`/api/sessions/list?${params}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(15_000),
+          ...(cached ? { headers: { "If-None-Match": cached.etag } } : {}),
+        });
+        let sessions: SessionRow[];
+        if (response.status === 304 && cached) {
+          sessions = cached.sessions;
+        } else {
+          const json = (await response.json()) as { ok?: boolean; sessions?: unknown };
+          if (!response.ok || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
+          sessions = json.sessions as SessionRow[];
+          // Cached only while still current: a body read before a removal must
+          // not become the baseline the next 304 replays.
+          const etag = response.headers.get("ETag");
+          if (etag && generation === generationRef.current) cacheRef.current = { scope, etag, sessions };
+        }
+        if (generation !== generationRef.current) return;
+        setState((previous) =>
+          previous.scope === scope && previous.loaded && !previous.error && previous.sessions === sessions
+            ? previous
+            : { scope, sessions, loaded: true, error: false },
+        );
+      } catch {
+        if (generation !== generationRef.current) return;
+        setState((previous) => ({
+          scope,
+          sessions: previous.scope === scope ? previous.sessions : [],
+          loaded: true,
+          error: true,
+        }));
       }
-      if (generation !== generationRef.current) return;
-      setState((previous) =>
-        previous.scope === scope && previous.loaded && !previous.error && previous.sessions === sessions
-          ? previous
-          : { scope, sessions, loaded: true, error: false },
-      );
-    } catch {
-      if (generation !== generationRef.current) return;
-      setState((previous) => ({
-        scope,
-        sessions: previous.scope === scope ? previous.sessions : [],
-        loaded: true,
-        error: true,
-      }));
-    }
+    })().finally(() => {
+      if (inFlightRef.current?.generation === generation) inFlightRef.current = null;
+    });
+    inFlightRef.current = { scope, generation, promise };
+    return promise;
   }, [familiarId, scope]);
 
   useEffect(() => {
