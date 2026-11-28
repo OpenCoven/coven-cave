@@ -51,12 +51,15 @@ const MIN_FREE_SPACE_RESERVE_BYTES: u64 = 64 * 1024 * 1024;
 const CACHE_LOCK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const CACHE_LOCK_RETRY: Duration = Duration::from_millis(100);
 const STALE_EXTRACTION_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+// Each entry must also be a required regular file in `verifySidecarRuntime`
+// (scripts/sidecar-runtime-closure.mjs), so the bundler never prunes a path the
+// extractor demands. The closure test pins that.
 const REQUIRED_RUNTIME_PATHS: [&str; 7] = [
     "server.mjs",
     ".next/required-server-files.json",
     ".next/BUILD_ID",
     "node_modules/@next/env/package.json",
-    "node_modules/@swc/helpers/_",
+    "node_modules/@swc/helpers/package.json",
     "node_modules/node-pty/package.json",
     "node_modules/sharp/package.json",
 ];

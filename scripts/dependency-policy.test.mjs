@@ -208,4 +208,32 @@ for (const consumer of ["mermaid", "@milkdown/crepe"]) {
   assert.doesNotMatch(output, /href=["']javascript:/i, `${consumer} must not inherit trusted rendering`);
 }
 
-console.log(`dependency-policy.test.mjs: ok (sharp pinned coherently at ${resolvedSharp}; security floors satisfied)`);
+// #6576: native builds must never come from the pnpm store. CI shares one
+// store cache across Ubuntu images, and a node-pty compiled on ubuntu-26.04
+// (glibc 2.42) cannot load on the ubuntu-24.04 release runtime. The setting
+// lives in .npmrc because the sidecar's staging install copies only that file.
+const npmrcSettings = (await readFile(new URL("../.npmrc", import.meta.url), "utf8"))
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith("#") && !line.startsWith(";"));
+assert.ok(
+  npmrcSettings.includes("side-effects-cache=false"),
+  ".npmrc must disable pnpm's side-effects cache so each install builds native modules on its own host (#6576)",
+);
+assert.equal(
+  npmrcSettings.filter((line) => /^side-effects-cache(?:-readonly)?\s*=/.test(line)).length,
+  1,
+  ".npmrc must set the side-effects cache exactly once, and not re-enable it read-only",
+);
+assert.ok(
+  !Object.hasOwn(workspaceConfig ?? {}, "sideEffectsCache") && !Object.hasOwn(workspaceConfig ?? {}, "sideEffectsCacheReadonly"),
+  "pnpm-workspace.yaml must not override the .npmrc side-effects-cache setting (#6576)",
+);
+const sidecarBundleScript = await readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8");
+assert.match(
+  sidecarBundleScript,
+  /cp "\$ROOT\/\.npmrc" "\$PNPM_STAGE\/\.npmrc"/,
+  "the sidecar's staging install must inherit .npmrc, including the side-effects-cache setting",
+);
+
+console.log(`dependency-policy.test.mjs: ok (sharp pinned coherently at ${resolvedSharp}; security floors satisfied; no store-cached native builds)`);

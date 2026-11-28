@@ -29,7 +29,11 @@ fn fixture_files_with_build(build_id: &'static [u8]) -> Vec<(&'static str, &'sta
         (".next/required-server-files.json", b"{}"),
         (".next/BUILD_ID", build_id),
         ("node_modules/@next/env/package.json", b"{}"),
-        ("node_modules/@swc/helpers/_/index", b"fixture"),
+        ("node_modules/@swc/helpers/package.json", b"{}"),
+        (
+            "node_modules/@swc/helpers/cjs/_interop_require_default.cjs",
+            b"fixture",
+        ),
         ("node_modules/node-pty/package.json", b"{}"),
         ("node_modules/sharp/package.json", b"{}"),
     ]
@@ -552,7 +556,7 @@ fn cache_hit_trusts_verified_marker_without_rehashing_runtime_tree() {
     let cache = root.join("cache");
     let runtime = prepare_runtime_from_files(&archive, &manifest_path, &cache)
         .expect("prepare initial runtime");
-    let helper = runtime.join("node_modules/@swc/helpers/_/index");
+    let helper = runtime.join("node_modules/@swc/helpers/cjs/_interop_require_default.cjs");
     fs::write(&helper, b"corrupt").expect("corrupt non-sentinel file with same byte length");
     fs::remove_file(&archive).expect("remove archive to require a cache hit");
 
@@ -560,7 +564,8 @@ fn cache_hit_trusts_verified_marker_without_rehashing_runtime_tree() {
         .expect("reuse runtime from its verified completion marker");
     assert_eq!(reused, runtime);
     assert_eq!(
-        fs::read(reused.join("node_modules/@swc/helpers/_/index")).expect("read untouched helper"),
+        fs::read(reused.join("node_modules/@swc/helpers/cjs/_interop_require_default.cjs"))
+            .expect("read untouched helper"),
         b"corrupt",
         "cache hits must not traverse and re-hash unrelated runtime files"
     );
