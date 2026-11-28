@@ -706,7 +706,9 @@ async function main() {
           accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
         },
       },
-      general: { stopPhrase: "halt", celebrations: false },
+      // TEMPORARY diagnostic (#6576): PR #6570's one-line fixture fix, so the preflight can
+      // see the checks behind it. Removed before merge; #6570 owns the real change.
+      general: { stopPhrase: "halt", celebrations: false, quickChatShortcut: true },
       phone: { mobileMode: false },
       voice: {
         defaultProvider: "elevenlabs",
